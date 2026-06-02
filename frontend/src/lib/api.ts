@@ -78,6 +78,7 @@ export interface RewrittenPolicySection {
   rewritten_text: string;
   changes_summary: string;
   regulation_refs: string[];
+  source_attribution?: SourceAttribution;
 }
 
 export interface RewrittenPolicy {

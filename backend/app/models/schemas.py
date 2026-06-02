@@ -220,7 +220,7 @@ class AnalysisResult(BaseModel):
 
 class RedlineChange(BaseModel):
     """A single change in the redline document."""
-    type: str = Field(..., description="added, removed, or unchanged")
+    type: str = Field(..., description="added, removed, or modified")
     original_text: Optional[str] = Field(None, description="Original text (for removed/unchanged)")
     revised_text: Optional[str] = Field(None, description="Revised text (for added/unchanged)")
     section: Optional[str] = Field(None, description="Section heading this change belongs to")
