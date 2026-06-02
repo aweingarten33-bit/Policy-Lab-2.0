@@ -478,6 +478,12 @@ class PackageExportRequest(BaseModel):
     )
 
 
+class CertificateExportRequest(BaseModel):
+    """Request body for exporting a compliance assessment certificate."""
+    package: ComplianceActionPackage
+    file_name: Optional[str] = Field(None, description="Original file name, used to customize the output filename")
+
+
 class DraftPolicyRequest(BaseModel):
     """Request body for drafting a new policy from scratch."""
     policy_description: str = Field(..., min_length=5, description="Plain-English description of the policy needed")

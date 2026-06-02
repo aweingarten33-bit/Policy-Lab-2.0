@@ -11,7 +11,6 @@ import {
   generateActionPackage, generateActionPackageStream, startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, exportGapAnalysis, exportDraftPolicy, healthCheck,
   getIndustries, draftPolicy, sendChatMessage, exportCertificate,
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
-  type RewrittenPolicy, type RedlineChange,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
   type DraftedPolicy, type ChatMessage,
   STATUS_LABELS,

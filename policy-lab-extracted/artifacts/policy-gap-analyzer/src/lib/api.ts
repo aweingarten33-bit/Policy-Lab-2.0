@@ -176,7 +176,9 @@ export interface ImplementationChecklist {
 
 export type PackageStatus =
   | "pending"
+  | "retrieving"
   | "analyzing"
+  | "verifying"
   | "rewriting"
   | "generating_redline"
   | "finding_adjacent"
@@ -213,11 +215,7 @@ export interface ComplianceActionPackage {
 export const PIPELINE_STEPS = [
   { key: "retrieving", label: "Retrieving Sources", status: "retrieving" },
   { key: "gap_analysis", label: "Gap Analysis", status: "analyzing" },
-  { key: "rewritten_policy", label: "Rewritten Policy", status: "rewriting" },
-  { key: "redline", label: "Redline Document", status: "generating_redline" },
-  { key: "remediation_plan", label: "90-Day Remediation Plan", status: "building_remediation" },
-  { key: "board_summary", label: "Board Summary", status: "drafting_board_summary" },
-  { key: "implementation_checklist", label: "Implementation Checklist", status: "building_checklist" },
+  { key: "verifying", label: "Verifying Claims", status: "verifying" },
 ] as const;
 
 export const STATUS_LABELS: Record<string, string> = {

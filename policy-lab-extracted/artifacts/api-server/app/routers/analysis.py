@@ -32,6 +32,7 @@ async def analyze_policy_endpoint(request: AnalysisRequest):
         result = await analyze_policy(
             text=request.text,
             file_name=request.file_name,
+            industry=request.industry,
             jurisdiction=request.jurisdiction,
         )
         return result
@@ -54,6 +55,7 @@ async def analyze_policy_endpoint(request: AnalysisRequest):
 async def analyze_file_endpoint(
     file: UploadFile = File(...),
     jurisdiction: Optional[str] = Form(None),
+    industry: Optional[str] = Form("healthcare"),
 ):
     """
     Upload a policy file for gap analysis.
@@ -88,6 +90,7 @@ async def analyze_file_endpoint(
         result = await analyze_policy(
             text=text,
             file_name=file.filename,
+            industry=industry,
             jurisdiction=jurisdiction,
         )
         return result

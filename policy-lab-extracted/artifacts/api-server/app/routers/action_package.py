@@ -20,6 +20,9 @@ from app.services.job_store import get_job_store
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["action-package"])
 
+# Strong references to background tasks prevent premature GC cancellation.
+_background_tasks: set[asyncio.Task] = set()
+
 
 def _humanize_error(msg: str) -> str:
     if "429" in msg:
@@ -203,7 +206,9 @@ async def start_action_package_job(request: ActionPackageRequest):
     """
     store = get_job_store()
     job_id = await store.create()
-    asyncio.create_task(_run_action_package_job(job_id, request))
+    task = asyncio.create_task(_run_action_package_job(job_id, request))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return {"job_id": job_id}
 
 

@@ -29,6 +29,7 @@ from app.models.schemas import (
     DraftedPolicySection,
     ChatRequest,
     ChatResponse,
+    CertificateExportRequest,
 )
 
 # Configure logging
@@ -93,7 +94,7 @@ async def lifespan(app: FastAPI):
     if settings.kb_enabled:
         try:
             logger.info("Warming up embedding model (sentence-transformers)...")
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
 
             def _warmup():
                 from app.services.retrieval.store import _get_embedding_function
@@ -128,8 +129,8 @@ app = FastAPI(
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
     """Require API key for all endpoints except health check and docs."""
-    # Skip auth for public endpoints
-    if request.url.path in ["/api/health", "/docs", "/redoc", "/", "/openapi.json"]:
+    # Skip auth for public endpoints and CORS preflight requests
+    if request.url.path in ["/api/health", "/docs", "/redoc", "/", "/openapi.json"] or request.method == "OPTIONS":
         return await call_next(request)
 
     # If no API key is configured, allow all (development mode)
@@ -238,13 +239,13 @@ async def compliance_chat(request: ChatRequest):
 
 
 @app.post("/api/export-certificate")
-async def export_certificate(request: dict):
+async def export_certificate(request: CertificateExportRequest):
     """Export a professional compliance assessment certificate as a .docx file."""
     from app.services.export_service import generate_certificate_export
 
     try:
-        pkg_dict = request.get("package", {})
-        file_name = request.get("file_name")
+        pkg_dict = request.package.model_dump(mode="json")
+        file_name = request.file_name
         file_bytes, filename = generate_certificate_export(pkg_dict)
         if file_name:
             safe = file_name.replace(" ", "_").replace("/", "-")[:50]
@@ -263,7 +264,7 @@ async def export_certificate(request: dict):
 # ── Serve React frontend static files in production ──
 # In development the Vite dev server serves the frontend; mounting these
 # routes would shadow the live source and cause stale-bundle bugs.
-_STATIC_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", "policy-gap-analyzer", "dist", "public"))
+_STATIC_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", "policy-gap-analyzer", "dist"))
 
 if settings.is_production and os.path.isdir(_STATIC_DIR):
     _assets_dir = os.path.join(_STATIC_DIR, "assets")

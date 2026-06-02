@@ -75,7 +75,7 @@ class LLMProvider:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, lambda: self._cascade(messages, tokens, temperature)
         )
@@ -94,7 +94,7 @@ class LLMProvider:
         """
         tokens = max_tokens or self._max_tokens
         full_messages = [{"role": "system", "content": system_prompt}] + messages
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, lambda: self._cascade(full_messages, tokens, temperature)
         )

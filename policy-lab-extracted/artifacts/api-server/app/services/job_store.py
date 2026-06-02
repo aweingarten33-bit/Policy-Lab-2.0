@@ -51,7 +51,8 @@ class JobStore:
 
     async def get(self, job_id: str) -> Optional[JobState]:
         await self._purge_expired()
-        return self._jobs.get(job_id)
+        async with self._lock:
+            return self._jobs.get(job_id)
 
     async def update_package(self, job_id: str, package: ComplianceActionPackage) -> None:
         async with self._lock:

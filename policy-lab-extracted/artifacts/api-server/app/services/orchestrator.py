@@ -264,7 +264,7 @@ class PackageOrchestrator:
         # ── Step 1: Gap Analysis (always required — foundation for all other outputs) ──
         if "gap_analysis" in all_outputs:
             try:
-                logger.info(f"[{package_id}] Step 1/4: Gap Analysis (with retrieval)")
+                logger.info(f"[{package_id}] Step 1/1: Gap Analysis (with retrieval)")
                 package.status = PackageStatus.retrieving
                 await self._notify_status(package_id, "retrieving", "gap_analysis")
 
@@ -356,7 +356,7 @@ class PackageOrchestrator:
 
         package.status = PackageStatus.complete
         logger.info(
-            f"[{package_id}] Package complete: {len(package.completed_outputs)}/7 outputs — "
+            f"[{package_id}] Package complete: {len(package.completed_outputs)}/1 outputs — "
             f"KB sources: {len(all_kb_sources)}, Live research: {any_live_research}, "
             f"Unverified claims: {total_unverified}"
         )
@@ -463,7 +463,7 @@ class PackageOrchestrator:
         package.live_research_used = any_live_research
         package.unverified_claim_count = total_unverified
         package.status = PackageStatus.complete
-        logger.info(f"[{package_id}] Streaming package complete: {len(package.completed_outputs)}/4 outputs")
+        logger.info(f"[{package_id}] Streaming package complete: {len(package.completed_outputs)}/1 outputs")
         yield package
 
 
