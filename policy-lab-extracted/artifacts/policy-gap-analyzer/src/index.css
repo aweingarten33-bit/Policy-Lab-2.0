@@ -1,0 +1,329 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Force light scheme — iOS Safari (and some Android browsers) will otherwise repaint form controls
+       and inherited text in dark-mode colors when the user's system is dark, making text appear white. */
+    color-scheme: light;
+    /* Cool blue-silver-grey page surface — flush with the white cards, just a faint cool tint. */
+    --background: 210 18% 95%;
+    --foreground: 220 18% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 18% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 18% 11%;
+    --primary: 32 95% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 30 10% 92%;
+    --secondary-foreground: 220 14% 22%;
+    --muted: 30 10% 92%;
+    --muted-foreground: 220 10% 40%;
+    --accent: 30 10% 92%;
+    --accent-foreground: 220 18% 11%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 14% 86%;
+    --input: 220 14% 86%;
+    --ring: 32 95% 50%;
+    --radius: 0.75rem;
+    /* Ten-layer depth craft. Light source = upper-left, so all cast shadows offset down-right (2-10px x).
+       Stack reads near→far: specular hit, floor bounce, hairline, inner glow, AO crease, umbra (sharp contact),
+       penumbra (soft contact), mid cast, far penumbra (color-bleed plum), atmospheric haze (ultra-wide). */
+    --shadow-neu-raised:
+      inset 1px 1px 0 hsl(0 0% 100% / 1),
+      inset 0 -1px 0 hsl(40 55% 88% / 0.7),
+      inset 0 0 0 1px hsl(220 18% 78% / 0.45),
+      inset 0 0 60px hsl(0 0% 100% / 0.30),
+      0 1px 0 hsl(220 30% 14% / 0.08),
+      2px 2px 4px hsl(220 28% 12% / 0.12),
+      4px 8px 18px -2px hsl(220 28% 14% / 0.10),
+      6px 18px 36px -6px hsl(220 30% 16% / 0.12),
+      8px 36px 64px -16px hsl(280 32% 18% / 0.14),
+      10px 56px 96px -24px hsl(220 35% 20% / 0.10);
+    --shadow-neu-sm:
+      inset 1px 1px 0 hsl(0 0% 100% / 1),
+      inset 0 -1px 0 hsl(40 55% 88% / 0.6),
+      inset 0 0 0 1px hsl(220 18% 78% / 0.4),
+      inset 0 0 40px hsl(0 0% 100% / 0.25),
+      0 1px 0 hsl(220 30% 14% / 0.06),
+      1px 2px 3px hsl(220 28% 12% / 0.10),
+      3px 6px 14px -2px hsl(220 28% 14% / 0.08),
+      5px 14px 28px -6px hsl(280 30% 16% / 0.10),
+      7px 28px 52px -12px hsl(220 35% 18% / 0.08);
+    --shadow-neu-btn:
+      inset 1px 1px 0 hsl(0 0% 100% / 1),
+      inset 0 -1px 0 hsl(40 55% 88% / 0.65),
+      inset 0 0 0 1px hsl(220 18% 78% / 0.5),
+      inset 0 0 50px hsl(0 0% 100% / 0.28),
+      0 1px 0 hsl(220 30% 14% / 0.08),
+      2px 2px 4px hsl(220 28% 12% / 0.13),
+      3px 8px 16px -2px hsl(220 28% 14% / 0.11),
+      5px 16px 30px -6px hsl(220 30% 16% / 0.13),
+      7px 32px 56px -16px hsl(280 32% 18% / 0.10);
+    --shadow-neu-inset:
+      inset 2px 2px 4px hsl(220 28% 14% / 0.12),
+      inset 1px 1px 1px hsl(220 30% 12% / 0.08),
+      inset 0 0 0 1px hsl(220 14% 76% / 0.5);
+    --shadow-neu-pressed:
+      inset 2px 3px 6px hsl(220 28% 14% / 0.14),
+      inset 1px 1px 1px hsl(220 30% 12% / 0.10),
+      inset 0 0 0 1px hsl(220 14% 74% / 0.5);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-serif-display {
+    font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  }
+  /* Jony Ive '09 — iPhone 4 / Snow Leopard era. White glass card with a subtle top sheen,
+     hairline silver edge, deeper soft shadow beneath = the slab floats on the page like a precision-milled
+     piece of glass on aluminum. */
+  .neu-raised {
+    position: relative;
+    background:
+      linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 16% 99%) 50%, hsl(220 14% 96%) 100%);
+    border: 1px solid hsl(220 14% 80%);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 1),
+      inset 0 0 0 1px hsl(0 0% 100% / 0.7),
+      inset 0 -1px 0 hsl(220 20% 80% / 0.5),
+      0 1px 0 hsl(220 20% 14% / 0.06),
+      0 4px 8px hsl(220 20% 14% / 0.10),
+      0 18px 36px -10px hsl(220 24% 18% / 0.18),
+      0 36px 72px -20px hsl(220 24% 18% / 0.16);
+  }
+  .neu-sm {
+    background: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 14% 96%) 100%);
+    border: 1px solid hsl(220 14% 82%);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 1),
+      inset 0 -1px 0 hsl(220 20% 82% / 0.4),
+      0 2px 4px hsl(220 20% 14% / 0.09),
+      0 8px 18px -6px hsl(220 20% 14% / 0.12);
+  }
+  .neu-inset {
+    background: linear-gradient(180deg, hsl(220 14% 90%) 0%, hsl(220 14% 98%) 100%);
+    border: 1px solid hsl(220 13% 76%);
+    box-shadow:
+      inset 0 2px 4px hsl(220 24% 14% / 0.18),
+      inset 0 1px 0 hsl(220 24% 14% / 0.10),
+      inset 0 0 0 1px hsl(220 14% 88% / 0.6),
+      0 1px 0 hsl(0 0% 100% / 0.9);
+  }
+  .neu-btn {
+    background-color: hsl(0 0% 100%);
+    background-image: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 14% 93%) 100%);
+    border: 1px solid hsl(220 13% 78%);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 1),
+      inset 0 -1px 0 hsl(220 20% 80% / 0.5),
+      0 1px 2px hsl(220 20% 14% / 0.10),
+      0 4px 8px hsl(220 20% 14% / 0.10);
+    transition: background-image 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .neu-btn:hover { background-image: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 14% 90%) 100%); }
+  /* When pasted with a colored bg utility, drop the white gradient overlay so the color shows. */
+  .neu-btn.bg-primary,
+  .neu-btn.bg-destructive,
+  .neu-btn.bg-secondary,
+  .neu-btn.bg-accent {
+    background-image: none;
+    background-color: hsl(var(--primary));
+    border-color: transparent;
+  }
+  .neu-btn.bg-destructive { background-color: hsl(var(--destructive)); }
+  .neu-btn.bg-secondary { background-color: hsl(var(--secondary)); }
+  .neu-btn.bg-accent { background-color: hsl(var(--accent)); }
+  .neu-pressed {
+    background: hsl(220 14% 92%);
+    box-shadow:
+      inset 0 2px 4px hsl(220 20% 14% / 0.16),
+      inset 0 1px 0 hsl(220 20% 14% / 0.08);
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes indeterminate {
+  0%   { transform: translateX(-100%) scaleX(0.3); }
+  50%  { transform: translateX(50%)  scaleX(0.6); }
+  100% { transform: translateX(400%) scaleX(0.3); }
+}
+
+.animate-indeterminate {
+  width: 40%;
+  transform-origin: left center;
+  animation: indeterminate 1.6s ease-in-out infinite;
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+
+/* Jony Ive '09 input field — recessed white glass with a faint inner top-shadow,
+   subtle silver edge, micro-bevel = looks like a precision-machined glass slot. */
+.aqua-rain {
+  background: linear-gradient(180deg, hsl(220 14% 95%) 0%, hsl(0 0% 100%) 22%, hsl(0 0% 100%) 100%);
+  border: 1px solid hsl(220 14% 84%);
+  box-shadow:
+    inset 0 1px 2px hsl(220 24% 14% / 0.10),
+    inset 0 0 0 1px hsl(0 0% 100% / 0.6),
+    0 1px 0 hsl(0 0% 100% / 0.9);
+  color: hsl(220 18% 11%) !important;
+}
+.aqua-rain:focus-within,
+.aqua-rain:focus {
+  border-color: hsl(220 18% 60%);
+  box-shadow:
+    inset 0 1px 2px hsl(220 24% 14% / 0.10),
+    inset 0 0 0 1px hsl(0 0% 100% / 0.6),
+    0 0 0 3px hsl(220 18% 60% / 0.18);
+  outline: none;
+}
+
+/* Page header bar — flat white with a hairline divider beneath, NYT-section style. */
+.aqua-bar {
+  background: hsl(0 0% 100%);
+  border-bottom: 1px solid hsl(220 13% 91%);
+}
+
+/* NYT eyebrow — tiny bold sans uppercase tracker, the kicker above headlines/sections in the NYT app. */
+.nyt-eyebrow {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: hsl(220 14% 28%);
+}
+
+/* NYT-masthead — italic display serif, centered, hairline rule, faintest aqua kiss at the top edge.
+   The aqua line echoes the iMac G5 desktop swirl — a single sky-blue accent on otherwise white chrome. */
+.nyt-masthead {
+  font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: -0.015em;
+  text-shadow: 0 1px 0 hsl(0 0% 100% / 0.9);
+}
+/* aqua-kiss kept as a no-op so existing markup compiles cleanly. */
+.aqua-kiss::before { content: none; }
+
+/* NYT-style underline tabs — flat text row with a black underline under the active tab. */
+.nyt-tabs {
+  display: inline-flex;
+  gap: 28px;
+  border-bottom: 1px solid hsl(220 13% 88%);
+  width: 100%;
+}
+.nyt-tab {
+  position: relative;
+  padding: 6px 0 12px 0;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  color: hsl(220 8% 48%);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: color 120ms ease;
+  white-space: nowrap;
+  margin-bottom: -1px;
+}
+.nyt-tab:hover { color: hsl(220 18% 18%); }
+.nyt-tab.is-active {
+  color: hsl(220 18% 11%);
+  font-weight: 700;
+  border-bottom: 2px solid hsl(220 18% 11%);
+}
+
+/* Jony Ive '09 obsidian button — polished black slab with a glossy top half (the lozenge gleam),
+   matte bottom half, hairline silver bevel, soft cast shadow. */
+.pl-button-dark {
+  position: relative;
+  background:
+    linear-gradient(180deg, hsl(220 12% 30%) 0%, hsl(220 14% 14%) 50%, hsl(220 14% 6%) 100%);
+  color: hsl(0 0% 100%);
+  border: 1px solid hsl(220 14% 4%);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.30),
+    inset 0 -1px 0 hsl(220 14% 0% / 0.6),
+    inset 0 0 0 1px hsl(220 14% 0% / 0.4),
+    0 1px 2px hsl(220 20% 14% / 0.30),
+    0 6px 14px -2px hsl(220 20% 14% / 0.22),
+    0 14px 28px -10px hsl(220 24% 14% / 0.20);
+  text-shadow: 0 -1px 0 hsl(220 30% 0% / 0.5);
+  transition: opacity 120ms ease, transform 120ms ease;
+  overflow: hidden;
+}
+.pl-button-dark::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, hsl(0 0% 100% / 0.20) 0%, hsl(0 0% 100% / 0.04) 80%, transparent 100%);
+  pointer-events: none;
+  border-radius: inherit;
+}
+.pl-button-dark > * { position: relative; z-index: 1; }
+.pl-button-dark:hover:not(:disabled) { opacity: 0.94; }
+.pl-button-dark:active:not(:disabled) { transform: scale(0.995); }
+.pl-button-dark:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* Sample-loader pill — small ghost button, more legible than the previous tiny link. */
+.pl-sample-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: hsl(220 14% 30%);
+  background: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 14% 96%) 100%);
+  border: 1px solid hsl(220 13% 84%);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 1),
+    0 1px 1px hsl(220 20% 14% / 0.04);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.pl-sample-link:hover {
+  background: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 14% 92%) 100%);
+  color: hsl(220 18% 11%);
+}
+
+/* Inner divider used between sections inside the unified card. */
+.pl-divider {
+  border: 0;
+  border-top: 1px solid hsl(220 13% 91%);
+  margin: 18px 0;
+}
+
+html, body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
