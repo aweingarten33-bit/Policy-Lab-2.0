@@ -264,7 +264,7 @@ async def export_certificate(request: CertificateExportRequest):
 # ── Serve React frontend static files in production ──
 # In development the Vite dev server serves the frontend; mounting these
 # routes would shadow the live source and cause stale-bundle bugs.
-_STATIC_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", "policy-gap-analyzer", "dist"))
+_STATIC_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
 
 if settings.is_production and os.path.isdir(_STATIC_DIR):
     _assets_dir = os.path.join(_STATIC_DIR, "assets")
