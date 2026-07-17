@@ -12,7 +12,7 @@ import {
   getIndustries, draftPolicy, sendChatMessage, exportCertificate,
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
-  type DraftedPolicy, type ChatMessage,
+  type DraftedPolicy, type ChatMessage, type RewrittenPolicy, type RewrittenPolicySection, type RedlineChange,
   STATUS_LABELS,
   getSourceTypeLabel, getSourceTypeColor, getSourceTypeBg, getVerificationIcon,
 } from "@/lib/api";
