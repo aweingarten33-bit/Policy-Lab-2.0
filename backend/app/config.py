@@ -53,20 +53,22 @@ class Settings(BaseSettings):
     def llm_cascade_models(self) -> List[str]:
         """
         Returns the ordered list of models to try, based on which API keys are set.
-        Order: Groq (fastest, small inputs) → Gemini Flash → Mistral Small (~22s) → Claude Sonnet 4 (~60s, quality backstop)
+        Order: Claude Opus 4.8 (primary — best calibration/lowest hallucination rate of
+        any flagship model, which matters most for citation-grounded compliance findings)
+        → OpenAI → Groq → Gemini Flash → Mistral Small → OpenRouter free tier.
         Models whose keys are missing are skipped automatically.
         """
         cascade = []
-        if self.openai_api_key:
-            cascade.append("gpt-4o-mini")                           # primary — fast, handles everything
-        if self.groq_api_key:
-            cascade.append("groq/llama-3.3-70b-versatile")         # fallback
-        if self.gemini_api_key:
-            cascade.append("gemini/gemini-2.0-flash")               # fallback
-        if self.mistral_api_key:
-            cascade.append("mistral/mistral-small-latest")          # fallback
         if self.anthropic_api_key:
-            cascade.append("anthropic/claude-sonnet-4-20250514")    # fallback
+            cascade.append("anthropic/claude-opus-4-8")              # primary — best-calibrated, lowest hallucination rate
+        if self.openai_api_key:
+            cascade.append("gpt-4o-mini")                            # fallback — fast, handles everything
+        if self.groq_api_key:
+            cascade.append("groq/llama-3.3-70b-versatile")           # fallback
+        if self.gemini_api_key:
+            cascade.append("gemini/gemini-2.0-flash")                # fallback
+        if self.mistral_api_key:
+            cascade.append("mistral/mistral-small-latest")           # fallback
         if self.openrouter_api_key:
             cascade.append("openrouter/meta-llama/llama-3.3-70b-instruct:free")
         # Always have at least one model to try
