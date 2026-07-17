@@ -121,10 +121,11 @@ class LLMProvider:
                 continue
 
         logger.error(f"All {len(cascade)} models in cascade failed. Last error: {last_error}")
+        last_error_summary = str(last_error).split("\n", 1)[0][:200]
         raise RuntimeError(
             f"All AI providers are currently unavailable. "
             f"Tried: {', '.join(cascade)}. "
-            f"Last error: {type(last_error).__name__}: {str(last_error)[:200]}"
+            f"Last error: {type(last_error).__name__}: {last_error_summary}"
         ) from last_error
 
     def _call_model(
