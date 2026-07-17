@@ -38,6 +38,7 @@ async def _run_action_package_job(job_id: str, request: ActionPackageRequest) ->
     """Background runner: drives the orchestrator and writes snapshots into the job store."""
     store = get_job_store()
     orchestrator = get_orchestrator()
+    last_package: Optional[ComplianceActionPackage] = None
     try:
         async for package in orchestrator.generate_full_package_stream(
             text=request.text,
@@ -47,8 +48,12 @@ async def _run_action_package_job(job_id: str, request: ActionPackageRequest) ->
             requested_outputs=request.outputs,
             enable_live_research=request.enable_live_research,
         ):
+            last_package = package
             await store.update_package(job_id, package)
-        await store.mark_complete(job_id)
+        if last_package is not None and last_package.status == PackageStatus.failed:
+            await store.mark_error(job_id, _humanize_error(last_package.error_message or "Generation failed"))
+        else:
+            await store.mark_complete(job_id)
     except Exception as e:
         logger.exception(f"Background action-package job {job_id} failed")
         await store.mark_error(job_id, _humanize_error(str(e)))
