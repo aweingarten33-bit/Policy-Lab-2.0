@@ -42,7 +42,7 @@ litellm.drop_params = True
 # 4000-token rewrites legitimately take 60-90s on gpt-4o-mini and we don't want to
 # bail to a worse model just because the primary is producing a real long answer.
 _MODEL_TIMEOUT = 45.0
-_MODEL_TIMEOUT_LONG = 180.0
+_MODEL_TIMEOUT_LONG = 240.0
 
 
 def _timeout_for(max_tokens: int) -> float:
