@@ -1,24 +1,11 @@
-import { Link } from "react-router-dom";
-import { ChevronLeft } from "lucide-react";
-
 export default function Legal() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-foreground/8 px-4 py-4">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <Link
-            to="/"
-            className="font-serif-display text-lg font-bold tracking-tight hover:text-primary transition-colors"
-          >
+          <span className="font-serif-display text-lg font-bold tracking-tight">
             The Policy Lab
-          </Link>
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1 text-[11px] font-mono tracking-wider text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-            BACK
-          </Link>
+          </span>
         </div>
       </header>
 
@@ -165,15 +152,6 @@ export default function Legal() {
           </p>
         </section>
 
-        <div className="mt-12 pt-6 border-t border-foreground/10">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold tracking-wider text-primary hover:underline"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-            BACK TO THE POLICY LAB
-          </Link>
-        </div>
       </main>
 
       <footer className="border-t border-foreground/8 px-4 py-8 text-center">
