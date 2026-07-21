@@ -9,7 +9,7 @@ import { extractText } from "@/lib/extract-text";
 import { linkifyRegulations, lookupRegulationUrl } from "@/lib/regulation-links";
 import {
   generateActionPackage, generateActionPackageStream, startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, exportGapAnalysis, exportDraftPolicy, healthCheck,
-  getIndustries, draftPolicy, draftPolicyStream, sendChatMessage, exportCertificate,
+  getIndustries, draftPolicy, startDraftJob, streamDraftJob, getDraftJobStatus, sendChatMessage, exportCertificate,
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
   type DraftedPolicy, type ChatMessage, type RewrittenPolicy, type RewrittenPolicySection, type RedlineChange,
@@ -21,6 +21,7 @@ import { toast } from "sonner";
 // ── Style maps ──
 
 const JOB_KEY = "tpl_active_job";
+const DRAFT_JOB_KEY = "tpl_active_draft_job";
 
 // ── Demo samples ──
 // Realistic-but-flawed sample policy so first-time visitors can see what
@@ -391,6 +392,76 @@ export default function Index() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Same resume-on-mount pattern as the analysis job above, for drafting.
+  useEffect(() => {
+    let cancelled = false;
+    const resumeDraftJob = async () => {
+      let jobId: string | null = null;
+      try { jobId = localStorage.getItem(DRAFT_JOB_KEY); } catch { return; }
+      if (!jobId) return;
+
+      try {
+        const snapshot = await getDraftJobStatus(jobId);
+        if (cancelled) return;
+
+        if (!snapshot) {
+          try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+          return;
+        }
+
+        if (snapshot.status === "complete") {
+          if (snapshot.policy) {
+            setPkg(null);
+            setDraftResult(snapshot.policy);
+            setMode("draft");
+            toast.success("Draft ready", { description: "Picked up where you left off." });
+          }
+          try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+          return;
+        }
+
+        if (snapshot.status === "error") {
+          setError(snapshot.error || "Draft failed while you were away.");
+          toast.error("Draft Failed", { description: snapshot.error || "" });
+          try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+          return;
+        }
+
+        // Still running — reattach to the stream.
+        setMode("draft");
+        setLoading(true);
+        setDraftStreamText(snapshot.partial_text || "");
+        toast.info("Resuming draft", { description: "Your draft is still generating on the server." });
+
+        try {
+          const data = await streamDraftJob(jobId, (fullTextSoFar) => {
+            if (cancelled) return;
+            setDraftStreamText(fullTextSoFar);
+          });
+          if (cancelled) return;
+          try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+          setPkg(null);
+          setDraftResult(data);
+          toast.success("Policy drafted", { description: data.policy_title });
+        } catch (e: any) {
+          if (cancelled) return;
+          const msg = e.message || "Draft failed.";
+          setError(msg);
+          toast.error("Draft Failed", { description: msg });
+          try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      } catch {
+        // Network blip during resume — leave the job key in place so a future
+        // mount can try again.
+      }
+    };
+    resumeDraftJob();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Persist results across tab switches and page reloads
   useEffect(() => { try { localStorage.setItem("tpl_mode", mode); } catch {} }, [mode]);
   useEffect(() => { try { localStorage.setItem("tpl_draftDesc", draftDesc); } catch {} }, [draftDesc]);
@@ -535,9 +606,15 @@ export default function Index() {
       if (!draftDesc.trim()) { setLoading(false); return; }
       setDraftStreamText("");
       try {
-        const data = await draftPolicyStream(draftDesc, industry, jurisdiction, (chunk) => {
-          setDraftStreamText((prev) => prev + chunk);
+        // Kick off the draft as a background job so it survives tabbing away,
+        // backgrounding the app, or navigating off this screen. The job_id is
+        // persisted to localStorage so we can reattach on remount/reload.
+        const jobId = await startDraftJob(draftDesc, industry, jurisdiction);
+        try { localStorage.setItem(DRAFT_JOB_KEY, jobId); } catch {}
+        const data = await streamDraftJob(jobId, (fullTextSoFar) => {
+          setDraftStreamText(fullTextSoFar);
         });
+        try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
         setPkg(null);
         setDraftResult(data);
         toast.success("Policy drafted", { description: data.policy_title });
@@ -545,6 +622,7 @@ export default function Index() {
         const msg = e.message || "Draft failed.";
         setError(msg);
         toast.error("Draft Failed", { description: msg });
+        try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
       } finally {
         setLoading(false);
         setDraftStreamText("");

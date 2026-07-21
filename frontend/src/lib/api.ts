@@ -791,6 +791,105 @@ export async function draftPolicyStream(
 }
 
 /**
+ * Start a draft as a background job on the server. Returns a job_id
+ * immediately; the draft keeps running server-side even if the client tabs
+ * away, backgrounds the app, or loses connection.
+ */
+export async function startDraftJob(
+  policyDescription: string,
+  industry?: string,
+  jurisdiction?: string,
+): Promise<string> {
+  const response = await fetch(`${API_BASE}/api/draft-policy/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      policy_description: policyDescription,
+      industry: industry || "other",
+      jurisdiction: jurisdiction || undefined,
+    }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: "Failed to start draft" }));
+    throw new Error(errorData.detail || `Job start failed (${response.status})`);
+  }
+  const data = await response.json();
+  if (!data.job_id) throw new Error("Server did not return a job id");
+  return data.job_id as string;
+}
+
+export type DraftJobStatusResponse = {
+  job_id: string;
+  status: "running" | "complete" | "error";
+  partial_text: string;
+  policy: DraftedPolicy | null;
+  error: string | null;
+  version: number;
+};
+
+/**
+ * One-shot snapshot of a draft job. Returns null on 404 (expired/missing).
+ */
+export async function getDraftJobStatus(jobId: string): Promise<DraftJobStatusResponse | null> {
+  const response = await fetch(`${API_BASE}/api/draft-policy/status/${encodeURIComponent(jobId)}`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Status check failed (${response.status})`);
+  return (await response.json()) as DraftJobStatusResponse;
+}
+
+/**
+ * Subscribe to live SSE updates for an in-flight draft job. Calls onDelta
+ * with each newly-arrived slice of text, then resolves with the final
+ * DraftedPolicy on completion. On disconnect, calling this again with the
+ * same jobId reconnects — the job keeps running server-side regardless.
+ */
+export async function streamDraftJob(
+  jobId: string,
+  onDelta: (fullTextSoFar: string) => void,
+): Promise<DraftedPolicy> {
+  const response = await fetch(`${API_BASE}/api/draft-policy/stream/${encodeURIComponent(jobId)}`);
+  if (response.status === 404) throw new Error("Job not found or expired");
+  if (!response.ok) throw new Error(`Stream failed (${response.status})`);
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalPolicy: DraftedPolicy | null = null;
+  let finalError: string | null = null;
+  let terminal = false;
+
+  while (!terminal) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (typeof data.partial_text === "string") onDelta(data.partial_text);
+        if (data.status === "complete") {
+          finalPolicy = data.policy as DraftedPolicy;
+          terminal = true;
+        }
+        if (data.status === "error") {
+          finalError = data.error || "Draft failed";
+          terminal = true;
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message !== "Unexpected end of JSON input") throw e;
+      }
+    }
+  }
+
+  if (finalError) throw new Error(finalError);
+  if (!finalPolicy) throw new Error("No response received from server");
+  return finalPolicy;
+}
+
+/**
  * Start an action-package job on the server. Returns a job_id immediately;
  * the actual analysis runs in the background on the server, so it survives
  * tab-switches, navigation, and brief network drops.
