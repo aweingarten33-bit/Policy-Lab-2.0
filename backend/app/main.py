@@ -275,7 +275,7 @@ async def draft_policy_stream_endpoint(request: DraftPolicyRequest):
 # reconnects with the job_id to pick up the live partial text or the finished
 # result, whichever is ready.
 
-_draft_background_tasks: set[asyncio.Task] = set()
+_draft_running_tasks: dict[str, asyncio.Task] = {}
 
 
 async def _run_draft_job(job_id: str, request: DraftPolicyRequest) -> None:
@@ -311,9 +311,24 @@ async def start_draft_job(request: DraftPolicyRequest):
     store = get_draft_job_store()
     job_id = await store.create()
     task = asyncio.create_task(_run_draft_job(job_id, request))
-    _draft_background_tasks.add(task)
-    task.add_done_callback(_draft_background_tasks.discard)
+    _draft_running_tasks[job_id] = task
+    task.add_done_callback(lambda t, jid=job_id: _draft_running_tasks.pop(jid, None))
     return {"job_id": job_id}
+
+
+@app.post("/api/draft-policy/cancel/{job_id}")
+async def cancel_draft_job(job_id: str):
+    """Cancel an in-flight draft job. Safe to call even if it already finished (no-op)."""
+    from app.services.draft_job_store import get_draft_job_store
+
+    task = _draft_running_tasks.get(job_id)
+    if task and not task.done():
+        task.cancel()
+    store = get_draft_job_store()
+    job = await store.get(job_id)
+    if job is not None and job.status == "running":
+        await store.mark_error(job_id, "Cancelled by user")
+    return {"cancelled": True}
 
 
 @app.get("/api/draft-policy/status/{job_id}")

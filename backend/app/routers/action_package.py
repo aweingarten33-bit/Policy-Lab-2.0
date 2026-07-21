@@ -20,8 +20,9 @@ from app.services.job_store import get_job_store
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["action-package"])
 
-# Strong references to background tasks prevent premature GC cancellation.
-_background_tasks: set[asyncio.Task] = set()
+# Keyed by job_id so a running job can be looked up and cancelled; also
+# serves as the strong-reference set that prevents premature GC cancellation.
+_running_tasks: dict[str, asyncio.Task] = {}
 
 
 def _humanize_error(msg: str) -> str:
@@ -212,9 +213,22 @@ async def start_action_package_job(request: ActionPackageRequest):
     store = get_job_store()
     job_id = await store.create()
     task = asyncio.create_task(_run_action_package_job(job_id, request))
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    _running_tasks[job_id] = task
+    task.add_done_callback(lambda t, jid=job_id: _running_tasks.pop(jid, None))
     return {"job_id": job_id}
+
+
+@router.post("/action-package/cancel/{job_id}")
+async def cancel_action_package_job(job_id: str):
+    """Cancel an in-flight job. Safe to call even if it already finished (no-op)."""
+    task = _running_tasks.get(job_id)
+    if task and not task.done():
+        task.cancel()
+    store = get_job_store()
+    job = await store.get(job_id)
+    if job is not None and job.status == "running":
+        await store.mark_error(job_id, "Cancelled by user")
+    return {"cancelled": True}
 
 
 @router.get("/action-package/status/{job_id}")

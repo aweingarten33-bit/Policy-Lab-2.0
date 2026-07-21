@@ -838,6 +838,18 @@ export async function getDraftJobStatus(jobId: string): Promise<DraftJobStatusRe
 }
 
 /**
+ * Cancel an in-flight draft job. Best-effort -- the UI resets locally
+ * regardless of whether this call succeeds.
+ */
+export async function cancelDraftJob(jobId: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/draft-policy/cancel/${encodeURIComponent(jobId)}`, { method: "POST" });
+  } catch {
+    // best-effort
+  }
+}
+
+/**
  * Subscribe to live SSE updates for an in-flight draft job. Calls onDelta
  * with each newly-arrived slice of text, then resolves with the final
  * DraftedPolicy on completion. On disconnect, calling this again with the
@@ -928,6 +940,18 @@ export type JobStatusResponse = {
   error: string | null;
   version: number;
 };
+
+/**
+ * Cancel an in-flight action-package job. Best-effort -- the UI resets
+ * locally regardless of whether this call succeeds.
+ */
+export async function cancelActionPackageJob(jobId: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/action-package/cancel/${encodeURIComponent(jobId)}`, { method: "POST" });
+  } catch {
+    // best-effort
+  }
+}
 
 /**
  * One-shot snapshot of an action-package job. Returns null on 404 (expired/missing).

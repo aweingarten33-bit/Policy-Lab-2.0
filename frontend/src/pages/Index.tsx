@@ -8,8 +8,8 @@ import {
 import { extractText } from "@/lib/extract-text";
 import { linkifyRegulations, lookupRegulationUrl } from "@/lib/regulation-links";
 import {
-  generateActionPackage, generateActionPackageStream, startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, exportGapAnalysis, exportDraftPolicy, healthCheck,
-  getIndustries, draftPolicy, startDraftJob, streamDraftJob, getDraftJobStatus, sendChatMessage, exportCertificate,
+  generateActionPackage, generateActionPackageStream, startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, cancelActionPackageJob, exportGapAnalysis, exportDraftPolicy, healthCheck,
+  getIndustries, draftPolicy, startDraftJob, streamDraftJob, getDraftJobStatus, cancelDraftJob, sendChatMessage, exportCertificate,
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
   type DraftedPolicy, type ChatMessage, type RewrittenPolicy, type RewrittenPolicySection, type RedlineChange,
@@ -249,6 +249,11 @@ export default function Index() {
   const jurisdiction = [city.trim(), stateCode].filter(Boolean).join(", ");
   const [backendOnline, setBackendOnline] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  // Set true the instant the user hits Cancel. Any generation in flight
+  // (whether from run() or the resume-on-mount reattach) checks this before
+  // applying its result, so an abandoned job can't pop a stale result/toast
+  // back onto the screen after the user has already left.
+  const cancelledRef = useRef(false);
   // Severity filter: when user taps a tile (Critical/Gap/Partial/Compliant) on the overview, jump to gap tab and filter rows.
   const [severityFilter, setSeverityFilter] = useState<"critical" | "gap" | "partial" | "compliant" | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -316,7 +321,7 @@ export default function Index() {
 
       try {
         const snapshot = await getActionPackageJobStatus(jobId);
-        if (cancelled) return;
+        if (cancelled || cancelledRef.current) return;
 
         // Job expired or unknown — clear and move on.
         if (!snapshot) {
@@ -358,7 +363,7 @@ export default function Index() {
 
         let firstUpdate = !snapshot.package;
         const onUpdate = (partialPkg: ComplianceActionPackage) => {
-          if (cancelled) return;
+          if (cancelled || cancelledRef.current) return;
           setDraftResult(null);
           setPkg(partialPkg);
           if (firstUpdate) {
@@ -369,18 +374,18 @@ export default function Index() {
         };
         try {
           await streamActionPackageJob(jobId, onUpdate);
-          if (cancelled) return;
+          if (cancelled || cancelledRef.current) return;
           try { localStorage.removeItem(JOB_KEY); } catch {}
           toast.success("Analysis complete", { description: "All outputs ready" });
         } catch (e: any) {
-          if (cancelled) return;
+          if (cancelled || cancelledRef.current) return;
           const msg = e.message || "Generation failed.";
           setError(msg);
           toast.error("Analysis Failed", { description: msg });
           setLoading(false);
           try { localStorage.removeItem(JOB_KEY); } catch {}
         } finally {
-          if (!cancelled) setPkgStreaming(false);
+          if (!cancelled && !cancelledRef.current) setPkgStreaming(false);
         }
       } catch {
         // Network blip during resume — leave the job key in place so a future
@@ -402,7 +407,7 @@ export default function Index() {
 
       try {
         const snapshot = await getDraftJobStatus(jobId);
-        if (cancelled) return;
+        if (cancelled || cancelledRef.current) return;
 
         if (!snapshot) {
           try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
@@ -435,22 +440,22 @@ export default function Index() {
 
         try {
           const data = await streamDraftJob(jobId, (fullTextSoFar) => {
-            if (cancelled) return;
+            if (cancelled || cancelledRef.current) return;
             setDraftStreamText(fullTextSoFar);
           });
-          if (cancelled) return;
+          if (cancelled || cancelledRef.current) return;
           try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
           setPkg(null);
           setDraftResult(data);
           toast.success("Policy drafted", { description: data.policy_title });
         } catch (e: any) {
-          if (cancelled) return;
+          if (cancelled || cancelledRef.current) return;
           const msg = e.message || "Draft failed.";
           setError(msg);
           toast.error("Draft Failed", { description: msg });
           try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
         } finally {
-          if (!cancelled) setLoading(false);
+          if (!cancelled && !cancelledRef.current) setLoading(false);
         }
       } catch {
         // Network blip during resume — leave the job key in place so a future
@@ -597,6 +602,7 @@ export default function Index() {
 
   const run = async (isRetry = false) => {
     if (loading) return;
+    cancelledRef.current = false;
     setError("");
     setLoading(true);
     if (isRetry) setRetryCount((c) => c + 1);
@@ -610,22 +616,28 @@ export default function Index() {
         // backgrounding the app, or navigating off this screen. The job_id is
         // persisted to localStorage so we can reattach on remount/reload.
         const jobId = await startDraftJob(draftDesc, industry, jurisdiction);
+        if (cancelledRef.current) return;
         try { localStorage.setItem(DRAFT_JOB_KEY, jobId); } catch {}
         const data = await streamDraftJob(jobId, (fullTextSoFar) => {
+          if (cancelledRef.current) return;
           setDraftStreamText(fullTextSoFar);
         });
+        if (cancelledRef.current) return;
         try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
         setPkg(null);
         setDraftResult(data);
         toast.success("Policy drafted", { description: data.policy_title });
       } catch (e: any) {
+        if (cancelledRef.current) return;
         const msg = e.message || "Draft failed.";
         setError(msg);
         toast.error("Draft Failed", { description: msg });
         try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
       } finally {
-        setLoading(false);
-        setDraftStreamText("");
+        if (!cancelledRef.current) {
+          setLoading(false);
+          setDraftStreamText("");
+        }
       }
     } else {
       if (!text.trim()) { setLoading(false); return; }
@@ -633,6 +645,7 @@ export default function Index() {
       setPkgStreaming(false);
       let firstUpdate = true;
       const onUpdate = (partialPkg: ComplianceActionPackage) => {
+        if (cancelledRef.current) return;
         setDraftResult(null);
         setPkg(partialPkg);
         if (firstUpdate) {
@@ -646,20 +659,44 @@ export default function Index() {
         // persisted to localStorage so we can reattach if the user tabs away,
         // navigates, or reloads the page mid-analysis.
         const jobId = await startActionPackageJob(text, fileName, industry, jurisdiction, true);
+        if (cancelledRef.current) return;
         try { localStorage.setItem(JOB_KEY, jobId); } catch {}
         await streamActionPackageJob(jobId, onUpdate);
+        if (cancelledRef.current) return;
         try { localStorage.removeItem(JOB_KEY); } catch {}
         toast.success("Analysis complete", { description: "All outputs ready" });
       } catch (e: any) {
+        if (cancelledRef.current) return;
         const msg = e.message || "Generation failed.";
         setError(msg);
         toast.error("Generation Failed", { description: msg });
         setLoading(false);
         try { localStorage.removeItem(JOB_KEY); } catch {}
       } finally {
-        setPkgStreaming(false);
+        if (!cancelledRef.current) setPkgStreaming(false);
       }
     }
+  };
+
+  /** Cancel button on the loading screen — stops waiting immediately and
+   * tells the server to actually stop the generation (not just abandon it). */
+  const cancelGeneration = () => {
+    cancelledRef.current = true;
+    if (mode === "draft") {
+      let jobId: string | null = null;
+      try { jobId = localStorage.getItem(DRAFT_JOB_KEY); } catch {}
+      try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+      if (jobId) cancelDraftJob(jobId);
+      setDraftStreamText("");
+    } else {
+      let jobId: string | null = null;
+      try { jobId = localStorage.getItem(JOB_KEY); } catch {}
+      try { localStorage.removeItem(JOB_KEY); } catch {}
+      if (jobId) cancelActionPackageJob(jobId);
+      setPkgStreaming(false);
+    }
+    setLoading(false);
+    setError("");
   };
 
   const reset = () => {
@@ -965,6 +1002,15 @@ export default function Index() {
                 </p>
               </div>
             )}
+            <p className="text-[10px] text-muted-foreground/70 text-center px-4 max-w-sm">
+              This keeps running on the server even if you leave this screen — you can safely come back later.
+            </p>
+            <button
+              onClick={cancelGeneration}
+              className="font-mono text-[10px] font-bold tracking-wider px-5 py-2.5 rounded-xl neu-btn active:neu-pressed transition-all touch-manipulation"
+            >
+              CANCEL
+            </button>
           </div>
         )}
 
