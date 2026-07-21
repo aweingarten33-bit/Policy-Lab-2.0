@@ -143,6 +143,7 @@ class LLMProvider:
                     timeout=_timeout_for(tokens),
                     num_retries=0,
                     stream=True,
+                    thinking={"type": "disabled"},
                 )
                 async for chunk in stream:
                     delta = chunk.choices[0].delta.content
@@ -245,6 +246,7 @@ class LLMProvider:
             temperature=temperature,
             timeout=_timeout_for(max_tokens),
             num_retries=0,
+            thinking={"type": "disabled"},
         )
 
         content = response.choices[0].message.content
@@ -286,6 +288,7 @@ class LLMProvider:
             temperature=temperature,
             timeout=_timeout_for(max_tokens),
             num_retries=0,
+            thinking={"type": "disabled"},
         )
         content = response.choices[0].message.content
         if not content or not content.strip():
