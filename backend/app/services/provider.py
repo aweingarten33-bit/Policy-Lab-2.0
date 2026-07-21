@@ -49,6 +49,23 @@ def _timeout_for(max_tokens: int) -> float:
     return _MODEL_TIMEOUT_LONG if max_tokens >= 2000 else _MODEL_TIMEOUT
 
 
+def _safe_message_dump(message) -> str:
+    """
+    Dump every field on a litellm response message for diagnosing an empty
+    content field -- e.g. some reasoning-capable models expose chain-of-thought
+    in a separate field (reasoning_content, thinking, etc.) distinct from the
+    final-answer content field. If that's happening, this shows it; if it's
+    genuinely empty across the board, this rules that theory out instead of
+    leaving it as an unconfirmed guess.
+    """
+    try:
+        if hasattr(message, "model_dump"):
+            return repr(message.model_dump())
+        return repr(vars(message))
+    except Exception as e:
+        return f"<could not introspect message: {e}>"
+
+
 class LLMProvider:
     """
     Cascade LLM provider — tries each configured model in order until one succeeds.
@@ -232,6 +249,11 @@ class LLMProvider:
 
         content = response.choices[0].message.content
         if not content or not content.strip():
+            logger.error(
+                f"Empty response from {model}. finish_reason={response.choices[0].finish_reason!r}, "
+                f"usage={getattr(response, 'usage', None)!r}, "
+                f"message_fields={_safe_message_dump(response.choices[0].message)}"
+            )
             raise ValueError(f"Empty response from {model}")
 
         finish_reason = response.choices[0].finish_reason
@@ -267,6 +289,11 @@ class LLMProvider:
         )
         content = response.choices[0].message.content
         if not content or not content.strip():
+            logger.error(
+                f"Ensemble empty response from {model}. finish_reason={response.choices[0].finish_reason!r}, "
+                f"usage={getattr(response, 'usage', None)!r}, "
+                f"message_fields={_safe_message_dump(response.choices[0].message)}"
+            )
             raise ValueError(f"Empty response from {model}")
         if response.choices[0].finish_reason == "length":
             raise ValueError(
