@@ -32,6 +32,10 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 litellm.suppress_debug_info = True
+# Some models (e.g. claude-opus-4-8) reject params other models accept fine
+# (it only supports temperature=1). Drop unsupported params per-model instead
+# of erroring out, so the same call site works across the whole cascade.
+litellm.drop_params = True
 
 # How long (seconds) to wait for any single model before giving up and trying the next.
 # Long-form policy generation (max_tokens >= 2000) uses _MODEL_TIMEOUT_LONG since
