@@ -53,14 +53,15 @@ class Settings(BaseSettings):
     def llm_cascade_models(self) -> List[str]:
         """
         Returns the ordered list of models to try, based on which API keys are set.
-        Order: Claude Opus 4.8 (primary — best calibration/lowest hallucination rate of
-        any flagship model, which matters most for citation-grounded compliance findings)
+        Order: Claude Sonnet 5 (primary — same account/key as Opus, meaningfully
+        faster wall-clock per request; Opus's extra reasoning depth wasn't worth
+        the latency for this tool's turnaround requirements)
         → OpenAI → Groq → Gemini Flash → Mistral Small → OpenRouter free tier.
         Models whose keys are missing are skipped automatically.
         """
         cascade = []
         if self.anthropic_api_key:
-            cascade.append("anthropic/claude-opus-4-8")              # primary — best-calibrated, lowest hallucination rate
+            cascade.append("anthropic/claude-sonnet-5")               # primary — fast, same key as Opus
         if self.openai_api_key:
             cascade.append("gpt-4o-mini")                            # fallback — fast, handles everything
         if self.groq_api_key:
