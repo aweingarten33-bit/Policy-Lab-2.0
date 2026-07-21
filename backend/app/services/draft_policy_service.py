@@ -179,6 +179,7 @@ async def draft_policy(
         user_message=user_message,
         max_tokens=settings.llm_max_tokens_long,
         temperature=0.3,
+        models=settings.llm_cascade_models_draft,
     )
     return parse_draft_response(raw_text)
 
@@ -202,5 +203,6 @@ async def draft_policy_stream(
         user_message=user_message,
         max_tokens=settings.llm_max_tokens_long,
         temperature=0.3,
+        models=settings.llm_cascade_models_draft,
     ):
         yield chunk

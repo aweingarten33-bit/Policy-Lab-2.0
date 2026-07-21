@@ -66,10 +66,15 @@ class LLMProvider:
         user_message: str,
         max_tokens: Optional[int] = None,
         temperature: float = 0.3,
+        models: Optional[List[str]] = None,
     ) -> str:
         """
         Send a completion request. Returns the raw text response.
         Automatically cascades through all configured providers on failure.
+
+        `models` overrides the default cascade (settings.llm_cascade_models)
+        when a specific call site needs a different model preference order
+        (e.g. drafting prefers a different primary than gap analysis).
 
         FIX: Previously synchronous — blocked the event loop on every call.
         Now runs the blocking cascade in a thread so FastAPI stays responsive.
@@ -81,7 +86,7 @@ class LLMProvider:
         ]
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None, lambda: self._cascade(messages, tokens, temperature)
+            None, lambda: self._cascade(messages, tokens, temperature, models)
         )
 
     async def complete_stream(
@@ -90,6 +95,7 @@ class LLMProvider:
         user_message: str,
         max_tokens: Optional[int] = None,
         temperature: float = 0.3,
+        models: Optional[List[str]] = None,
     ):
         """
         Same cascade as complete(), but yields text chunks as they arrive instead
@@ -97,13 +103,15 @@ class LLMProvider:
         cascade only if a model fails before yielding any content — once a model
         has started streaming, later models are not attempted, since the client
         has already seen partial output from this one.
+
+        `models` overrides the default cascade, same as in complete().
         """
         tokens = max_tokens or self._max_tokens
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
-        cascade = settings.llm_cascade_models
+        cascade = models or settings.llm_cascade_models
         last_error: Optional[Exception] = None
 
         for model in cascade:
@@ -165,9 +173,9 @@ class LLMProvider:
 
     # ── Internal cascade (runs in thread) ────────────────────────────────────
 
-    def _cascade(self, messages: List[dict], tokens: int, temperature: float) -> str:
+    def _cascade(self, messages: List[dict], tokens: int, temperature: float, models: Optional[List[str]] = None) -> str:
         """Try each model in the cascade until one succeeds."""
-        cascade = settings.llm_cascade_models
+        cascade = models or settings.llm_cascade_models
         last_error: Optional[Exception] = None
 
         logger.info(f"Cascade: {len(cascade)} model(s) available: {', '.join(cascade)}")

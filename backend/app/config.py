@@ -49,33 +49,47 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
     }
 
-    @property
-    def llm_cascade_models(self) -> List[str]:
-        """
-        Returns the ordered list of models to try, based on which API keys are set.
-        Order: Claude Haiku 4.5 (primary — same account/key as Opus/Sonnet, the
-        fast tier of the Claude lineup; prioritizing turnaround speed over
-        Opus/Sonnet's deeper reasoning per explicit request)
-        → OpenAI → Groq → Gemini Flash → Mistral Small → OpenRouter free tier.
-        Models whose keys are missing are skipped automatically.
-        """
-        cascade = []
-        if self.anthropic_api_key:
-            cascade.append("anthropic/claude-haiku-4-5-20251001")      # primary — fast tier, same key as Opus/Sonnet
-        if self.openai_api_key:
-            cascade.append("gpt-4o-mini")                            # fallback — fast, handles everything
-        if self.groq_api_key:
-            cascade.append("groq/llama-3.3-70b-versatile")           # fallback
-        if self.gemini_api_key:
-            cascade.append("gemini/gemini-2.0-flash")                # fallback
-        if self.mistral_api_key:
-            cascade.append("mistral/mistral-small-latest")           # fallback
-        if self.openrouter_api_key:
-            cascade.append("openrouter/meta-llama/llama-3.3-70b-instruct:free")
-        # Always have at least one model to try
+    def _build_cascade(self, preference_order: List[tuple]) -> List[str]:
+        """preference_order: list of (api_key_attr_name, model_string), most preferred first.
+        Entries whose key isn't set are skipped automatically."""
+        cascade = [model for key_attr, model in preference_order if getattr(self, key_attr)]
         if not cascade:
             cascade.append("gemini/gemini-2.0-flash")
         return cascade
+
+    @property
+    def llm_cascade_models(self) -> List[str]:
+        """
+        Cascade for gap analysis / chat / everything except drafting. Claude
+        primary — citation accuracy and audit-grade reasoning matter most here,
+        and Analyze already streams progress so its wait is less painful.
+        """
+        return self._build_cascade([
+            ("anthropic_api_key", "anthropic/claude-haiku-4-5-20251001"),
+            ("openai_api_key", "gpt-4o-mini"),
+            ("groq_api_key", "groq/llama-3.3-70b-versatile"),
+            ("gemini_api_key", "gemini/gemini-2.0-flash"),
+            ("mistral_api_key", "mistral/mistral-small-latest"),
+            ("openrouter_api_key", "openrouter/meta-llama/llama-3.3-70b-instruct:free"),
+        ])
+
+    @property
+    def llm_cascade_models_draft(self) -> List[str]:
+        """
+        Cascade for policy drafting specifically. Gemini primary — fastest of
+        the three paid providers and the one Harvey (comparable legal-AI
+        product) reports as their strongest model for drafting specifically.
+        Retrieval/live-research context is identical regardless of which
+        model ends up writing; only the writing step itself changes.
+        """
+        return self._build_cascade([
+            ("gemini_api_key", "gemini/gemini-2.0-flash"),
+            ("anthropic_api_key", "anthropic/claude-haiku-4-5-20251001"),
+            ("openai_api_key", "gpt-4o-mini"),
+            ("groq_api_key", "groq/llama-3.3-70b-versatile"),
+            ("mistral_api_key", "mistral/mistral-small-latest"),
+            ("openrouter_api_key", "openrouter/meta-llama/llama-3.3-70b-instruct:free"),
+        ])
 
     @property
     def cors_origin_list(self) -> List[str]:
