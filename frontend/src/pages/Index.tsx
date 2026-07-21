@@ -23,6 +23,12 @@ import { toast } from "sonner";
 const JOB_KEY = "tpl_active_job";
 const DRAFT_JOB_KEY = "tpl_active_draft_job";
 
+function formatElapsed(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return m > 0 ? `${m}:${s.toString().padStart(2, "0")}` : `${s}s`;
+}
+
 // ── Demo samples ──
 // Realistic-but-flawed sample policy so first-time visitors can see what
 // the analyzer actually does on a real document.
@@ -986,6 +992,12 @@ export default function Index() {
               {mode === "draft"
                 ? (draftStreamText ? "writing your policy..." : loadSec < 6 ? "reviewing your requirements..." : "structuring the policy...")
                 : (loadSec < 8 ? "reading your policy..." : loadSec < 18 ? "finding the gaps..." : loadSec < 30 ? "scoring exposure..." : "finalizing the analysis...")}
+            </p>
+            {/* Elapsed time counts UP, not down -- generation time genuinely varies
+                (document complexity, model load), so a countdown could hit zero
+                while still running, which reads as broken. An honest range instead. */}
+            <p className="font-mono text-[11px] text-muted-foreground tabular-nums">
+              {formatElapsed(loadSec)} elapsed — usually takes {mode === "draft" ? "30s–2 min" : "1–3 min"}
             </p>
             {mode === "draft" && draftStreamText && (
               <div className="w-full max-w-xl mx-4 max-h-48 overflow-y-auto rounded-xl neu-inset px-4 py-3">
