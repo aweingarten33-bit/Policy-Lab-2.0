@@ -755,12 +755,13 @@ export default function Index() {
               <button
                 onClick={async () => { setCertExporting(true); try { await exportCertificate(pkg, pkg.policy_type); toast.success("Certificate downloaded"); } catch(e:any){toast.error("Certificate failed",{description:e.message});} finally { setCertExporting(false); } }}
                 disabled={certExporting}
+                title="Downloads a one-page compliance attestation certificate summarizing this analysis, as a Word document."
                 className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-muted-foreground transition-all tracking-wider touch-manipulation disabled:opacity-60 hidden sm:inline-flex items-center gap-1.5"
               >
-                {certExporting ? <><Loader2 className="w-3 h-3 animate-spin" />...</> : <><Award className="w-3 h-3" />Certificate</>}
+                {certExporting ? <><Loader2 className="w-3 h-3 animate-spin" />...</> : <><Award className="w-3 h-3" />Download Certificate (.docx)</>}
               </button>
-              <button onClick={handleDownloadGapAnalysis} disabled={exporting} title="Download Gap Analysis (.docx)" className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-foreground transition-all tracking-wider touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
-                {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}Gap Analysis
+              <button onClick={handleDownloadGapAnalysis} disabled={exporting} title="Downloads the full gap analysis report — every finding, citation, and suggested policy language — as a Word document." className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-foreground transition-all tracking-wider touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
+                {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}Report (.docx)
               </button>
               <button onClick={reset} className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-muted-foreground transition-all tracking-wider touch-manipulation">New</button>
             </>
@@ -1040,15 +1041,17 @@ export default function Index() {
                       setDraftExporting(false);
                     }
                   }}
+                  title="Downloads this complete policy document, formatted and ready to review, as a Word file."
                   className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn active:neu-pressed touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
                 >
                   <FileDown className="w-3.5 h-3.5" />
-                  {draftExporting ? "EXPORTING..." : "DOWNLOAD .DOCX"}
+                  {draftExporting ? "DOWNLOADING..." : "DOWNLOAD POLICY (.DOCX)"}
                 </button>
                 <button
                   onClick={() => { navigator.clipboard.writeText(draftResult.full_text); toast.success("Policy copied to clipboard"); }}
+                  title="Copies the full policy text to your clipboard instead of downloading a file."
                   className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl neu-btn touch-manipulation"
-                 
+
                 >
                   COPY TEXT
                 </button>
@@ -1057,6 +1060,9 @@ export default function Index() {
                 </button>
               </div>
             </div>
+            <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+              <strong className="text-foreground/80 font-medium">Download Policy</strong> gets you the full drafted document as an editable Word file (.docx), ready to review, revise, and adopt.
+            </p>
 
             {draftResult.scope && (
               <div className="rounded-xl neu-sm p-4">
@@ -1147,6 +1153,12 @@ export default function Index() {
                 </div>
               )}
             </div>
+
+            <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+              Downloads (top right): <strong className="text-foreground/80 font-medium">Report</strong> is the full gap analysis — every finding, citation, and drop-in policy language. <strong className="text-foreground/80 font-medium hidden sm:inline">Certificate</strong>
+              <span className="hidden sm:inline"> is a one-page attestation summarizing this analysis for your records.</span>
+              <span className="sm:hidden"> The certificate download is available on larger screens.</span>
+            </p>
 
             {/* Tab content */}
             {activeTab === "overview" && <OverviewTab pkg={pkg} />}
