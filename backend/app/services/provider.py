@@ -42,7 +42,7 @@ litellm.drop_params = True
 # 4000-token rewrites legitimately take 60-90s on gpt-4o-mini and we don't want to
 # bail to a worse model just because the primary is producing a real long answer.
 _MODEL_TIMEOUT = 45.0
-_MODEL_TIMEOUT_LONG = 120.0
+_MODEL_TIMEOUT_LONG = 180.0
 
 
 def _timeout_for(max_tokens: int) -> float:
@@ -162,6 +162,13 @@ class LLMProvider:
         if not content or not content.strip():
             raise ValueError(f"Empty response from {model}")
 
+        finish_reason = response.choices[0].finish_reason
+        if finish_reason == "length":
+            raise ValueError(
+                f"{model} hit the max_tokens={max_tokens} limit before finishing its answer "
+                f"(response was {len(content)} chars). Raise max_tokens or shorten the request."
+            )
+
         logger.info(f"LLM response: {len(content)} chars from {model}")
         return content
 
@@ -189,6 +196,11 @@ class LLMProvider:
         content = response.choices[0].message.content
         if not content or not content.strip():
             raise ValueError(f"Empty response from {model}")
+        if response.choices[0].finish_reason == "length":
+            raise ValueError(
+                f"{model} hit the max_tokens={max_tokens} limit before finishing its answer "
+                f"(response was {len(content)} chars). Raise max_tokens or shorten the request."
+            )
         logger.info(f"Ensemble response: {len(content)} chars from {model}")
         return content
 
