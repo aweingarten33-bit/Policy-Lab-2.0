@@ -1,0 +1,7 @@
+.git
+policy-lab-extracted
+frontend/node_modules
+frontend/dist
+backend/**/__pycache__
+backend/knowledge_base
+**/*.pyc
