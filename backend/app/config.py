@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""         # platform.openai.com — paid
 
     # ── Model Configuration ──
-    llm_max_tokens: int = 24000       # gap analysis
-    llm_max_tokens_long: int = 24000  # rewrite, action plan, board summary, etc.
+    llm_max_tokens: int = 8000        # gap analysis
+    llm_max_tokens_long: int = 8000   # rewrite, action plan, board summary, etc.
 
     # ── Legacy fields (kept for backward compat) ──
     llm_primary_model: str = "gemini/gemini-2.0-flash"
