@@ -135,6 +135,10 @@ class LLMProvider:
                     finish_reason = chunk.choices[0].finish_reason
                     if finish_reason == "length":
                         logger.warning(f"{model} stream hit max_tokens={tokens} before finishing")
+                        raise ValueError(
+                            f"{model} hit the max_tokens={tokens} limit before finishing its answer. "
+                            f"Raise max_tokens or shorten the request."
+                        )
                 return
             except Exception as e:
                 if started:

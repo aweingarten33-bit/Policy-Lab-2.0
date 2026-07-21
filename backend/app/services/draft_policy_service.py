@@ -54,23 +54,28 @@ Return ONLY valid JSON — no markdown fences, no preamble. The sections array M
   "version": "1.0",
   "regulations_applied": ["Every regulation/statute/guidance this policy was written to satisfy"],
   "sections": [
-    { "title": "I. Purpose", "content": "Full text — why this policy exists and what it achieves." },
-    { "title": "II. Scope", "content": "Full text — who is covered, what activities, which locations/entities." },
-    { "title": "III. Definitions", "content": "Full text — every defined term used in this policy, with definitions." },
-    { "title": "IV. Policy Statement", "content": "Full text — the core policy position and commitments, multiple paragraphs." },
-    { "title": "V. Procedures", "content": "Full text — step-by-step procedures, numbered where appropriate, with regulatory citations inline." },
-    { "title": "VI. Roles and Responsibilities", "content": "Full text — who is responsible for what, by role or title." },
-    { "title": "VII. Recordkeeping", "content": "Full text — what records must be kept, retention periods, storage requirements." },
-    { "title": "VIII. Violations and Consequences", "content": "Full text — what constitutes a violation, reporting process, disciplinary consequences." },
-    { "title": "IX. References", "content": "Full text — all statutes, regulations, guidance documents, and internal policies referenced." },
-    { "title": "X. Review and Revision Schedule", "content": "Full text — how often reviewed, who is responsible, version control." }
+    { "title": "I. Purpose", "content": "2-4 sentences — why this policy exists and what it achieves." },
+    { "title": "II. Scope", "content": "2-4 sentences — who is covered, what activities, which locations/entities." },
+    { "title": "III. Definitions", "content": "One sentence per term, only terms actually used elsewhere in this policy — not a general glossary." },
+    { "title": "IV. Policy Statement", "content": "3-6 sentences — the core policy position and commitments." },
+    { "title": "V. Procedures", "content": "Numbered steps, each one sentence: the action, the actor, and the timeframe. Cover the real procedure end-to-end without enumerating every hypothetical edge case." },
+    { "title": "VI. Roles and Responsibilities", "content": "One to two sentences per role — who is responsible for what." },
+    { "title": "VII. Recordkeeping", "content": "2-4 sentences — what records must be kept, retention periods, storage requirements." },
+    { "title": "VIII. Violations and Consequences", "content": "2-4 sentences — what constitutes a violation, reporting process, disciplinary consequences." },
+    { "title": "IX. References", "content": "A list of the statutes, regulations, and guidance documents actually cited above — no additional prose." },
+    { "title": "X. Review and Revision Schedule", "content": "1-3 sentences — how often reviewed, who is responsible, version control." }
   ],
   "drafting_notes": "2-3 sentences: regulatory frameworks applied, any 2024-2026 updates incorporated, and what legal review is recommended before adoption."
 }
 
 Do NOT include a "full_text" field in your JSON output. It is assembled from "sections"
 after parsing — writing the whole document a second time as one block wastes output
-budget better spent on section depth."""
+budget better spent on section depth.
+
+Keep every section focused and complete, not exhaustive — this is a policy document,
+not a training manual or a legal brief. State the rule, the responsible role, and the
+timeframe; do not enumerate every hypothetical scenario or edge case. A tightly-written
+real policy beats a padded one."""
 
     return prompt
 
