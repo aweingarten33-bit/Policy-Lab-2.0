@@ -169,11 +169,11 @@ failed analysis.
 
       "risk_level": "critical | high | moderate | low | compliant — the regulatory consequence of the gap, not your subjective sense of importance.",
 
-      "current_state": "Direct quote OR close paraphrase of the EXACT policy language on this topic, in quotation marks where quoted. If the policy is silent, write: 'Policy is silent — no provision addresses [specific obligation].' If the policy partially addresses it, quote what IS there and identify what is missing. This field proves you read the actual document and is the audit-day evidence record.",
+      "current_state": "1–3 sentences: direct quote OR close paraphrase of the EXACT policy language on this topic, in quotation marks where quoted. If the policy is silent, write: 'Policy is silent — no provision addresses [specific obligation].' If the policy partially addresses it, quote what IS there and identify what is missing. This field proves you read the actual document and is the audit-day evidence record.",
 
       "finding": "3–6 sentences. Walk the four-axis evaluation: which axes pass, which fail, why. Name the specific deficiency (vagueness, missing role assignment, no timeframe, no evidence trail, no escalation path, etc.). State the audit-day exposure: what document a regulator would demand and whether it would exist; what interview question they would ask and what the answer would reveal. End with the counterfactual: if a violation occurred tomorrow, why this policy as written would not survive scrutiny.",
 
-      "suggested_language": "DROP-IN POLICY TEXT — fully drafted, multi-sentence, ready to paste. MUST include: named role/title with authority, specific timeframe in hours/days, measurable threshold or trigger event, documentation/evidence requirement (form, log, attestation), and inline regulatory citation. NEVER write 'the organization should consider' — write the actual operational language. Length proportional to severity: critical findings warrant a full paragraph or sub-procedure.",
+      "suggested_language": "DROP-IN POLICY TEXT — fully drafted, ready to paste. MUST include: named role/title with authority, specific timeframe in hours/days, measurable threshold or trigger event, documentation/evidence requirement (form, log, attestation), and inline regulatory citation. NEVER write 'the organization should consider' — write the actual operational language. Cap at 3–5 sentences even for critical findings — this is drop-in clause text, not a sub-procedure; deeper analysis belongs in the finding field, not here.",
 
       "citation": "Full statutory/regulatory authority for the obligation: title + part + section + subsection + year (and source publication where guidance, e.g., 'HHS OCR FAQ on Right of Access, 2023'). Multiple citations joined with semicolons when needed. Generic refs are rejected.",
 
@@ -214,10 +214,12 @@ OIG GCPG 7 Elements (healthcare only — exact format for oig_element field):
 SCALE & DEPTH REQUIREMENTS
 ═══════════════════════════════════════════════════════════════════════════════
 
-gap_table: 10–18 rows for any non-trivial policy. Cover every distinct
-regulatory dimension applicable. Do not pad with duplicate findings — each row
-is a distinct obligation. Sparse output (<8 rows) is a failed analysis on any
-healthcare or education policy.
+gap_table: 8–14 rows for any non-trivial policy. Cover every distinct
+regulatory dimension applicable, prioritizing the highest enforcement-risk
+obligations first. Do not pad with duplicate findings — each row is a distinct
+obligation. Sparse output (<8 rows) is a failed analysis on any healthcare or
+education policy. If more than 14 distinct obligations apply, cover the 14
+highest-risk ones in full depth rather than covering all of them shallowly.
 
 Every row MUST populate: clause, regulations (≥1), status, risk_level,
 current_state, finding, suggested_language, citation, remediation_priority.

@@ -65,9 +65,12 @@ Return ONLY valid JSON — no markdown fences, no preamble. The sections array M
     { "title": "IX. References", "content": "Full text — all statutes, regulations, guidance documents, and internal policies referenced." },
     { "title": "X. Review and Revision Schedule", "content": "Full text — how often reviewed, who is responsible, version control." }
   ],
-  "full_text": "The complete policy as a single continuous document with all ten sections, formatted with section headers. Ready to sign and adopt.",
   "drafting_notes": "2-3 sentences: regulatory frameworks applied, any 2024-2026 updates incorporated, and what legal review is recommended before adoption."
-}"""
+}
+
+Do NOT include a "full_text" field in your JSON output. It is assembled from "sections"
+after parsing — writing the whole document a second time as one block wastes output
+budget better spent on section depth."""
 
     return prompt
 
@@ -154,6 +157,13 @@ async def draft_policy(
             )
         elif not isinstance(content, str):
             section["content"] = str(content)
+
+    # Built here instead of by the model — asking it to write the entire document a
+    # second time as one block roughly doubled output size and was the main driver
+    # of responses getting truncated before the JSON could close.
+    data["full_text"] = "\n\n".join(
+        f"{s.get('title', '')}\n\n{s.get('content', '')}" for s in data.get("sections", [])
+    )
 
     logger.info(f"Policy drafted: {data.get('policy_title', 'Untitled')} — {len(data.get('sections', []))} sections")
     return data
