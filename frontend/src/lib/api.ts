@@ -727,6 +727,70 @@ export async function draftPolicy(
 }
 
 /**
+ * Same as draftPolicy(), but streams text as it's generated via SSE. Calls
+ * onDelta with each text chunk as it arrives (for a live "typing" preview),
+ * then resolves with the final parsed DraftedPolicy once generation completes.
+ */
+export async function draftPolicyStream(
+  policyDescription: string,
+  industry: string | undefined,
+  jurisdiction: string | undefined,
+  onDelta: (chunk: string) => void,
+): Promise<DraftedPolicy> {
+  const response = await fetch(`${API_BASE}/api/draft-policy-stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      policy_description: policyDescription,
+      industry: industry || "other",
+      jurisdiction: jurisdiction || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: "Draft failed" }));
+    throw new Error(errorData.detail || `Draft failed (${response.status})`);
+  }
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalPolicy: DraftedPolicy | null = null;
+  let finalError: string | null = null;
+  let terminal = false;
+
+  while (!terminal) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.delta) onDelta(data.delta as string);
+        if (data.done) {
+          finalPolicy = data.policy as DraftedPolicy;
+          terminal = true;
+        }
+        if (data.error) {
+          finalError = data.error;
+          terminal = true;
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message !== "Unexpected end of JSON input") throw e;
+      }
+    }
+  }
+
+  if (finalError) throw new Error(finalError);
+  if (!finalPolicy) throw new Error("No response received from server");
+  return finalPolicy;
+}
+
+/**
  * Start an action-package job on the server. Returns a job_id immediately;
  * the actual analysis runs in the background on the server, so it survives
  * tab-switches, navigation, and brief network drops.

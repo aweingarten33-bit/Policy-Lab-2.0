@@ -209,6 +209,55 @@ async def draft_policy_endpoint(request: DraftPolicyRequest):
         )
 
 
+@app.post("/api/draft-policy-stream")
+async def draft_policy_stream_endpoint(request: DraftPolicyRequest):
+    """SSE version of /api/draft-policy — streams text as it's generated so the
+    UI can show live progress instead of a blank spinner for the full ~1-2 min."""
+    import json as _json
+    from app.services.draft_policy_service import draft_policy_stream, parse_draft_response
+
+    async def event_stream():
+        raw_text = ""
+        try:
+            async for chunk in draft_policy_stream(
+                policy_description=request.policy_description,
+                industry=request.industry,
+                jurisdiction=request.jurisdiction,
+            ):
+                raw_text += chunk
+                yield f"data: {_json.dumps({'delta': chunk})}\n\n"
+
+            data = parse_draft_response(raw_text)
+            sections = [
+                {"title": s.get("title", ""), "content": s.get("content", "")}
+                for s in data.get("sections", [])
+            ]
+            policy = {
+                "policy_title": data.get("policy_title", "Drafted Policy"),
+                "effective_date": data.get("effective_date"),
+                "version": data.get("version", "1.0"),
+                "scope": data.get("scope"),
+                "regulations_applied": data.get("regulations_applied", []),
+                "sections": sections,
+                "full_text": data.get("full_text", ""),
+                "drafting_notes": data.get("drafting_notes"),
+            }
+            yield f"data: {_json.dumps({'done': True, 'policy': policy})}\n\n"
+        except Exception as e:
+            logger.error(f"Draft stream error: {e}")
+            yield f"data: {_json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def compliance_chat(request: ChatRequest):
     """

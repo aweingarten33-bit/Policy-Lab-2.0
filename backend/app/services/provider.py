@@ -84,6 +84,66 @@ class LLMProvider:
             None, lambda: self._cascade(messages, tokens, temperature)
         )
 
+    async def complete_stream(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.3,
+    ):
+        """
+        Same cascade as complete(), but yields text chunks as they arrive instead
+        of waiting for the full response. Falls back to the next model in the
+        cascade only if a model fails before yielding any content — once a model
+        has started streaming, later models are not attempted, since the client
+        has already seen partial output from this one.
+        """
+        tokens = max_tokens or self._max_tokens
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+        cascade = settings.llm_cascade_models
+        last_error: Optional[Exception] = None
+
+        for model in cascade:
+            started = False
+            try:
+                logger.info(f"Streaming LLM: {model} (max_tokens={tokens})")
+                stream = await litellm.acompletion(
+                    model=model,
+                    messages=messages,
+                    max_tokens=tokens,
+                    temperature=temperature,
+                    timeout=_timeout_for(tokens),
+                    num_retries=0,
+                    stream=True,
+                )
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        started = True
+                        yield delta
+                    finish_reason = chunk.choices[0].finish_reason
+                    if finish_reason == "length":
+                        logger.warning(f"{model} stream hit max_tokens={tokens} before finishing")
+                return
+            except Exception as e:
+                if started:
+                    # Already streamed partial content to the client — can't cleanly
+                    # switch models mid-stream, so surface the failure instead of
+                    # silently retrying with a different model's output spliced on.
+                    raise
+                short_err = str(e)[:120].replace("\n", " ")
+                logger.warning(f"Stream model {model} failed before any output [{type(e).__name__}]: {short_err}")
+                last_error = e
+                continue
+
+        raise RuntimeError(
+            f"All AI providers are currently unavailable. Tried: {', '.join(cascade)}. "
+            f"Last error: {type(last_error).__name__}: {str(last_error)[:200]}"
+        ) from last_error
+
     async def complete_chat(
         self,
         system_prompt: str,

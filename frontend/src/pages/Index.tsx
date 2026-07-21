@@ -9,7 +9,7 @@ import { extractText } from "@/lib/extract-text";
 import { linkifyRegulations, lookupRegulationUrl } from "@/lib/regulation-links";
 import {
   generateActionPackage, generateActionPackageStream, startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, exportGapAnalysis, exportDraftPolicy, healthCheck,
-  getIndustries, draftPolicy, sendChatMessage, exportCertificate,
+  getIndustries, draftPolicy, draftPolicyStream, sendChatMessage, exportCertificate,
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
   type DraftedPolicy, type ChatMessage, type RewrittenPolicy, type RewrittenPolicySection, type RedlineChange,
@@ -235,6 +235,7 @@ export default function Index() {
   });
   const [loading, setLoading] = useState(false);
   const [pkgStreaming, setPkgStreaming] = useState(false);
+  const [draftStreamText, setDraftStreamText] = useState("");
   const [loadSec, setLoadSec] = useState(0);
   const [error, setError] = useState("");
   const [drag, setDrag] = useState(false);
@@ -532,8 +533,11 @@ export default function Index() {
 
     if (mode === "draft") {
       if (!draftDesc.trim()) { setLoading(false); return; }
+      setDraftStreamText("");
       try {
-        const data = await draftPolicy(draftDesc, industry, jurisdiction);
+        const data = await draftPolicyStream(draftDesc, industry, jurisdiction, (chunk) => {
+          setDraftStreamText((prev) => prev + chunk);
+        });
         setPkg(null);
         setDraftResult(data);
         toast.success("Policy drafted", { description: data.policy_title });
@@ -543,6 +547,7 @@ export default function Index() {
         toast.error("Draft Failed", { description: msg });
       } finally {
         setLoading(false);
+        setDraftStreamText("");
       }
     } else {
       if (!text.trim()) { setLoading(false); return; }
@@ -872,9 +877,16 @@ export default function Index() {
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: "hsl(var(--primary))" }} />
             <p className="font-mono text-xs font-medium text-center px-4" style={{ color: "hsl(var(--primary))" }}>
               {mode === "draft"
-                ? (loadSec < 6 ? "reviewing your requirements..." : loadSec < 12 ? "structuring the policy..." : loadSec < 18 ? "writing the clauses..." : loadSec < 25 ? "finalizing the language..." : "almost there...")
+                ? (draftStreamText ? "writing your policy..." : loadSec < 6 ? "reviewing your requirements..." : "structuring the policy...")
                 : (loadSec < 8 ? "reading your policy..." : loadSec < 18 ? "finding the gaps..." : loadSec < 30 ? "scoring exposure..." : "finalizing the analysis...")}
             </p>
+            {mode === "draft" && draftStreamText && (
+              <div className="w-full max-w-xl mx-4 max-h-48 overflow-y-auto rounded-xl neu-inset px-4 py-3">
+                <p className="font-mono text-[10px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
+                  {draftStreamText.slice(-1200)}
+                </p>
+              </div>
+            )}
           </div>
         )}
 

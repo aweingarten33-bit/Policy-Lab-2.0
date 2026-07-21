@@ -90,16 +90,12 @@ def _build_draft_user_prompt(policy_description: str, industry_slug: str, jurisd
     return prompt
 
 
-async def draft_policy(
+async def _prepare_draft(
     policy_description: str,
-    industry: Optional[str] = None,
-    jurisdiction: Optional[str] = None,
-) -> dict:
-    """
-    Generate a complete policy document from a plain-English description.
-    Returns a dict with policy_title, full_text, sections, regulations_applied, etc.
-    """
-    provider = get_provider()
+    industry: Optional[str],
+    jurisdiction: Optional[str],
+) -> tuple[str, str]:
+    """Build the system/user prompts, injecting KB reference material if found."""
     industry_slug = industry or "healthcare"
 
     system_prompt = _build_draft_system_prompt(industry_slug, jurisdiction)
@@ -123,17 +119,14 @@ async def draft_policy(
         )
         logger.info(f"Draft KB: {ctx.total_sources_found} reference chunks injected")
 
-    raw_text = await provider.complete(
-        system_prompt=system_prompt,
-        user_message=user_message,
-        max_tokens=settings.llm_max_tokens_long,
-        temperature=0.3,
-    )
+    return system_prompt, user_message
 
+
+def parse_draft_response(raw_text: str) -> dict:
+    """Parse the model's raw JSON response into the drafted-policy dict."""
     if not raw_text.strip():
         raise ValueError("Empty response from model")
 
-    # Parse JSON response
     cleaned = re.sub(r"```(?:json)?\s*", "", raw_text)
     cleaned = re.sub(r"```\s*", "", cleaned)
     match = re.search(r"\{[\s\S]*\}", cleaned)
@@ -167,3 +160,47 @@ async def draft_policy(
 
     logger.info(f"Policy drafted: {data.get('policy_title', 'Untitled')} — {len(data.get('sections', []))} sections")
     return data
+
+
+async def draft_policy(
+    policy_description: str,
+    industry: Optional[str] = None,
+    jurisdiction: Optional[str] = None,
+) -> dict:
+    """
+    Generate a complete policy document from a plain-English description.
+    Returns a dict with policy_title, full_text, sections, regulations_applied, etc.
+    """
+    provider = get_provider()
+    system_prompt, user_message = await _prepare_draft(policy_description, industry, jurisdiction)
+
+    raw_text = await provider.complete(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        max_tokens=settings.llm_max_tokens_long,
+        temperature=0.3,
+    )
+    return parse_draft_response(raw_text)
+
+
+async def draft_policy_stream(
+    policy_description: str,
+    industry: Optional[str] = None,
+    jurisdiction: Optional[str] = None,
+):
+    """
+    Same as draft_policy(), but yields raw text chunks as they're generated
+    instead of waiting for the full response. The caller is responsible for
+    accumulating the chunks and calling parse_draft_response() once the
+    generator is exhausted.
+    """
+    provider = get_provider()
+    system_prompt, user_message = await _prepare_draft(policy_description, industry, jurisdiction)
+
+    async for chunk in provider.complete_stream(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        max_tokens=settings.llm_max_tokens_long,
+        temperature=0.3,
+    ):
+        yield chunk
