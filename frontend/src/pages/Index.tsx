@@ -616,11 +616,12 @@ export default function Index() {
     if (mode === "draft") {
       if (!draftDesc.trim()) { setLoading(false); return; }
       setDraftStreamText("");
+      let jobId: string | null = null;
       try {
         // Kick off the draft as a background job so it survives tabbing away,
         // backgrounding the app, or navigating off this screen. The job_id is
         // persisted to localStorage so we can reattach on remount/reload.
-        const jobId = await startDraftJob(draftDesc, industry, jurisdiction);
+        jobId = await startDraftJob(draftDesc, industry, jurisdiction);
         if (cancelledRef.current) return;
         try { localStorage.setItem(DRAFT_JOB_KEY, jobId); } catch {}
         const data = await streamDraftJob(jobId, (fullTextSoFar) => {
@@ -634,10 +635,38 @@ export default function Index() {
         toast.success("Policy drafted", { description: data.policy_title });
       } catch (e: any) {
         if (cancelledRef.current) return;
-        const msg = e.message || "Draft failed.";
-        setError(msg);
-        toast.error("Draft Failed", { description: msg });
-        try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+        // The SSE connection can drop (tab backgrounded, network blip) without
+        // the server-side job actually failing -- check the real state before
+        // declaring failure and discarding the job key.
+        let resolved = false;
+        try {
+          const snapshot = jobId ? await getDraftJobStatus(jobId) : null;
+          if (cancelledRef.current) return;
+          if (snapshot?.status === "complete" && snapshot.policy) {
+            setPkg(null);
+            setDraftResult(snapshot.policy);
+            toast.success("Policy drafted", { description: snapshot.policy.policy_title });
+            try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+            resolved = true;
+          } else if (snapshot?.status === "running") {
+            toast.info("Connection lost", { description: "Still generating on the server — check back in a bit and it'll pick up where it left off." });
+            resolved = true;
+          } else if (snapshot?.status === "error") {
+            const msg = snapshot.error || "Draft failed.";
+            setError(msg);
+            toast.error("Draft Failed", { description: msg });
+            try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+            resolved = true;
+          }
+        } catch {
+          // Status check itself failed too -- fall through to generic handling.
+        }
+        if (!resolved) {
+          const msg = e.message || "Draft failed.";
+          setError(msg);
+          toast.error("Draft Failed", { description: msg });
+          try { localStorage.removeItem(DRAFT_JOB_KEY); } catch {}
+        }
       } finally {
         if (!cancelledRef.current) {
           setLoading(false);
@@ -659,11 +688,12 @@ export default function Index() {
           setPkgStreaming(true);
         }
       };
+      let jobId: string | null = null;
       try {
         // Kick off the analysis as a background job on the server. The job_id is
         // persisted to localStorage so we can reattach if the user tabs away,
         // navigates, or reloads the page mid-analysis.
-        const jobId = await startActionPackageJob(text, fileName, industry, jurisdiction, true);
+        jobId = await startActionPackageJob(text, fileName, industry, jurisdiction, true);
         if (cancelledRef.current) return;
         try { localStorage.setItem(JOB_KEY, jobId); } catch {}
         await streamActionPackageJob(jobId, onUpdate);
@@ -672,11 +702,41 @@ export default function Index() {
         toast.success("Analysis complete", { description: "All outputs ready" });
       } catch (e: any) {
         if (cancelledRef.current) return;
-        const msg = e.message || "Generation failed.";
-        setError(msg);
-        toast.error("Generation Failed", { description: msg });
-        setLoading(false);
-        try { localStorage.removeItem(JOB_KEY); } catch {}
+        // The SSE connection can drop (tab backgrounded, network blip) without
+        // the server-side job actually failing -- check the real state before
+        // declaring failure and discarding the job key.
+        let resolved = false;
+        try {
+          const snapshot = jobId ? await getActionPackageJobStatus(jobId) : null;
+          if (cancelledRef.current) return;
+          if (snapshot?.status === "complete" && snapshot.package) {
+            setDraftResult(null);
+            setPkg(snapshot.package);
+            setLoading(false);
+            toast.success("Analysis complete", { description: "All outputs ready" });
+            try { localStorage.removeItem(JOB_KEY); } catch {}
+            resolved = true;
+          } else if (snapshot?.status === "running") {
+            toast.info("Connection lost", { description: "Still running on the server — check back in a bit and it'll pick up where it left off." });
+            setLoading(false);
+            resolved = true;
+          } else if (snapshot?.status === "error") {
+            const msg = snapshot.error || "Generation failed.";
+            setError(msg);
+            toast.error("Generation Failed", { description: msg });
+            try { localStorage.removeItem(JOB_KEY); } catch {}
+            resolved = true;
+          }
+        } catch {
+          // Status check itself failed too -- fall through to generic handling.
+        }
+        if (!resolved) {
+          const msg = e.message || "Generation failed.";
+          setError(msg);
+          toast.error("Generation Failed", { description: msg });
+          setLoading(false);
+          try { localStorage.removeItem(JOB_KEY); } catch {}
+        }
       } finally {
         if (!cancelledRef.current) setPkgStreaming(false);
       }
