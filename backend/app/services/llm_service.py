@@ -315,7 +315,7 @@ def _parse_llm_response(raw_text: str) -> AnalysisResult:
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError as e:
-        logger.error(f"JSON parse error: {e}")
+        logger.error(f"JSON parse error: {e}. Response length: {len(json_str)} chars. Tail: {json_str[-300:]!r}")
         raise ValueError(f"Invalid JSON in model response: {e}")
 
     gap_table = []

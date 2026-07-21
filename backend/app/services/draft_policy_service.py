@@ -123,7 +123,7 @@ async def draft_policy(
     raw_text = await provider.complete(
         system_prompt=system_prompt,
         user_message=user_message,
-        max_tokens=4000,
+        max_tokens=settings.llm_max_tokens_long,
         temperature=0.3,
     )
 
@@ -140,6 +140,7 @@ async def draft_policy(
     try:
         data = json.loads(match.group(0))
     except json.JSONDecodeError as e:
+        logger.error(f"Draft JSON parse error: {e}. Response length: {len(match.group(0))} chars. Tail: {match.group(0)[-300:]!r}")
         raise ValueError(f"Invalid JSON from model: {e}")
 
     # Normalize sections: GPT sometimes returns content as a nested dict of subsections.
