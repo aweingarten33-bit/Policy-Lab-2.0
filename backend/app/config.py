@@ -60,12 +60,16 @@ class Settings(BaseSettings):
     @property
     def llm_cascade_models(self) -> List[str]:
         """
-        Cascade for gap analysis / chat / everything except drafting. Claude
-        primary — citation accuracy and audit-grade reasoning matter most here,
+        Cascade for gap analysis / chat / everything except drafting. Sonnet 5
+        primary -- Haiku was faster but proved unreliable at actually obeying
+        the prompt's length constraints, causing repeated max_tokens failures
+        even after tightening them twice. Sonnet follows instructions more
+        precisely, so far fewer wasted 1-3 minute waits that end in failure.
+        Citation accuracy and audit-grade reasoning matter most here anyway,
         and Analyze already streams progress so its wait is less painful.
         """
         return self._build_cascade([
-            ("anthropic_api_key", "anthropic/claude-haiku-4-5-20251001"),
+            ("anthropic_api_key", "anthropic/claude-sonnet-5"),
             ("openai_api_key", "gpt-4o-mini"),
             ("groq_api_key", "groq/llama-3.3-70b-versatile"),
             ("gemini_api_key", "gemini/gemini-2.0-flash"),
