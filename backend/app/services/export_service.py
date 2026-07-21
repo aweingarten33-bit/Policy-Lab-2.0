@@ -1279,9 +1279,26 @@ def _build_footer_section(doc: Document):
 # ──────────────────────────────────────────────
 
 def generate_docx(result: AnalysisResult, file_name: Optional[str] = None) -> bytes:
-    """Generate a clean, template-style .docx gap analysis report and return as bytes."""
+    """Generate a clean, template-style .docx gap analysis report and return as bytes.
+    Opens with a one-page certificate-style summary (score, rating, finding counts,
+    regulations reviewed, review cadence) before the detailed findings -- this used
+    to require a separate certificate download for the same information."""
     doc = Document()
     _setup_document(doc)
+    _build_certificate_content(
+        doc,
+        policy_type=result.policy_type,
+        score=result.compliance_score,
+        critical=result.critical_count,
+        gap_count=result.gap_count,
+        partial=result.partial_count,
+        compliant=result.compliant_count,
+        regulations=result.regulations_applied,
+        review_freq=result.review_frequency or "Annual",
+        next_review=result.next_review_recommended or "",
+        date_str=datetime.now().strftime("%B %d, %Y"),
+    )
+    doc.add_page_break()
     _build_gap_analysis_section(doc, result, file_name=file_name)
 
     buffer = io.BytesIO()
@@ -1511,37 +1528,26 @@ def generate_updated_policy_export(
 
 # ── Compliance Certificate ──
 
-def generate_compliance_certificate(pkg_dict: dict) -> bytes:
+def _build_certificate_content(
+    doc: Document,
+    *,
+    policy_type: str,
+    score: Optional[float],
+    critical: int,
+    gap_count: int,
+    partial: int,
+    compliant: int,
+    regulations: List[str],
+    review_freq: str,
+    next_review: str,
+    date_str: str,
+):
     """
-    Generate a professional one-page compliance assessment certificate.
-    Suitable for filing with regulators, accreditors, or boards.
+    Builds the one-page certificate-style summary: score/rating banner, finding
+    counts, regulations reviewed, and review cadence. Shared by the standalone
+    certificate export and the gap analysis report, which now opens with this
+    as page 1 instead of requiring a separate download for the same summary.
     """
-    doc = Document()
-
-    # Narrow margins for a certificate feel
-    for section in doc.sections:
-        section.top_margin = Cm(1.8)
-        section.bottom_margin = Cm(1.8)
-        section.left_margin = Cm(2.2)
-        section.right_margin = Cm(2.2)
-
-    gap = pkg_dict.get("gap_analysis", {})
-    policy_type = gap.get("policy_type") or pkg_dict.get("policy_type", "Compliance Assessment")
-    score = gap.get("compliance_score")
-    critical = gap.get("critical_count", 0)
-    gap_count = gap.get("gap_count", 0)
-    partial = gap.get("partial_count", 0)
-    compliant = gap.get("compliant_count", 0)
-    regulations = gap.get("regulations_applied", [])
-    review_freq = gap.get("review_frequency", "Annual")
-    next_review = gap.get("next_review_recommended", "")
-    created_at = pkg_dict.get("created_at", datetime.now().isoformat())
-    try:
-        date_obj = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-        date_str = date_obj.strftime("%B %d, %Y")
-    except Exception:
-        date_str = datetime.now().strftime("%B %d, %Y")
-
     # ── Header bar ──
     hdr = doc.add_paragraph()
     hdr.paragraph_format.space_before = Pt(0)
@@ -1759,6 +1765,43 @@ def generate_compliance_certificate(pkg_dict: dict) -> bytes:
         italic=True,
         space_before=40,
         space_after=0,
+    )
+
+
+def generate_compliance_certificate(pkg_dict: dict) -> bytes:
+    """
+    Generate a professional one-page compliance assessment certificate.
+    Suitable for filing with regulators, accreditors, or boards.
+    """
+    doc = Document()
+
+    # Narrow margins for a certificate feel
+    for section in doc.sections:
+        section.top_margin = Cm(1.8)
+        section.bottom_margin = Cm(1.8)
+        section.left_margin = Cm(2.2)
+        section.right_margin = Cm(2.2)
+
+    gap = pkg_dict.get("gap_analysis", {})
+    created_at = pkg_dict.get("created_at", datetime.now().isoformat())
+    try:
+        date_obj = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        date_str = date_obj.strftime("%B %d, %Y")
+    except Exception:
+        date_str = datetime.now().strftime("%B %d, %Y")
+
+    _build_certificate_content(
+        doc,
+        policy_type=gap.get("policy_type") or pkg_dict.get("policy_type", "Compliance Assessment"),
+        score=gap.get("compliance_score"),
+        critical=gap.get("critical_count", 0),
+        gap_count=gap.get("gap_count", 0),
+        partial=gap.get("partial_count", 0),
+        compliant=gap.get("compliant_count", 0),
+        regulations=gap.get("regulations_applied", []),
+        review_freq=gap.get("review_frequency", "Annual"),
+        next_review=gap.get("next_review_recommended", ""),
+        date_str=date_str,
     )
 
     buf = io.BytesIO()

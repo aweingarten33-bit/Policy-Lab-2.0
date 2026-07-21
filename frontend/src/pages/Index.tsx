@@ -2,14 +2,14 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   FileDown, Loader2, Shield, AlertTriangle, CheckCircle2, ChevronDown, MapPin,
   FileText, RefreshCw, GitCompare, LayoutDashboard,
-  Download, X, MessageCircle, Send, Award, ChevronRight, ChevronLeft,
+  Download, X, MessageCircle, Send, ChevronRight, ChevronLeft,
   CalendarClock, MessageSquare, RotateCcw, Wand2, HelpCircle, ArrowRight,
 } from "lucide-react";
 import { extractText } from "@/lib/extract-text";
 import { linkifyRegulations, lookupRegulationUrl } from "@/lib/regulation-links";
 import {
   generateActionPackage, generateActionPackageStream, startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, cancelActionPackageJob, exportGapAnalysis, exportDraftPolicy, healthCheck,
-  getIndustries, draftPolicy, startDraftJob, streamDraftJob, getDraftJobStatus, cancelDraftJob, sendChatMessage, exportCertificate,
+  getIndustries, draftPolicy, startDraftJob, streamDraftJob, getDraftJobStatus, cancelDraftJob, sendChatMessage,
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
   type DraftedPolicy, type ChatMessage, type RewrittenPolicy, type RewrittenPolicySection, type RedlineChange,
@@ -289,7 +289,6 @@ export default function Index() {
     try { const s = localStorage.getItem("tpl_draftResult"); return s ? JSON.parse(s) : null; } catch { return null; }
   });
   const [draftExporting, setDraftExporting] = useState(false);
-  const [certExporting, setCertExporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ── Chat state ──
@@ -752,15 +751,7 @@ export default function Index() {
           )}
           {pkg && !loading && (
             <>
-              <button
-                onClick={async () => { setCertExporting(true); try { await exportCertificate(pkg, pkg.policy_type); toast.success("Certificate downloaded"); } catch(e:any){toast.error("Certificate failed",{description:e.message});} finally { setCertExporting(false); } }}
-                disabled={certExporting}
-                title="Downloads a one-page compliance attestation certificate summarizing this analysis, as a Word document."
-                className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-muted-foreground transition-all tracking-wider touch-manipulation disabled:opacity-60 hidden sm:inline-flex items-center gap-1.5"
-              >
-                {certExporting ? <><Loader2 className="w-3 h-3 animate-spin" />...</> : <><Award className="w-3 h-3" />Download Certificate (.docx)</>}
-              </button>
-              <button onClick={handleDownloadGapAnalysis} disabled={exporting} title="Downloads the full gap analysis report — every finding, citation, and suggested policy language — as a Word document." className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-foreground transition-all tracking-wider touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
+              <button onClick={handleDownloadGapAnalysis} disabled={exporting} title="Downloads the full gap analysis report as a Word document — opens with a one-page compliance certificate summary (score, rating, finding counts), followed by every finding, citation, and suggested policy language." className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-foreground transition-all tracking-wider touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
                 {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}Report (.docx)
               </button>
               <button onClick={reset} className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-muted-foreground transition-all tracking-wider touch-manipulation">New</button>
@@ -1155,9 +1146,7 @@ export default function Index() {
             </div>
 
             <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
-              Downloads (top right): <strong className="text-foreground/80 font-medium">Report</strong> is the full gap analysis — every finding, citation, and drop-in policy language. <strong className="text-foreground/80 font-medium hidden sm:inline">Certificate</strong>
-              <span className="hidden sm:inline"> is a one-page attestation summarizing this analysis for your records.</span>
-              <span className="sm:hidden"> The certificate download is available on larger screens.</span>
+              <strong className="text-foreground/80 font-medium">Report (.docx)</strong> — opens with a one-page compliance certificate (score, rating, finding counts), followed by every finding, citation, and drop-in policy language.
             </p>
 
             {/* Tab content */}
