@@ -1266,7 +1266,7 @@ export default function Index() {
           Disclaimer: This tool uses AI to generate content and may produce inaccuracies. All output must be reviewed before official use. Final judgment and responsibility remain with the end user.
         </p>
         <p className="text-[10px] text-muted-foreground/35 font-mono tracking-wider">
-          <a href="/legal" className="hover:text-muted-foreground transition-colors underline-offset-2 hover:underline">Legal &amp; Disclaimers</a>
+          <a href="/legal" target="_blank" rel="noopener noreferrer" className="hover:text-muted-foreground transition-colors underline-offset-2 hover:underline">Legal &amp; Disclaimers</a>
           <span className="mx-2">·</span>
           Built by Andrew Weingarten
         </p>
