@@ -1,5 +1,7 @@
 FROM python:3.11-slim
 
+LABEL redeploy_trigger="force-latest-commit"
+
 WORKDIR /app
 
 # Install system deps needed by pdfplumber / chromadb
