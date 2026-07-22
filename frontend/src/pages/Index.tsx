@@ -1328,6 +1328,39 @@ export default function Index() {
                       <div key={i}>
                         <h3 className="text-[13px] font-bold text-foreground mb-2 uppercase tracking-wide">{sec.section_title}</h3>
                         <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(sec.rewritten_text)}</p>
+                        {(sec.changes_summary || sec.regulation_refs?.length > 0) && (
+                          <div className="mt-2 pl-3 border-l-2" style={{ borderColor: "hsl(0 72% 51% / 0.4)" }}>
+                            {sec.changes_summary && (
+                              <p className="text-[11px] text-foreground/70 leading-relaxed">
+                                <span className="font-mono font-bold uppercase tracking-wide mr-1" style={{ color: "hsl(0 72% 48%)" }}>Changed:</span>
+                                {sec.changes_summary}
+                              </p>
+                            )}
+                            {sec.regulation_refs?.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {sec.regulation_refs.map((reg, ri) => {
+                                  const url = lookupRegulationUrl(reg);
+                                  return url ? (
+                                    <a
+                                      key={ri}
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title={`Open source: ${url}`}
+                                      className="text-[9px] font-mono px-1.5 py-0.5 rounded-lg inline-flex items-center gap-1 hover:underline"
+                                      style={{ background: "hsl(var(--primary)/0.08)", color: "hsl(var(--primary))" }}
+                                    >
+                                      {reg}
+                                      <span aria-hidden="true">↗</span>
+                                    </a>
+                                  ) : (
+                                    <span key={ri} className="text-[9px] font-mono px-1.5 py-0.5 rounded-lg" style={{ background: "hsl(var(--primary)/0.08)", color: "hsl(var(--primary))" }}>{reg}</span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )) : (
                       <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(pkg.rewritten_policy.full_text)}</p>
