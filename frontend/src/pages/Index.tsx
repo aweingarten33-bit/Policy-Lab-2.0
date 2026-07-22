@@ -329,8 +329,8 @@ export default function Index() {
   // applying its result, so an abandoned job can't pop a stale result/toast
   // back onto the screen after the user has already left.
   const cancelledRef = useRef(false);
-  // Severity filter: when user taps a tile (Critical/Gap/Partial/Compliant) on the overview, jump to gap tab and filter rows.
-  const [severityFilter, setSeverityFilter] = useState<"critical" | "gap" | "partial" | "compliant" | null>(null);
+  // Severity filter for the Gap Analysis tab's filter chips (Critical/High/Moderate).
+  const [severityFilter, setSeverityFilter] = useState<"critical" | "gap" | "partial" | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const DRAFT_PLACEHOLDERS: Record<string, string> = {
     healthcare: [
@@ -1497,9 +1497,7 @@ function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
 }
 
 
-function GapAnalysisTab({ result, urlMap, severityFilter, onChangeFilter }: { result: AnalysisResult; urlMap?: Record<string, string>; severityFilter?: "critical" | "gap" | "partial" | "compliant" | null; onChangeFilter?: (s: "critical" | "gap" | "partial" | "compliant" | null) => void }) {
-  const nonCompliant = result.gap_table.filter((r) => r.status !== "compliant");
-  const compliantItems = result.gap_table.filter((r) => r.status === "compliant");
+function GapAnalysisTab({ result, urlMap, severityFilter, onChangeFilter }: { result: AnalysisResult; urlMap?: Record<string, string>; severityFilter?: "critical" | "gap" | "partial" | null; onChangeFilter?: (s: "critical" | "gap" | "partial" | null) => void }) {
   const criticalItems = result.gap_table.filter((r) => r.risk_level === "critical");
 
   // Inline filter chips — one row of buttons, each shows count, tap to narrow the list. "All" resets.
@@ -1508,7 +1506,6 @@ function GapAnalysisTab({ result, urlMap, severityFilter, onChangeFilter }: { re
     { key: "critical" as const,  label: "Critical",  count: result.gap_table.filter((r) => r.risk_level === "critical").length, color: "hsl(0 72% 48%)" },
     { key: "gap" as const,       label: "High",      count: result.gap_table.filter((r) => r.status === "gap").length,          color: "hsl(25 90% 44%)" },
     { key: "partial" as const,   label: "Moderate",  count: result.gap_table.filter((r) => r.status === "partial").length,      color: "hsl(38 85% 44%)" },
-    { key: "compliant" as const, label: "Compliant", count: result.gap_table.filter((r) => r.status === "compliant").length,    color: "hsl(160 60% 36%)" },
   ];
 
   const filterPredicate = severityFilter
@@ -1561,23 +1558,13 @@ function GapAnalysisTab({ result, urlMap, severityFilter, onChangeFilter }: { re
             </div>
           )}
 
-          {nonCompliant.length > 0 && (
+          {result.gap_table.length > 0 && (
             <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground font-medium px-1">
-              Fix these {nonCompliant.length} issue{nonCompliant.length !== 1 ? "s" : ""}
+              Fix these {result.gap_table.length} issue{result.gap_table.length !== 1 ? "s" : ""}
             </p>
           )}
 
-          {nonCompliant.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} />)}
-
-          {compliantItems.length > 0 && (
-            <details className="group">
-              <summary className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground font-medium px-1 cursor-pointer list-none flex items-center gap-2 select-none">
-                <ChevronDown className="w-3 h-3 transition-transform duration-200 group-open:rotate-180" />
-                {compliantItems.length} compliant area{compliantItems.length !== 1 ? "s" : ""}
-              </summary>
-              <div className="mt-3">{compliantItems.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} />)}</div>
-            </details>
-          )}
+          {result.gap_table.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} />)}
         </>
       )}
     </div>
