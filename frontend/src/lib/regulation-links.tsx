@@ -37,6 +37,41 @@ const CURATED_RULES: Rule[] = [
     pattern: /\b42\s*C\.?F\.?R\.?\s*Part\s*2\b/gi,
     url: () => `https://www.ecfr.gov/current/title-42/chapter-I/subchapter-A/part-2`,
   },
+  // 42 CFR §484.XX (Home Health Conditions of Participation)
+  {
+    pattern: /\b42\s*C\.?F\.?R\.?\s*§?\s*484\.(\d{1,3})(?:\([a-z0-9]+\))*/gi,
+    url: (m) => `https://www.ecfr.gov/current/title-42/section-484.${m[1]}`,
+  },
+  // 42 CFR Part 484
+  {
+    pattern: /\b42\s*C\.?F\.?R\.?\s*Part\s*484\b/gi,
+    url: () => `https://www.ecfr.gov/current/title-42/part-484`,
+  },
+  // 42 CFR §424.XX (Conditions for Medicare Payment, incl. face-to-face encounter)
+  {
+    pattern: /\b42\s*C\.?F\.?R\.?\s*§?\s*424\.(\d{1,3})(?:\([a-z0-9]+\))*/gi,
+    url: (m) => `https://www.ecfr.gov/current/title-42/section-424.${m[1]}`,
+  },
+  // 29 CFR §1630.XX (ADA Employment Regulations)
+  {
+    pattern: /\b29\s*C\.?F\.?R\.?\s*§?\s*1630\.(\d{1,3})(?:\([a-z0-9]+\))*/gi,
+    url: (m) => `https://www.ecfr.gov/current/title-29/section-1630.${m[1]}`,
+  },
+  // 29 CFR Part 1630 / 1604
+  {
+    pattern: /\b29\s*C\.?F\.?R\.?\s*Part\s*(1630|1604)\b/gi,
+    url: (m) => `https://www.ecfr.gov/current/title-29/part-${m[1]}`,
+  },
+  // 29 CFR §825.XX (FMLA)
+  {
+    pattern: /\b29\s*C\.?F\.?R\.?\s*§?\s*825\.(\d{1,3})(?:\([a-z0-9]+\))*/gi,
+    url: (m) => `https://www.ecfr.gov/current/title-29/section-825.${m[1]}`,
+  },
+  // 29 CFR Part 825
+  {
+    pattern: /\b29\s*C\.?F\.?R\.?\s*Part\s*825\b/gi,
+    url: () => `https://www.ecfr.gov/current/title-29/part-825`,
+  },
   // Named rules
   {
     pattern: /\bHIPAA\s+Privacy\s+Rule\b/gi,

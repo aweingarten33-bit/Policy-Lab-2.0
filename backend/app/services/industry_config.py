@@ -3,8 +3,8 @@ Industry Configuration — Defines all supported compliance verticals.
 
 Each industry entry specifies:
   - Display metadata (name, icon, description)
-  - eCFR regulatory targets (title, part, label, category)
-  - Federal Register agency filters for live research
+  - eCFR regulatory targets (title, part, label, category) — feeds the
+    knowledge base seeder via ecfr_client.ECFR_TARGETS
   - LLM persona for the system prompt
   - Key regulations to check
   - State-specific addendum template
@@ -23,11 +23,6 @@ INDUSTRIES: dict = {
             (45, 164, "45 CFR Part 164 — HIPAA Privacy, Security & Breach Notification", SourceCategory.federal_regulation),
             (42, 2,   "42 CFR Part 2 — Substance Abuse Confidentiality", SourceCategory.federal_regulation),
             (42, 482, "42 CFR Part 482 — Conditions of Participation (Hospitals)", SourceCategory.federal_regulation),
-        ],
-        "fr_agencies": [
-            "health-and-human-services-department",
-            "centers-for-medicare-medicaid-services",
-            "office-for-civil-rights-hhs",
         ],
         "live_research_sources": [
             "hhs_regulations", "ocr_enforcement", "cms_guidance", "oig_advisory", "federal_register"
@@ -94,11 +89,6 @@ INDUSTRIES: dict = {
             (45, 160, "45 CFR Part 160 — General HIPAA Provisions", SourceCategory.federal_regulation),
             (45, 164, "45 CFR Part 164 — HIPAA Privacy, Security & Breach Notification", SourceCategory.federal_regulation),
             (42, 424, "42 CFR Part 424 — Conditions for Medicare Payment (Face-to-Face Encounter)", SourceCategory.federal_regulation),
-        ],
-        "fr_agencies": [
-            "centers-for-medicare-medicaid-services",
-            "health-and-human-services-department",
-            "office-for-civil-rights-hhs",
         ],
         "live_research_sources": [
             "hhs_regulations", "cms_guidance", "oig_advisory", "federal_register"
@@ -171,7 +161,6 @@ INDUSTRIES: dict = {
             (29, 1604, "29 CFR Part 1604 — Sex Discrimination Guidelines", SourceCategory.federal_regulation),
             (29, 825,  "29 CFR Part 825 — FMLA Regulations", SourceCategory.federal_regulation),
         ],
-        "fr_agencies": ["federal-register", "equal-employment-opportunity-commission", "labor-department"],
         "live_research_sources": ["federal_register"],
         "persona": (
             "You are a senior generalist compliance attorney and policy expert in the United States. "
