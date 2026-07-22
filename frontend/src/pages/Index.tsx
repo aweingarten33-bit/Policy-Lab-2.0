@@ -877,7 +877,7 @@ export default function Index() {
                     Upload your policy.<br />See what's missing.
                   </h1>
                   <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
-                    Get a compliance gap analysis with regulations cited, plus a corrected version you can download.
+                    Get a policy gap analysis with regulations cited, plus a corrected version you can download.
                   </p>
                 </>
               )}
