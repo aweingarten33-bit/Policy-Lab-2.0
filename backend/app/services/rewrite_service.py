@@ -8,6 +8,7 @@ import re
 import logging
 from typing import Optional
 
+from app.config import settings
 from app.services.provider import get_provider
 from app.services.industry_config import get_industry
 from app.models.schemas import AnalysisResult, RewrittenPolicy, RewrittenPolicySection
@@ -137,11 +138,13 @@ GAP ANALYSIS FINDINGS (fix ALL of these):
     raw_response = await provider.complete(
         system_prompt=_build_rewrite_system_prompt(industry),
         user_message=user_message,
-        # Capped at 2500 (down from 4000) to keep rewrite wall-clock under ~45s
-        # on gpt-4o-mini. Andrew explicitly chose shorter rewrites over longer
-        # waits. Action-plan, checklist, and remediation calls still use the
-        # full long ceiling — this cap is rewrite-only.
-        max_tokens=2500,
+        # Same ceiling as draft_policy_service — a full rewrite addressing
+        # several findings across 6-10 sections is comparable in size to a
+        # fresh draft. This is a ceiling, not a target: the prompt instructs
+        # conciseness and the model stops at its natural finish point either
+        # way, so this only matters for policies that genuinely need the room
+        # instead of getting cut off mid-response (was hardcoded to 2500).
+        max_tokens=settings.llm_max_tokens_long,
         temperature=0.2,
     )
 
