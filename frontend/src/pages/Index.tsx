@@ -320,9 +320,8 @@ export default function Index() {
   const [correctedExporting, setCorrectedExporting] = useState(false);
   const [industry, setIndustry] = useState("healthcare");
   const [industries, setIndustries] = useState<IndustryOption[]>(FALLBACK_INDUSTRIES);
-  const [city, setCity] = useState("");
   const [stateCode, setStateCode] = useState("");
-  const jurisdiction = [city.trim(), stateCode].filter(Boolean).join(", ");
+  const jurisdiction = stateCode;
   const [backendOnline, setBackendOnline] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   // Set true the instant the user hits Cancel. Any generation in flight
@@ -939,27 +938,18 @@ export default function Index() {
                   </select>
                   <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
-                <div className="flex items-stretch gap-2.5">
-                  <input
-                    type="text"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="City (optional)"
-                    className="aqua-rain text-[14px] px-4 py-3 rounded-xl text-foreground placeholder:text-muted-foreground/60 focus:outline-none flex-1 min-w-0"
-                  />
-                  <div className="relative flex-1 min-w-0">
-                    <select
-                      value={stateCode}
-                      onChange={(e) => setStateCode(e.target.value)}
-                      className="aqua-rain w-full text-[14px] px-4 py-3 pr-10 rounded-xl text-foreground focus:outline-none cursor-pointer appearance-none"
-                    >
-                      <option value="">State</option>
-                      {["AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"].map(s => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                  </div>
+                <div className="relative">
+                  <select
+                    value={stateCode}
+                    onChange={(e) => setStateCode(e.target.value)}
+                    className="aqua-rain w-full text-[14px] px-4 py-3 pr-10 rounded-xl text-foreground focus:outline-none cursor-pointer appearance-none"
+                  >
+                    <option value="">State (optional)</option>
+                    {["AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
                 {jurisdiction && (
                   <span className="text-[10px] font-mono text-primary/70 font-medium">{jurisdiction}</span>
