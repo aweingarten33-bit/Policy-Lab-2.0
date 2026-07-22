@@ -1,7 +1,7 @@
 """
 LLM Service — Calls LLM for policy gap analysis.
 Industry-aware: routes to the correct regulatory persona and framework
-based on the selected industry (healthcare, education, hoa).
+based on the selected industry (healthcare, home_health, other).
 API key is read from environment variables ONLY. Never hard-coded.
 No policy text is stored — stateless processing.
 """
@@ -179,7 +179,7 @@ failed analysis.
 
       "remediation_priority": "Immediate | 30-day | 90-day | Next-review — based on enforcement risk and operational feasibility.",
 
-      "oig_element": "Healthcare ONLY — the OIG GCPG element this finding maps to, formatted exactly as: '3 — Training & Education'. Use the canonical 7-element list. Omit for non-healthcare industries."
+      "oig_element": "Healthcare & Home Health ONLY — the OIG GCPG element this finding maps to, formatted exactly as: '3 — Training & Education'. Use the canonical 7-element list. Omit for non-healthcare industries."
     }
   ],
 
@@ -223,7 +223,7 @@ specific reasoning when enforcement context warrants):
   partial    → moderate → 90-day
   compliant  → compliant → N/A
 
-OIG GCPG 7 Elements (healthcare only — exact format for oig_element field):
+OIG GCPG 7 Elements (Healthcare & Home Health industries only — exact format for oig_element field):
   1 — Written Policies & Procedures
   2 — Compliance Leadership & Oversight
   3 — Training & Education
@@ -244,7 +244,7 @@ above) — never pad to reach 6.
 
 Every row MUST populate: clause, regulations (≥1), status, risk_level,
 current_state, finding, suggested_language, citation, remediation_priority.
-oig_element is required for healthcare and omitted otherwise.
+oig_element is required for Healthcare & Home Health industries and omitted otherwise.
 
 priority_findings: UP TO 4 entries, one sentence each — fewer is fine if
 there aren't 4 genuinely high-priority items.

@@ -353,8 +353,10 @@ class LiveResearchService:
         if needs_freshness and "federal_register" not in sources:
             sources.append("federal_register")
 
-        # Healthcare: add CMS for billing/medicare policy types
-        if industry == "healthcare" or not industry:
+        # Healthcare and home health: add CMS for billing/medicare policy types.
+        # Home health is Medicare-centric by default (CoPs, PDGM billing, OASIS)
+        # even more than general healthcare, so it gets the same treatment.
+        if industry in ("healthcare", "home_health") or not industry:
             if policy_type and any(kw in policy_type.lower() for kw in ["cms", "medicare", "medicaid", "billing"]):
                 if "cms_guidance" not in sources:
                     sources.append("cms_guidance")

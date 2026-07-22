@@ -69,10 +69,8 @@ This policy is reviewed by the office manager every two to three years.`;
 const SAMPLE_DRAFT_DESCRIPTIONS: Record<string, string> = {
   healthcare:
     "HIPAA workforce sanctions policy for a 50-bed acute care hospital in NYC. Should cover progressive discipline for unauthorized PHI access, repeat offenders, and accidental vs. willful violations. Need to align with 45 CFR 164.530(e) and our state breach notification timelines.",
-  education:
-    "Mandatory child abuse reporting policy for a licensed childcare center in NYC. Should cover what staff must observe, who they must call (NY SCR), how fast, what documentation we keep, and confidentiality. Align with NY Social Services Law 413 and NYC DOHMH Article 47.",
-  hoa:
-    "55+ age verification policy for a HOPA-qualified condo association in Florida. Cover initial verification at sale, biennial recertification, exceptions for spouses and surviving residents, and documentation we must keep on file. Align with HOPA and Florida condo statutes.",
+  home_health:
+    "Home health aide supervision policy for a Medicare-certified home health agency in NY. Should cover RN supervisory visit cadence for aide-only patients, competency evaluation, documentation requirements, and what happens if a supervisory visit is missed. Align with 42 CFR 484.80 and NY home care licensure.",
   other:
     "Whistleblower and non-retaliation policy for a 30-person nonprofit. Cover protected disclosures, who reports go to, confidentiality, investigation steps, and protections against retaliation.",
 };
@@ -229,8 +227,7 @@ function SourceBadge({ attribution, urlMap }: { attribution?: SourceAttribution;
 
 const FALLBACK_INDUSTRIES: IndustryOption[] = [
   { slug: "healthcare", name: "Healthcare", icon: "🏥", description: "Hospitals, clinics, health plans, covered entities" },
-  { slug: "education", name: "Education / Childcare", icon: "🏫", description: "Private schools, preschools, childcare centers, franchises" },
-  { slug: "hoa", name: "HOA / 55+ Communities", icon: "🏘️", description: "Homeowners associations, age-restricted 55+ communities" },
+  { slug: "home_health", name: "Home Health", icon: "🏠", description: "Medicare-certified home health agencies, home care agencies" },
   { slug: "other", name: "Other / General", icon: "📋", description: "Any organization — best practices and inferred regulations" },
 ];
 
@@ -268,13 +265,9 @@ export default function Index() {
       'e.g. "HIPAA workforce training policy for a hospital"',
       'e.g. "Security incident response policy for a medical practice"',
     ].join("\n"),
-    education: [
-      'e.g. "Code of conduct for students and families at a preschool"',
-      'e.g. "Mandatory child abuse reporting policy for a childcare center"',
-    ].join("\n"),
-    hoa: [
-      'e.g. "55+ age verification policy for an HOA community"',
-      'e.g. "Grievance and dispute resolution policy for a homeowners association"',
+    home_health: [
+      'e.g. "Home health aide supervision policy for a Medicare-certified agency"',
+      'e.g. "Patient rights policy for a home health agency per 42 CFR 484.50"',
     ].join("\n"),
     other: [
       'e.g. "Remote work policy for a small business"',

@@ -120,7 +120,7 @@ class AnalysisRequest(BaseModel):
     file_name: Optional[str] = Field(None, description="Original file name, if uploaded")
     industry: Optional[str] = Field(
         "healthcare",
-        description="Industry vertical: 'healthcare', 'education', 'hoa'. Determines which regulations are applied."
+        description="Industry vertical: 'healthcare', 'home_health', 'other'. Determines which regulations are applied."
     )
     jurisdiction: Optional[str] = Field(
         None,
@@ -454,7 +454,7 @@ class ActionPackageRequest(BaseModel):
     file_name: Optional[str] = Field(None, description="Original file name, if uploaded")
     industry: Optional[str] = Field(
         "healthcare",
-        description="Industry vertical: 'healthcare', 'education', 'hoa'. Determines which regulations are applied."
+        description="Industry vertical: 'healthcare', 'home_health', 'other'. Determines which regulations are applied."
     )
     jurisdiction: Optional[str] = Field(None, description="State/jurisdiction code")
     outputs: Optional[List[str]] = Field(
@@ -487,7 +487,7 @@ class CertificateExportRequest(BaseModel):
 class DraftPolicyRequest(BaseModel):
     """Request body for drafting a new policy from scratch."""
     policy_description: str = Field(..., min_length=5, description="Plain-English description of the policy needed")
-    industry: Optional[str] = Field("healthcare", description="Industry vertical: 'healthcare', 'education', 'hoa'")
+    industry: Optional[str] = Field("healthcare", description="Industry vertical: 'healthcare', 'home_health', 'other'")
     jurisdiction: Optional[str] = Field(None, description="State/jurisdiction code (e.g., 'NY')")
 
 

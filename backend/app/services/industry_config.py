@@ -85,146 +85,82 @@ INDUSTRIES: dict = {
         "audit_authority": "OCR audit, OIG investigation, or CMS survey",
     },
 
-    "education": {
-        "name": "Education / Childcare",
-        "icon": "🏫",
-        "description": "Private schools, preschools, childcare centers, daycares, educational franchises (e.g., Goddard School)",
+    "home_health": {
+        "name": "Home Health",
+        "icon": "🏠",
+        "description": "Medicare-certified home health agencies, home care agencies, private-duty and skilled home care providers",
         "ecfr_targets": [
-            (34, 99,  "34 CFR Part 99 — FERPA (Student Records Privacy)", SourceCategory.federal_regulation),
-            (34, 104, "34 CFR Part 104 — Section 504 / Rehab Act (Disability)", SourceCategory.federal_regulation),
-            (34, 106, "34 CFR Part 106 — Title IX (Sex Discrimination)", SourceCategory.federal_regulation),
-            (34, 300, "34 CFR Part 300 — IDEA (Special Education)", SourceCategory.federal_regulation),
+            (42, 484, "42 CFR Part 484 — Home Health Agency Conditions of Participation", SourceCategory.federal_regulation),
+            (45, 160, "45 CFR Part 160 — General HIPAA Provisions", SourceCategory.federal_regulation),
+            (45, 164, "45 CFR Part 164 — HIPAA Privacy, Security & Breach Notification", SourceCategory.federal_regulation),
+            (42, 424, "42 CFR Part 424 — Conditions for Medicare Payment (Face-to-Face Encounter)", SourceCategory.federal_regulation),
         ],
         "fr_agencies": [
-            "education-department",
+            "centers-for-medicare-medicaid-services",
             "health-and-human-services-department",
+            "office-for-civil-rights-hhs",
         ],
         "live_research_sources": [
-            "education_dept", "federal_register"
+            "hhs_regulations", "cms_guidance", "oig_advisory", "federal_register"
         ],
         "persona": (
-            "You are the most senior education and childcare compliance expert in the United States, specializing in "
-            "private preschools, daycare centers, childcare franchises, and independent K-12 schools. You advise school "
-            "directors, franchise owners, and compliance officers navigating the intersection of federal education law, "
-            "state childcare licensing, and local health and safety codes.\n\n"
-            "A user will provide a school policy, childcare center procedure, or compliance document. Your job:\n\n"
-            "1. Read the policy carefully and identify the exact policy type.\n"
-            "2. Identify EVERY federal, state, and local regulation that applies — do not limit yourself. Key frameworks: "
-            "FERPA (student records), Title IX (sex discrimination), Section 504/ADA (disability accommodations), IDEA "
-            "(special education), CAPTA (child abuse), mandatory reporting laws, state childcare licensing regulations "
-            "(e.g., NY OCFS 18 NYCRR Part 418, NYC DOHMH Article 47), CDC/AAP Caring for Our Children health and safety "
-            "guidelines, OSHA Bloodborne Pathogens, staff background check requirements (SCR, NYSOPWDD), CACFP "
-            "requirements where applicable, and for franchise schools (e.g., Goddard School): franchisor policy standards "
-            "and NY State education department requirements.\n"
-            "3. For NAEYC-accredited or NAEYC-seeking programs: evaluate against all 10 NAEYC Early Learning Program "
-            "Standards — (1) Relationships, (2) Curriculum, (3) Teaching, (4) Assessment of Child Progress, "
-            "(5) Health, (6) Staff Competencies & Dispositions, (7) Families, (8) Community Relationships, "
-            "(9) Physical Environment, (10) Leadership & Management — and flag which NAEYC standard tier "
-            "(Recognition, Accreditation, or Accreditation+) applies under the 2024–2025 redesigned system. "
-            "Also consider state QRIS star ratings (e.g., NY QUALITYstarsNY) where relevant.\n"
-            "4. Check each regulation against the actual policy text.\n"
-            "5. Identify every gap, missing element, vague language, or non-compliant clause.\n"
-            "6. For every gap, write the exact policy language that should replace or be added.\n\n"
-            "Be thorough. A school director and franchise owner need to know exactly what would fail a state licensing "
-            "inspection, a Title IX OCR complaint review, a NAEYC accreditation site visit, or a parent lawsuit today.\n\n"
-            "Flag any 2024–2026 updates to FERPA guidance, Title IX regulations (including the 2024 Title IX rule "
-            "changes), state childcare licensing changes, NAEYC accreditation system redesign, or CDC/AAP updates."
-        ),
-        "regulations": [
-            "FERPA — Family Educational Rights and Privacy Act (34 CFR Part 99)",
-            "Title IX — Sex Discrimination in Education (34 CFR Part 106, 2024 Rule)",
-            "Section 504 — Rehabilitation Act / ADA (34 CFR Part 104)",
-            "IDEA — Individuals with Disabilities Education Act (34 CFR Part 300)",
-            "CAPTA — Child Abuse Prevention and Treatment Act",
-            "Mandatory Reporting Laws (state-specific — NY Social Services Law §413)",
-            "NY OCFS Childcare Center Regulations (18 NYCRR Part 418)",
-            "NYC DOHMH Article 47 (NYC Childcare Center Regulations)",
-            "ADA Title III (Public Accommodations)",
-            "CDC/AAP Caring for Our Children Health & Safety Standards (4th Ed.)",
-            "NAEYC 10 Early Learning Program Standards (2024–2025 Accreditation System)",
-            "CACFP — Child and Adult Care Food Program (7 CFR Part 226)",
-            "OSHA Bloodborne Pathogens (29 CFR 1910.1030)",
-            "NY Staff Background Check — SCR & Statewide Central Register",
-            "Franchisor Standards (Goddard Systems Inc. / applicable franchise agreement)",
-        ],
-        "state_addendum": (
-            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST check all applicable "
-            "{jurisdiction} state childcare licensing regulations, mandatory reporting statutes, background check "
-            "requirements, health and safety codes, and any relevant state education department guidance. "
-            "For NY: cite NY OCFS (18 NYCRR), NYC DOHMH Article 47, NY Social Services Law §413, and "
-            "NY Education Law as applicable. Cite all state law by code section."
-        ),
-        "audit_authority": "state licensing inspection, OCR complaint review, or child protective services investigation",
-    },
-
-    "hoa": {
-        "name": "HOA / 55+ Communities",
-        "icon": "🏘️",
-        "description": "Homeowners associations, condo associations, age-restricted 55+ retirement communities (Long Island, NY)",
-        "ecfr_targets": [
-            (24, 100, "24 CFR Part 100 — Fair Housing Act Regulations", SourceCategory.federal_regulation),
-            (24, 107, "24 CFR Part 107 — Non-Discrimination in HUD Programs", SourceCategory.federal_regulation),
-            (24, 966, "24 CFR Part 966 — Public Housing Lease & Grievance Procedures", SourceCategory.federal_regulation),
-        ],
-        "fr_agencies": [
-            "housing-and-urban-development-department",
-        ],
-        "live_research_sources": [
-            "hud_guidance", "federal_register"
-        ],
-        "persona": (
-            "You are the most senior Fair Housing, HOA, and age-restricted community compliance expert in the United States, "
-            "with deep expertise in New York State HOA and condominium law. You advise HOA boards, property managers, "
-            "and community association attorneys on Fair Housing Act compliance, 55+ age-restriction qualification, "
-            "and state-specific condominium and HOA regulations.\n\n"
-            "A user will provide an HOA policy, community rules, governing document, or procedure. Your job:\n\n"
-            "1. Read the policy carefully and identify the exact document type (Rules & Regulations, Declaration, "
-            "Bylaws, House Rules, Age Verification Policy, Board Resolution, etc.).\n"
-            "2. Identify EVERY federal, state, and local law that applies. Key frameworks: Fair Housing Act (42 U.S.C. "
-            "§3604, §3607), Housing for Older Persons Act (HOPA) and the 55+ exemption requirements (24 CFR §100.304–"
-            "100.310), ADA (common areas and amenities), NY Real Property Law (RPL), NY Common Interest Ownership Act, "
-            "NY Attorney General HOA regulations, and applicable local codes for Long Island communities (Nassau and "
-            "Suffolk counties).\n"
-            "3. For 55+ communities: verify the three HOPA prongs — (1) at least 80% of occupied units have one "
-            "resident age 55+, (2) published and adhered-to policies demonstrating intent to be 55+ housing, "
-            "(3) HUD age verification survey compliance every two years.\n"
-            "4. Apply CAI (Community Associations Institute) governance best practices: check that all board resolutions "
-            "and policies include the four required CAI elements — (a) Authority (citing specific articles from governing "
-            "documents), (b) Rationale (business reason for the rule), (c) Application (who is affected, duration, and "
-            "penalties), (d) The Resolution (the actual rules being adopted). Policies must include: Purpose, Scope, "
-            "Procedures, Consequences, and Review Mechanisms. Enforcement processes must provide adequate due process — "
-            "opportunity to appear before a hearing panel after a violation notice is issued and not cured.\n"
+            "You are the most senior home health agency compliance expert in the United States, specializing in "
+            "Medicare-certified home health agencies (HHAs), private-duty home care, and skilled home care providers. "
+            "You advise HHA administrators, directors of nursing, and compliance officers navigating CMS Conditions "
+            "of Participation, state home health licensure, and caregiver/aide workforce compliance.\n\n"
+            "A user will provide a home health policy or procedure. Your job:\n\n"
+            "1. Read the policy carefully and identify the exact policy type and which CMS Condition of Participation "
+            "(if any) it maps to.\n"
+            "2. Identify EVERY federal, state, and local regulation that applies — do not limit yourself. Key "
+            "frameworks: 42 CFR Part 484 (Home Health CoPs — Patient Rights §484.50, Comprehensive Assessment/OASIS "
+            "§484.55, Care Planning & Coordination §484.60, QAPI §484.65, Infection Prevention §484.70, Skilled "
+            "Professional Services §484.75, Home Health Aide Services §484.80, Organization & Administration §484.105, "
+            "Emergency Preparedness §484.102), HIPAA Privacy/Security/Breach Notification, the Medicare face-to-face "
+            "encounter and homebound status requirements (42 CFR §424.22), Anti-Kickback Statute and Stark Law "
+            "(referral-source relationships are a top OIG enforcement focus in home health), False Claims Act "
+            "(upcoding, medically unnecessary visits, PDGM billing fraud), OASIS data integrity requirements, "
+            "state home health agency licensure, and caregiver/aide background check and training mandates.\n"
+            "3. For Medicare-certified agencies: verify the policy addresses OASIS-driven care planning, the "
+            "initial assessment timeframes (within 48 hours of referral or the physician-ordered start-of-care date, "
+            "whichever is later), physician plan of care (485) signature and recertification cycles, and QAPI "
+            "program requirements (data-driven, agency-wide, at least annual review).\n"
+            "4. For aide/caregiver-facing policies: verify competency evaluation, 12-hour annual in-service training, "
+            "RN supervisory visit cadence (14-day for Medicare patients receiving aide services), and background "
+            "check compliance against state requirements.\n"
             "5. Check each regulation against the actual policy text.\n"
-            "6. Identify every gap, missing element, vague language, or non-compliant clause — including policies that "
-            "'call out specific groups of people' in violation of Fair Housing Act requirements.\n"
+            "6. Identify every gap, missing element, vague language, or non-compliant clause.\n"
             "7. For every gap, write the exact policy language that should replace or be added.\n\n"
-            "Be specific. An HOA board needs to know exactly what would expose them to a HUD complaint, "
-            "a Fair Housing lawsuit, or a NY AG investigation today.\n\n"
-            "Flag any 2024–2026 HUD guidance updates, Fair Housing enforcement actions, CAI governance changes, "
-            "or NY state HOA/condominium legislative changes."
+            "Be specific. An HHA administrator needs to know exactly what would fail a state survey, a CMS "
+            "Conditions of Participation deficiency citation, or an OIG program integrity audit today.\n\n"
+            "Flag any 2024–2026 updates to the Home Health CoPs, Patient-Driven Groupings Model (PDGM) payment "
+            "changes, Home Health Value-Based Purchasing (HHVBP, expanded nationally in 2023) requirements, "
+            "OASIS-E updates, or OIG Work Plan items targeting home health fraud and program integrity."
         ),
         "regulations": [
-            "Fair Housing Act (42 U.S.C. §3604, §3607)",
-            "Housing for Older Persons Act (HOPA) — 42 U.S.C. §3607(b)",
-            "24 CFR Part 100 — Fair Housing Act Regulations",
-            "24 CFR §100.304–100.310 — 55+ Housing Exemption Requirements",
-            "HUD Handbook 8024.1 — Fair Housing Act Guidance",
-            "ADA Title III — Common Areas and Amenities",
-            "NY Real Property Law (RPL) §§ 339-i to 339-kk (Condominiums)",
-            "NY Common Interest Ownership Act (CIOA)",
-            "NY Attorney General Offering Plan Requirements",
-            "NY AG HOA Regulations",
-            "Nassau / Suffolk County Fair Housing Ordinances",
-            "CAI Governance Standards — Board Resolution Format (Authority / Rationale / Application / Resolution)",
+            "42 CFR Part 484 — Home Health Agency Conditions of Participation",
+            "42 CFR §484.50 — Patient Rights",
+            "42 CFR §484.55 — Comprehensive Assessment of Patients (OASIS)",
+            "42 CFR §484.60 — Care Planning, Coordination of Services, Quality of Care",
+            "42 CFR §484.65 — Quality Assessment and Performance Improvement (QAPI)",
+            "42 CFR §484.70 — Infection Prevention and Control",
+            "42 CFR §484.75 — Skilled Professional Services",
+            "42 CFR §484.80 — Home Health Aide Services",
+            "42 CFR §484.102 — Emergency Preparedness",
+            "42 CFR §424.22 — Face-to-Face Encounter & Homebound Status Requirements",
+            "HIPAA Privacy, Security & Breach Notification Rules (45 CFR Parts 160, 164)",
+            "Anti-Kickback Statute (42 U.S.C. §1320a-7b(b))",
+            "Stark Law (42 U.S.C. §1395nn)",
+            "False Claims Act (31 U.S.C. §3729)",
+            "Patient-Driven Groupings Model (PDGM) Billing Requirements",
+            "Home Health Value-Based Purchasing (HHVBP) Model",
+            "State Home Health Agency Licensure Requirements (varies by jurisdiction)",
         ],
         "state_addendum": (
-            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST check all applicable "
-            "{jurisdiction} state HOA and condominium laws, Fair Housing enforcement, and local county ordinances. "
-            "For NY communities: cite NY Real Property Law, NY CIOA, NY AG regulations, and any applicable "
-            "Nassau/Suffolk county fair housing ordinances. For 55+ communities: verify all three HOPA qualification "
-            "prongs are addressed. Cite all state law by code section."
+            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST also check all applicable "
+            "{jurisdiction} state home health agency licensure regulations, state caregiver/aide background check "
+            "and training requirements, and state Medicaid home care program rules. Cite state law by code section."
         ),
-        "audit_authority": "HUD complaint, Fair Housing lawsuit, or NY AG investigation",
+        "audit_authority": "state home health survey, CMS Conditions of Participation deficiency citation, or OIG program integrity audit",
     },
     "other": {
         "name": "Other / General",
@@ -300,35 +236,19 @@ POLICY_TYPES: dict = {
         {"slug": "telehealth_policy",           "label": "Telehealth & Remote Care Policy",    "description": "HIPAA-compliant telehealth, consent, platform requirements"},
         {"slug": "code_of_conduct_hc",         "label": "Code of Conduct",                    "description": "Organizational ethics, fraud & abuse, reporting obligations"},
     ],
-    "education": [
-        {"slug": "code_of_conduct",             "label": "Student & Family Code of Conduct",   "description": "Behavior expectations, discipline, family rights"},
-        {"slug": "child_protection",            "label": "Child Protection & Mandatory Reporting Policy", "description": "Abuse/neglect identification, NY mandated reporter obligations"},
-        {"slug": "health_illness",              "label": "Health & Illness Exclusion Policy",  "description": "Illness exclusion criteria, return-to-school, DOHMH requirements"},
-        {"slug": "ferpa_privacy",               "label": "Student Records Privacy Policy (FERPA)", "description": "Record access, consent, disclosure rules under 34 CFR Part 99"},
-        {"slug": "emergency_procedures",        "label": "Emergency & Evacuation Procedures",  "description": "Fire, lockdown, shelter-in-place, reunification plan"},
-        {"slug": "allergy_anaphylaxis",         "label": "Allergy & Anaphylaxis Management Policy", "description": "EpiPen, emergency action plans, staff training, ADA accommodations"},
-        {"slug": "incident_injury_reporting",   "label": "Incident & Injury Reporting Policy", "description": "Documentation, parent notification, OCFS/DOHMH reporting"},
-        {"slug": "staff_supervision",           "label": "Staff Background Check & Supervision Policy", "description": "Fingerprinting, references, ratios, supervision requirements"},
-        {"slug": "medication_administration",   "label": "Medication Administration Policy",   "description": "Consent, storage, administration procedures, recordkeeping"},
-        {"slug": "visitor_volunteer",           "label": "Visitor & Volunteer Policy",         "description": "Sign-in, background checks, supervision of non-staff adults"},
-        {"slug": "media_photography",           "label": "Media, Photography & Social Media Policy", "description": "Consent, FERPA implications, staff social media conduct"},
-        {"slug": "ada_accommodations",          "label": "ADA / Section 504 Accommodations Policy", "description": "Disability accommodations, individualized plans, non-discrimination"},
-        {"slug": "grievance_procedure",         "label": "Grievance & Complaint Procedure",    "description": "Parent/family complaint process, anti-retaliation, Title IX grievance"},
-        {"slug": "nap_rest_time",               "label": "Napping & Rest Time Policy",         "description": "OCFS-required rest provisions, safe sleep (infants), supervision"},
-        {"slug": "nutrition_food",              "label": "Nutrition & Food Safety Policy",     "description": "Meal standards, food allergies, CACFP requirements if applicable"},
-    ],
-    "hoa": [
-        {"slug": "community_rules",             "label": "Community Rules & Regulations",      "description": "General conduct, common areas, noise, parking, pets"},
-        {"slug": "age_verification",            "label": "55+ Age Verification Policy",        "description": "HOPA three-prong test compliance, survey, recordkeeping"},
-        {"slug": "fair_housing_policy",         "label": "Fair Housing Compliance Policy",     "description": "Non-discrimination in sales, rentals, rules enforcement"},
-        {"slug": "common_area_use",             "label": "Common Area Use Policy",             "description": "Pool, gym, clubhouse rules, ADA access, reservations"},
-        {"slug": "architectural_review",        "label": "Architectural Review Policy",        "description": "Modification requests, approval process, design standards"},
-        {"slug": "pet_policy",                  "label": "Pet Policy",                         "description": "Permitted animals, leash rules, ADA service animal compliance"},
-        {"slug": "assessment_collection",       "label": "Assessment & Collection Policy",     "description": "Dues, late fees, lien procedures, NY RPL compliance"},
-        {"slug": "grievance_dispute",           "label": "Grievance & Dispute Resolution Policy", "description": "Resident complaint process, hearing procedures, NY requirements"},
-        {"slug": "board_meetings",              "label": "Board Meeting & Voting Policy",      "description": "Notice requirements, quorum, proxy voting, NY CIOA compliance"},
-        {"slug": "rental_restrictions",         "label": "Rental Restriction Policy",          "description": "Leasing rules, tenant screening, Fair Housing compliance"},
-        {"slug": "maintenance_repair",          "label": "Maintenance & Repair Policy",        "description": "Responsibility matrix, repair requests, contractor access"},
+    "home_health": [
+        {"slug": "patient_rights",            "label": "Patient Rights Policy",                       "description": "Notice of rights, grievance process, per 42 CFR 484.50"},
+        {"slug": "oasis_assessment",          "label": "Comprehensive Assessment (OASIS) Policy",     "description": "Initial/comprehensive assessment timing, OASIS data collection"},
+        {"slug": "care_planning",             "label": "Care Planning & Coordination Policy",         "description": "Plan of care development, physician orders, care coordination"},
+        {"slug": "qapi_policy",               "label": "QAPI Policy",                                 "description": "Quality Assessment and Performance Improvement program"},
+        {"slug": "infection_control_hh",      "label": "Infection Prevention & Control Policy",       "description": "Standard precautions, surveillance, outbreak response"},
+        {"slug": "aide_supervision",          "label": "Home Health Aide Supervision Policy",         "description": "RN supervisory visit cadence, aide assignment, competency"},
+        {"slug": "caregiver_training",        "label": "Caregiver/Aide Training & Competency Policy", "description": "Initial and 12-hour annual in-service training requirements"},
+        {"slug": "background_check_hh",       "label": "Caregiver Background Check Policy",           "description": "Screening, state registry checks, disqualifying offenses"},
+        {"slug": "emergency_preparedness_hh", "label": "Emergency Preparedness Policy",               "description": "Patient-specific emergency plans, continuity of operations, per 42 CFR 484.102"},
+        {"slug": "billing_compliance_hh",     "label": "Billing & Claims Compliance Policy",          "description": "PDGM billing accuracy, upcoding prevention, documentation support"},
+        {"slug": "referral_compliance",       "label": "Referral Source Compliance Policy",           "description": "Anti-Kickback/Stark compliance for referral relationships"},
+        {"slug": "telehealth_hh",             "label": "Telehealth & Remote Patient Monitoring Policy","description": "Virtual visit documentation, technology consent, HIPAA compliance"},
     ],
 }
 

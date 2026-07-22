@@ -62,19 +62,12 @@ FOLLOW_UP_SUGGESTIONS: dict = {
             "How quickly do we need to report a breach to HHS?",
             "Explain the minimum necessary standard in plain English",
         ],
-        "education": [
-            "What does a DOHMH inspection actually check?",
-            "Draft a mandated reporter policy section for our staff handbook",
-            "Which gaps would put our license at risk first?",
-            "What FERPA rights do parents actually have?",
-            "How should we handle a medication error incident?",
-        ],
-        "hoa": [
-            "Draft a resolution for the board to vote on",
-            "What is the due process requirement before imposing a fine?",
-            "How do we re-qualify as 55+ housing under HOPA?",
-            "What fair housing violations are most common in HOA enforcement?",
-            "Draft a complaint procedure that satisfies CAI standards",
+        "home_health": [
+            "What would a state surveyor actually check during a Conditions of Participation survey?",
+            "Draft the suggested language for the highest-risk finding",
+            "Which gaps put our Medicare certification at risk first?",
+            "How often do RN supervisory visits need to happen for aide-only patients?",
+            "What OASIS documentation do we need to support this finding?",
         ],
         "other": [
             "Which policy should we write first?",
@@ -91,19 +84,12 @@ FOLLOW_UP_SUGGESTIONS: dict = {
             "Add a breach notification timeline to the security section",
             "Make the training requirements section more specific",
         ],
-        "education": [
-            "Add an allergen management subsection with EpiPen procedures",
-            "Rewrite the mandated reporting section for new staff to understand",
-            "Add a section for our after-school program hours",
-            "Make the parent communication section more detailed",
-            "Add a social media policy section for staff",
-        ],
-        "hoa": [
-            "Add a section specific to the pool and fitness center rules",
-            "Make the fine schedule more specific with dollar amounts",
-            "Add an appeals procedure subsection",
-            "Rewrite the age verification section in plain English",
-            "Add a guest and visitor policy section",
+        "home_health": [
+            "Add a section covering telehealth and remote patient monitoring visits",
+            "Make the RN supervisory visit cadence more specific",
+            "Rewrite the OASIS assessment section in simpler language for new clinicians",
+            "Add a section for missed or late supervisory visits",
+            "Make the emergency preparedness section specific to our patient population",
         ],
         "other": [
             "Make this more specific to our remote workforce",
