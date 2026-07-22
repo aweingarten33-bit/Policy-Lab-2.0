@@ -623,7 +623,8 @@ export default function Index() {
       if (file.size > maxSize) throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max 10MB.`);
       setFileName(file.name);
       const extracted = await extractText(file);
-      if (!extracted || extracted.trim().length < 50) throw new Error("Could not extract readable text.");
+      if (!extracted) throw new Error("Could not extract readable text from this file.");
+      if (extracted.trim().length < 50) throw new Error(`This file only has ${extracted.trim().length} characters of readable text — need at least 50 to analyze.`);
       setText(extracted);
       toast.success("File loaded", { description: `${file.name} — ${extracted.length.toLocaleString()} chars` });
     } catch (e: any) {
