@@ -1221,11 +1221,6 @@ export default function Index() {
               </div>
             )}
 
-            <SourceAttributionPanel
-              kbSourcesUsed={draftResult.kb_sources_used}
-              liveResearchUsed={draftResult.live_research_used}
-            />
-
             {/* Ask AI button for draft */}
             <button
               onClick={() => openChat("draft")}
@@ -1506,39 +1501,6 @@ function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{pkg.completed_outputs.length}/7 outputs</span>
         </div>
       </div>
-
-
-      <SourceAttributionPanel
-        kbSourcesUsed={pkg.kb_sources_used}
-        liveResearchUsed={pkg.live_research_used}
-      />
-    </div>
-  );
-}
-
-// ── Source Attribution Notice ──
-// Shared between Analyze (OverviewTab) and Draft results. Deliberately quiet:
-// when real sources were used (the normal case), this renders nothing --
-// a jargon-heavy "12 of 14 citations verified" breakdown reads as "this is
-// broken" to anyone who doesn't already know a nonzero unverified count is
-// expected, not a failure. It only speaks up for the one case where staying
-// silent would be actively misleading: no source material was found at all.
-function SourceAttributionPanel({
-  kbSourcesUsed,
-  liveResearchUsed,
-}: {
-  kbSourcesUsed?: string[] | null;
-  liveResearchUsed?: boolean;
-}) {
-  if ((kbSourcesUsed && kbSourcesUsed.length > 0) || liveResearchUsed) {
-    return null;
-  }
-
-  return (
-    <div className="rounded-lg p-3" style={{ background: "hsl(38 85% 52% / 0.08)" }}>
-      <p className="text-[10px] text-muted-foreground">
-        ⚠️ No matching source material was found for this result — verify it independently before relying on it.
-      </p>
     </div>
   );
 }
