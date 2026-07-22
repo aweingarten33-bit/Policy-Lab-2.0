@@ -1014,7 +1014,7 @@ export default function Index() {
                       type="button"
                       onClick={() => {
                         setText(SAMPLE_POLICY_TEXTS[industry] ?? SAMPLE_POLICY_TEXTS.healthcare);
-                        setFileName(`sample-${industry}-policy.txt`);
+                        setFileName(`sample-${industry === "healthcare" ? "hospital" : industry}-policy.txt`);
                         setError("");
                         toast.success("Sample policy loaded — hit Generate to run it");
                       }}
