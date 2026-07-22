@@ -48,7 +48,8 @@ export default function Guide() {
             <p className="text-sm leading-relaxed text-foreground/80">
               No existing document required. Describe the policy in plain English — the more specific,
               the better the result — and get a complete, ready-to-adopt policy written from scratch,
-              every section, regulations cited inline where they genuinely apply.
+              every section, regulations cited inline where they genuinely apply. Download it as an
+              editable Word file (.docx), ready to review, revise, and adopt.
             </p>
           </div>
         </section>

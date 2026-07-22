@@ -887,7 +887,7 @@ export default function Index() {
                     Tell us what you need.<br />We'll draft it.
                   </h1>
                   <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
-                    Describe the policy and get a complete draft written from scratch, with regulations cited.
+                    Describe the policy and get a complete draft written from scratch, regulations cited, ready to download.
                   </p>
                 </>
               )}
