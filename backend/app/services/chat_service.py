@@ -159,7 +159,7 @@ async def chat(
     response_text = await provider.complete_chat(
         system_prompt=system_prompt,
         messages=messages,
-        max_tokens=1200,
+        max_tokens=2500,
         temperature=0.5,
     )
 
