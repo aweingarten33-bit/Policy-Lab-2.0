@@ -407,7 +407,7 @@ async def compliance_chat(request: ChatRequest):
     from app.services.chat_service import chat
 
     try:
-        response_text, follow_ups = await chat(
+        response_text = await chat(
             message=request.message,
             mode=request.mode,
             industry=request.industry,
@@ -415,7 +415,7 @@ async def compliance_chat(request: ChatRequest):
             context_summary=request.context_summary,
             conversation_history=request.conversation_history,
         )
-        return ChatResponse(response=response_text, suggested_follow_ups=follow_ups)
+        return ChatResponse(response=response_text)
     except Exception as e:
         error_msg = str(e)
         if "429" in error_msg:

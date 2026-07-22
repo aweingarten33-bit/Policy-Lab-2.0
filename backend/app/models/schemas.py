@@ -467,6 +467,14 @@ class ActionPackageRequest(BaseModel):
     )
 
 
+class RewritePolicyRequest(BaseModel):
+    """Request body for the 'Fix All Gaps' action — rewrite the policy to resolve every finding from an existing gap analysis."""
+    text: str = Field(..., min_length=50, description="The original policy text that was analyzed")
+    gap_analysis: AnalysisResult = Field(..., description="The gap analysis results to fix")
+    industry: Optional[str] = Field("healthcare", description="Industry vertical: 'healthcare', 'home_health', 'other'")
+    jurisdiction: Optional[str] = Field(None, description="State/jurisdiction code")
+
+
 class PackageExportRequest(BaseModel):
     """Request body for exporting the complete action package."""
     package: ComplianceActionPackage
@@ -528,7 +536,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     """Request body for chatting with analysis results or a drafted policy."""
     message: str = Field(..., min_length=1, description="The user's question or message")
-    mode: str = Field("analysis", description="'analysis' for post-gap-analysis chat, 'draft' for post-policy-draft refinement")
+    mode: str = Field("analysis", description="'analysis' for post-gap-analysis Q&A, 'draft' for post-policy-draft Q&A")
     industry: Optional[str] = Field("healthcare", description="Industry context")
     jurisdiction: Optional[str] = Field(None, description="Jurisdiction context")
     context_summary: Optional[str] = Field(
@@ -544,10 +552,6 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """Response from the compliance chat endpoint."""
     response: str = Field(..., description="The AI assistant's response")
-    suggested_follow_ups: Optional[List[str]] = Field(
-        None,
-        description="2-3 suggested follow-up questions relevant to the conversation"
-    )
 
 
 class HealthResponse(BaseModel):

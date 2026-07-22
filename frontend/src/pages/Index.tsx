@@ -8,7 +8,7 @@ import {
 import { extractText } from "@/lib/extract-text";
 import { linkifyRegulations, lookupRegulationUrl } from "@/lib/regulation-links";
 import {
-  generateActionPackage, generateActionPackageStream, startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, cancelActionPackageJob, exportGapAnalysis, exportDraftPolicy, healthCheck,
+  generateActionPackage, generateActionPackageStream, startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, cancelActionPackageJob, exportGapAnalysis, exportDraftPolicy, exportUpdatedPolicy, fixAllGaps, healthCheck,
   getIndustries, draftPolicy, startDraftJob, streamDraftJob, getDraftJobStatus, cancelDraftJob, sendChatMessage,
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
@@ -169,6 +169,7 @@ function stripCiteTags(text: string): string {
 const TABS = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "gap_analysis", label: "Gap Analysis", icon: AlertTriangle },
+  { key: "corrected", label: "Corrected Policy", icon: CheckCircle2 },
 ] as const;
 
 type TabKey = typeof TABS[number]["key"];
@@ -315,6 +316,8 @@ export default function Index() {
   const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [fixingGaps, setFixingGaps] = useState(false);
+  const [correctedExporting, setCorrectedExporting] = useState(false);
   const [industry, setIndustry] = useState("healthcare");
   const [industries, setIndustries] = useState<IndustryOption[]>(FALLBACK_INDUSTRIES);
   const [city, setCity] = useState("");
@@ -609,42 +612,8 @@ export default function Index() {
     }
   };
 
-  /**
-   * Replace the active policy's full text with a chat assistant message.
-   * Andrew's workflow: ask chat to rewrite a section → click "apply to policy"
-   * on the response → the Rewritten Policy / Drafted Policy tab actually updates.
-   * Explicit click (not auto-apply) so he keeps control.
-   */
-  const handleApplyChatToPolicy = (newText: string) => {
-    const trimmed = (newText || "").trim();
-    if (!trimmed) return;
-    const stamp = new Date().toLocaleString();
-
-    if (draftResult) {
-      setDraftResult((prev) => prev ? {
-        ...prev,
-        full_text: trimmed,
-        version: `${prev.version || "1.0"} (chat-refined)`,
-        drafting_notes: `${prev.drafting_notes || ""}${prev.drafting_notes ? "\n\n" : ""}Refined via chat on ${stamp}.`.trim(),
-      } : prev);
-      toast.success("Draft updated", { description: "Drafted policy now shows the chat version." });
-      return;
-    }
-
-    toast.error("No policy to update", { description: "Run an analysis or draft a policy first." });
-  };
-
   const openChat = (mode: "analysis" | "draft") => {
     setChatMode(mode);
-    if (chatHistory.length === 0) {
-      const greeting: ChatMessage = {
-        role: "assistant",
-        content: mode === "draft"
-          ? "I have your drafted policy in context. Ask me to rewrite sections, add clauses, or tailor language. When my reply is the version you want, click 'apply to policy' under the message — it replaces the drafted policy text."
-          : "I have your full compliance analysis in context. Ask me anything — which gap to fix first, what a specific regulation actually requires, what the regulator looks for in an audit, or how to phrase remediation language for your board.",
-      };
-      setChatHistory([greeting]);
-    }
     setChatOpen(true);
   };
 
@@ -859,10 +828,26 @@ export default function Index() {
     }
   };
 
+  const handleFixAllGaps = async () => {
+    if (!pkg?.gap_analysis || fixingGaps) return;
+    setFixingGaps(true);
+    try {
+      const rewritten = await fixAllGaps(text, pkg.gap_analysis, industry, jurisdiction);
+      setPkg((prev) => prev ? { ...prev, rewritten_policy: rewritten } : prev);
+      setActiveTab("corrected");
+      toast.success("Corrected policy ready", { description: "Every finding addressed — review before adopting." });
+    } catch (e: any) {
+      toast.error("Fix failed", { description: e.message });
+    } finally {
+      setFixingGaps(false);
+    }
+  };
+
   // Determine which tabs have data
   const availableTabs = pkg ? TABS.filter((t) => {
     if (t.key === "overview") return true;
     if (t.key === "gap_analysis") return !!pkg.gap_analysis;
+    if (t.key === "corrected") return !!pkg.rewritten_policy;
     return false;
   }) : [];
 
@@ -1257,10 +1242,19 @@ export default function Index() {
               </div>
               <div className="flex gap-2 flex-wrap">
                 <button
+                  onClick={handleFixAllGaps}
+                  disabled={fixingGaps || !pkg.gap_analysis}
+                  title="Rewrites the entire policy end to end so every finding from the gap analysis is resolved — ready to review and adopt."
+                  className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn active:neu-pressed touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
+                >
+                  {fixingGaps ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                  {fixingGaps ? "FIXING GAPS..." : "FIX ALL GAPS"}
+                </button>
+                <button
                   onClick={handleDownloadGapAnalysis}
                   disabled={exporting}
                   title="Downloads the full gap analysis report as a Word document — opens with a one-page compliance certificate summary (score, rating, finding counts), followed by every finding, citation, and suggested policy language."
-                  className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn active:neu-pressed touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
+                  className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl neu-sm text-muted-foreground hover:text-foreground touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
                 >
                   {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
                   {exporting ? "DOWNLOADING..." : "DOWNLOAD REPORT (.DOCX)"}
@@ -1271,7 +1265,7 @@ export default function Index() {
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
-              <strong className="text-foreground/80 font-medium">Download Report</strong> gets you the full findings as an editable Word file (.docx) — opens with a one-page compliance certificate (score, rating, finding counts), followed by every finding, citation, and drop-in policy language.
+              <strong className="text-foreground/80 font-medium">Fix All Gaps</strong> rewrites the policy end to end to resolve every finding — takes about 30–45 seconds. <strong className="text-foreground/80 font-medium">Download Report</strong> gets you the gap analysis findings as an editable Word file (.docx).
             </p>
 
             {/* Tab bar */}
@@ -1304,6 +1298,55 @@ export default function Index() {
                 onChangeFilter={setSeverityFilter}
               />
             )}
+            {activeTab === "corrected" && pkg.rewritten_policy && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    {pkg.rewritten_policy.effective_date && (
+                      <p className="text-[11px] text-muted-foreground font-mono">Effective: {pkg.rewritten_policy.effective_date}</p>
+                    )}
+                  </div>
+                  <button
+                    disabled={correctedExporting}
+                    onClick={async () => {
+                      setCorrectedExporting(true);
+                      try {
+                        await exportUpdatedPolicy(pkg);
+                        toast.success("Corrected policy downloaded");
+                      } catch (e: any) {
+                        toast.error("Download failed", { description: e.message });
+                      } finally {
+                        setCorrectedExporting(false);
+                      }
+                    }}
+                    title="Downloads this corrected policy, formatted and ready to review, as a Word file."
+                    className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn active:neu-pressed touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
+                  >
+                    {correctedExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                    {correctedExporting ? "DOWNLOADING..." : "DOWNLOAD CORRECTED POLICY (.DOCX)"}
+                  </button>
+                </div>
+                {pkg.rewritten_policy.change_summary && (
+                  <div className="rounded-xl neu-sm p-4">
+                    <p className="nyt-eyebrow mb-1">What Changed</p>
+                    <p className="text-[13px] text-foreground leading-relaxed">{pkg.rewritten_policy.change_summary}</p>
+                  </div>
+                )}
+                <div className="rounded-xl neu-raised p-6">
+                  <p className="nyt-eyebrow mb-4">Full Corrected Policy</p>
+                  <div className="space-y-5">
+                    {pkg.rewritten_policy.sections.length > 0 ? pkg.rewritten_policy.sections.map((sec, i) => (
+                      <div key={i}>
+                        <h3 className="text-[13px] font-bold text-foreground mb-2 uppercase tracking-wide">{sec.section_title}</h3>
+                        <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(sec.rewritten_text)}</p>
+                      </div>
+                    )) : (
+                      <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(pkg.rewritten_policy.full_text)}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Ask AI button */}
             <button
               onClick={() => openChat("analysis")}
@@ -1328,8 +1371,6 @@ export default function Index() {
             onSend={handleSendChat}
             chatLoading={chatLoading}
             chatEndRef={chatEndRef}
-            onApplyToPolicy={handleApplyChatToPolicy}
-            canApply={Boolean(pkg?.rewritten_policy || draftResult)}
           />
         )}
       </main>
@@ -1690,11 +1731,9 @@ interface ChatPanelProps {
   onSend: () => void;
   chatLoading: boolean;
   chatEndRef: React.RefObject<HTMLDivElement>;
-  onApplyToPolicy: (text: string) => void;
-  canApply: boolean;
 }
 
-function ChatPanel({ open, onClose, history, input, setInput, onSend, chatLoading, chatEndRef, onApplyToPolicy, canApply }: ChatPanelProps) {
+function ChatPanel({ open, onClose, history, input, setInput, onSend, chatLoading, chatEndRef }: ChatPanelProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -1702,13 +1741,6 @@ function ChatPanel({ open, onClose, history, input, setInput, onSend, chatLoadin
   }, [open]);
 
   if (!open) return null;
-
-  const SUGGESTIONS = [
-    "What's the highest priority fix?",
-    "Draft an email to staff about these gaps",
-    "Explain the HIPAA penalty for this violation",
-    "What should I fix in the first 30 days?",
-  ];
 
   return (
     <>
@@ -1733,51 +1765,21 @@ function ChatPanel({ open, onClose, history, input, setInput, onSend, chatLoadin
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0">
           {history.length === 0 && (
-            <div className="space-y-3">
-              <p className="text-[12px] text-muted-foreground leading-relaxed">Ask me anything about your compliance results — I can explain findings, suggest fixes, draft communications, or help you prioritize.</p>
-              <div className="space-y-1.5">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => { setInput(s); setTimeout(() => inputRef.current?.focus(), 50); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors touch-manipulation"
-                    style={{ background: "hsl(var(--secondary))" }}
-                  >
-                    {s}
-                  </button>
-                ))}
+            <p className="text-[12px] text-muted-foreground leading-relaxed">Ask a question about your results.</p>
+          )}
+          {history.map((msg, i) => (
+            <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+              <div
+                className="max-w-[85%] px-3 py-2.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap"
+                style={msg.role === "user"
+                  ? { background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))" }
+                  : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }
+                }
+              >
+                {msg.content}
               </div>
             </div>
-          )}
-          {history.map((msg, i) => {
-            // Show "apply to policy" only on substantive assistant replies
-            // (>= 200 chars filters out greetings and short chit-chat).
-            const showApply = canApply && msg.role === "assistant" && msg.content.trim().length >= 200;
-            return (
-              <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                <div
-                  className="max-w-[85%] px-3 py-2.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap"
-                  style={msg.role === "user"
-                    ? { background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))" }
-                    : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }
-                  }
-                >
-                  {msg.content}
-                </div>
-                {showApply && (
-                  <button
-                    onClick={() => onApplyToPolicy(msg.content)}
-                    className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold tracking-wider neu-btn active:neu-pressed transition-all touch-manipulation"
-                    style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))" }}
-                    title="Replace the rewritten/drafted policy with this message"
-                  >
-                    <Wand2 className="w-3 h-3" />
-                    apply to policy
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          ))}
           {chatLoading && (
             <div className="flex justify-start">
               <div className="px-3 py-2.5 rounded-2xl flex items-center gap-2" style={{ background: "hsl(var(--secondary))" }}>

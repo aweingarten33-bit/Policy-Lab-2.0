@@ -10,6 +10,7 @@ from typing import Optional, List
 
 from app.config import settings  # <-- FIX #1: ADDED THIS LINE
 from app.services.provider import get_provider
+from app.services.industry_config import get_industry
 from app.models.schemas import (
     AnalysisResult, RewrittenPolicy, RewrittenPolicySection,
     RedlineChange, GapRow, RiskLevel,
@@ -22,10 +23,8 @@ logger = logging.getLogger(__name__)
 # System Prompts
 # ──────────────────────────────────────────────
 
-REWRITE_SYSTEM_PROMPT = """You are the most senior healthcare compliance policy writer in the United States. You write policies that pass OCR audits, satisfy CMS surveyors, and withstand OIG scrutiny.
-
-You will receive:
-1. An original healthcare policy document
+REWRITE_TASK_INSTRUCTIONS = """You will receive:
+1. An original compliance policy document
 2. A gap analysis identifying every compliance deficiency
 
 Your task: Rewrite the ENTIRE policy from start to finish. The rewritten policy must:
@@ -63,6 +62,13 @@ CRITICAL RULES:
 - The full_text field must be a single cohesive document, not a list of fragments
 - Aim for 6-12 sections minimum
 - Use roman numerals for major sections (I, II, III...) and letters for subsections (A, B, C...)"""
+
+
+def _build_rewrite_system_prompt(industry_slug: Optional[str] = None) -> str:
+    """Industry-aware rewrite persona — same domain expertise as the gap analysis
+    prompt, so a Home Health or Other rewrite doesn't get a hospital compliance voice."""
+    cfg = get_industry(industry_slug or "healthcare")
+    return cfg["persona"] + "\n\n" + REWRITE_TASK_INSTRUCTIONS
 
 
 REDLINE_SYSTEM_PROMPT = """You are a legal redline comparison expert. You compare an original healthcare policy with its rewritten version and produce a detailed change-by-change analysis.
@@ -124,6 +130,7 @@ async def generate_rewritten_policy(
     gap_analysis: AnalysisResult,
     jurisdiction: Optional[str] = None,
     retrieval_context: Optional[RetrievalContext] = None,
+    industry: Optional[str] = None,
 ) -> RewrittenPolicy:
     """
     Generate a fully rewritten compliant version of the policy.
@@ -153,7 +160,7 @@ GAP ANALYSIS FINDINGS (fix ALL of these):
     logger.info(f"Generating rewritten policy — {len(original_text)} chars original, {len(gap_analysis.gap_table)} gaps to fix")
 
     raw_response = await provider.complete(
-        system_prompt=REWRITE_SYSTEM_PROMPT,
+        system_prompt=_build_rewrite_system_prompt(industry),
         user_message=user_message,
         # Capped at 2500 (down from 4000) to keep rewrite wall-clock under ~45s
         # on gpt-4o-mini. Andrew explicitly chose shorter rewrites over longer

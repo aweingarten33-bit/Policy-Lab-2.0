@@ -12,10 +12,12 @@ from typing import Optional, List
 
 from app.models.schemas import (
     ActionPackageRequest, ComplianceActionPackage, PackageStatus,
+    RewritePolicyRequest, RewrittenPolicy,
 )
 from app.services.orchestrator import get_orchestrator
 from app.services.text_extraction import extract_text_from_file
 from app.services.job_store import get_job_store
+from app.services.rewrite_service import generate_rewritten_policy
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["action-package"])
@@ -101,6 +103,34 @@ async def generate_action_package(request: ActionPackageRequest):
         if "529" in error_msg:
             raise HTTPException(status_code=503, detail="Model is overloaded. Please retry in a moment.")
         raise HTTPException(status_code=500, detail=f"Action package generation failed: {error_msg}")
+
+
+@router.post("/action-package/rewrite", response_model=RewrittenPolicy)
+async def fix_all_gaps(request: RewritePolicyRequest):
+    """
+    "Fix All Gaps" — take an existing gap analysis and rewrite the policy end to
+    end so every finding is resolved. Does not re-run the analysis itself.
+    """
+    try:
+        return await generate_rewritten_policy(
+            original_text=request.text,
+            gap_analysis=request.gap_analysis,
+            jurisdiction=request.jurisdiction,
+            industry=request.industry,
+        )
+    except ValueError as e:
+        logger.error(f"Rewrite error: {e}")
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error generating rewritten policy: {e}")
+        error_msg = str(e)
+        if "429" in error_msg:
+            raise HTTPException(status_code=429, detail="Rate limited. Please wait a moment before retrying.")
+        if "402" in error_msg:
+            raise HTTPException(status_code=402, detail="API key has insufficient credits.")
+        if "529" in error_msg:
+            raise HTTPException(status_code=503, detail="Model is overloaded. Please retry in a moment.")
+        raise HTTPException(status_code=500, detail=f"Rewrite failed: {error_msg}")
 
 
 @router.post("/action-package-stream")

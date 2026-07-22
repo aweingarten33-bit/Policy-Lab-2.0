@@ -69,7 +69,6 @@ export interface ChatMessage {
 
 export interface ChatResponse {
   response: string;
-  suggested_follow_ups?: string[];
 }
 
 export interface RewrittenPolicySection {
@@ -337,6 +336,35 @@ export async function generateActionPackage(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: "Generation failed" }));
     throw new Error(errorData.detail || `Action package failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * "Fix All Gaps" — rewrite the policy end to end to resolve every finding
+ * from an existing gap analysis. Does not re-run the analysis itself.
+ */
+export async function fixAllGaps(
+  text: string,
+  gapAnalysis: AnalysisResult,
+  industry?: string,
+  jurisdiction?: string,
+): Promise<RewrittenPolicy> {
+  const response = await fetch(`${API_BASE}/api/action-package/rewrite`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text,
+      gap_analysis: gapAnalysis,
+      industry: industry || "healthcare",
+      jurisdiction: jurisdiction || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: "Rewrite failed" }));
+    throw new Error(errorData.detail || `Rewrite failed (${response.status})`);
   }
 
   return response.json();
