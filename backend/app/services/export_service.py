@@ -1280,9 +1280,9 @@ def _build_footer_section(doc: Document):
 
 def generate_docx(result: AnalysisResult, file_name: Optional[str] = None) -> bytes:
     """Generate a clean, template-style .docx gap analysis report and return as bytes.
-    Opens with a one-page certificate-style summary (finding counts, regulations
-    reviewed, review cadence) before the detailed findings -- this used to require
-    a separate certificate download for the same information."""
+    Opens with a one-page certificate-style summary (regulations reviewed, review
+    cadence) before the detailed findings -- this used to require a separate
+    certificate download for the same information."""
     doc = Document()
     _setup_document(doc)
     _build_certificate_content(
@@ -1543,10 +1543,10 @@ def _build_certificate_content(
     date_str: str,
 ):
     """
-    Builds the one-page certificate-style summary: finding counts, regulations
-    reviewed, and review cadence. Shared by the standalone certificate export
-    and the gap analysis report, which now opens with this as page 1 instead
-    of requiring a separate download for the same summary.
+    Builds the one-page certificate-style summary: regulations reviewed and
+    review cadence. Shared by the standalone certificate export and the gap
+    analysis report, which now opens with this as page 1 instead of requiring
+    a separate download for the same summary.
     """
     # ── Header bar ──
     hdr = doc.add_paragraph()
@@ -1625,43 +1625,6 @@ def _build_certificate_content(
         space_before=0,
         space_after=140,
     )
-
-    # ── Finding counts table ──
-    _add_styled_paragraph(
-        doc,
-        "FINDING SUMMARY",
-        bold=True,
-        size=9,
-        color=COLOR_GRAY,
-        space_before=80,
-        space_after=30,
-    )
-
-    counts_table = doc.add_table(rows=2, cols=4)
-    counts_table.style = "Table Grid"
-    counts_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    headers = ["CRITICAL", "GAPS", "PARTIAL", "COMPLIANT"]
-    values = [str(critical), str(gap_count), str(partial), str(compliant)]
-    colors_map = ["C0392B", "E67E22", "F39C12", "27AE60"]
-
-    for i, (hdr_text, val, col) in enumerate(zip(headers, values, colors_map)):
-        hdr_cell = counts_table.cell(0, i)
-        hdr_cell.paragraphs[0].clear()
-        hr = hdr_cell.paragraphs[0].add_run(hdr_text)
-        hr.bold = True
-        hr.font.size = Pt(8)
-        hr.font.color.rgb = COLOR_WHITE
-        _shade_cell(hdr_cell, col)
-        hdr_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        val_cell = counts_table.cell(1, i)
-        val_cell.paragraphs[0].clear()
-        vr = val_cell.paragraphs[0].add_run(val)
-        vr.bold = True
-        vr.font.size = Pt(16)
-        val_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    doc.add_paragraph()
 
     # ── Regulations reviewed ──
     if regulations:

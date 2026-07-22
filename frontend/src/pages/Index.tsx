@@ -1253,7 +1253,7 @@ export default function Index() {
                 <button
                   onClick={handleDownloadGapAnalysis}
                   disabled={exporting}
-                  title="Downloads the full gap analysis report as a Word document — opens with a one-page compliance certificate summary (finding counts, regulations reviewed, review cadence), followed by every finding, citation, and suggested policy language."
+                  title="Downloads the full gap analysis report as a Word document — opens with a one-page compliance certificate summary (regulations reviewed, review cadence), followed by every finding, citation, and suggested policy language."
                   className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl neu-sm text-muted-foreground hover:text-foreground touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
                 >
                   {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
