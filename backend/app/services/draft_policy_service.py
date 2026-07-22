@@ -15,6 +15,7 @@ from app.config import settings
 from app.services.provider import get_provider
 from app.services.industry_config import get_industry
 from app.services.retrieval.retriever import get_retriever
+from app.services.retrieval.live_research import get_live_research_service
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,19 @@ async def _prepare_draft(
         policy_type="compliance_policy",
         jurisdiction=jurisdiction,
     )
+
+    # State law is never in the KB (only federal eCFR content is seeded), so
+    # when a jurisdiction is selected this always does a live search of state
+    # government sources rather than relying on the KB alone.
+    ctx = await get_live_research_service().augment_retrieval_context(
+        context=ctx,
+        policy_type="compliance_policy",
+        industry=industry_slug,
+        jurisdiction=jurisdiction,
+    )
+    if ctx.live_research_used:
+        logger.info(f"Draft live research: {len(ctx.live_research_results)} results injected")
+
     if ctx.total_sources_found > 0:
         user_message += (
             f"\n\nREFERENCE MATERIAL — use these real policy examples and templates "

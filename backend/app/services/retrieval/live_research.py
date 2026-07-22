@@ -43,6 +43,13 @@ TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "").strip()
 TAVILY_URL = "https://api.tavily.com/search"
 
 
+def _is_gov_url(url: str) -> bool:
+    """True for any .gov URL (state government sites don't share one domain,
+    so this is the trust boundary for the unrestricted state_gov search)."""
+    host = re.sub(r"^https?://", "", url, flags=re.IGNORECASE).split("/", 1)[0].lower()
+    return host == "gov" or host.endswith(".gov")
+
+
 # ── Curated Source Registry ──
 # Only these domains are allowed for live research.
 # Each entry has a display name, the domain, and the type of content expected.
@@ -83,6 +90,16 @@ CURATED_SOURCES = {
         "search_prefix": "site:oig.hhs.gov advisory opinion work plan",
         "category": SourceCategory.ocr_guidance,
         "authority": "HHS OIG",
+    },
+    # ── State law (unrestricted domain — filtered to .gov post-search, see
+    # _search_tavily/_search_ddg) — the only source not scoped to one fixed
+    # site, since there's no single domain for "all 50 states' law." ──
+    "state_gov": {
+        "name": "State Government Sources",
+        "domain": None,
+        "search_prefix": "official state government regulation statute law",
+        "category": SourceCategory.state_law,
+        "authority": "State Government",
     },
     # ── Education / Childcare ──
     "education_dept": {
@@ -232,8 +249,11 @@ class LiveResearchService:
 
         for source_key in target_sources:
             source_config = CURATED_SOURCES[source_key]
+            # state_gov has no fixed domain to scope the search, so the state
+            # itself has to be in the query text or every result is a coin flip.
+            source_query = f"{jurisdiction} {safe_query}" if source_key == "state_gov" and jurisdiction else safe_query
             try:
-                results = await self._search_source(source_key, source_config, safe_query)
+                results = await self._search_source(source_key, source_config, source_query)
                 all_results.extend(results[:max_results])
             except Exception as e:
                 logger.warning(f"Live research failed for {source_key}: {e}")
@@ -274,7 +294,7 @@ class LiveResearchService:
             Updated RetrievalContext with live research results appended
         """
         # Decide if live research is needed
-        should_research = self._should_use_live_research(context, needs_freshness)
+        should_research = self._should_use_live_research(context, needs_freshness, jurisdiction)
 
         if not should_research:
             return context
@@ -308,17 +328,28 @@ class LiveResearchService:
         self,
         context: RetrievalContext,
         needs_freshness: bool,
+        jurisdiction: Optional[str] = None,
     ) -> bool:
         """
         Decide whether live research is needed.
 
         Live research is used when:
           1. The user explicitly asks for current updates (needs_freshness=True)
-          2. The curated KB returned very few or no results
-          3. The KB results are all low-relevance
+          2. A state/jurisdiction is selected — the knowledge base only ever
+             contains federal eCFR content, never state law, so state-specific
+             claims always need a live search regardless of how well the KB
+             covered the federal side
+          3. The curated KB returned very few or no results
+          4. The KB results are all low-relevance
         """
         # User explicitly asked for current info
         if needs_freshness:
+            return True
+
+        # A state is selected — the KB never has state-law content to check
+        # against, so this always needs a live search, not just when the
+        # federal side of the KB happens to also be thin.
+        if jurisdiction:
             return True
 
         # KB returned nothing
@@ -363,6 +394,11 @@ class LiveResearchService:
             if "oig_advisory" not in sources:
                 sources.append("oig_advisory")
 
+        # A state is selected — search state government sources for that
+        # state's specific law, since the KB never has state-law content.
+        if jurisdiction and "state_gov" not in sources:
+            sources.append("state_gov")
+
         return sources
 
     async def _search_source(
@@ -406,21 +442,24 @@ class LiveResearchService:
         Search via Tavily API. Constrained to the source's whitelisted domain
         via Tavily's native include_domains parameter — no site: prefix needed.
         Returns extracted page content (not just snippets) when available.
+
+        source_config["domain"] of None (state_gov only) means there's no
+        single fixed domain to whitelist — every state has its own government
+        domains — so the search runs unrestricted and results are filtered to
+        .gov URLs afterward instead.
         """
-        # Extract the bare domain (Tavily wants the host, not a path).
-        # source_config["domain"] may be e.g. "hhs.gov/hipaa/for-professionals/compliance-enforcement"
-        # — Tavily expects "hhs.gov" and we filter by URL prefix in post-processing.
         full_domain_path = source_config["domain"]
-        bare_domain = full_domain_path.split("/")[0]
+        bare_domain = full_domain_path.split("/")[0] if full_domain_path else None
 
         payload = {
             "api_key": TAVILY_API_KEY,
             "query": query,
-            "include_domains": [bare_domain],
             "max_results": 5,
             "search_depth": "basic",  # "basic" = 1 credit; "advanced" = 2 credits
             "include_raw_content": False,  # use snippet-extracted content; full HTML not needed
         }
+        if bare_domain:
+            payload["include_domains"] = [bare_domain]
 
         response = await self.client.post(TAVILY_URL, json=payload, timeout=15.0)
         if response.status_code != 200:
@@ -435,8 +474,12 @@ class LiveResearchService:
             url = (item.get("url") or "").strip()
             if not url:
                 continue
-            # Enforce path-level scoping (e.g. only OCR enforcement, not all of hhs.gov)
-            if full_domain_path not in url:
+            if full_domain_path:
+                # Enforce path-level scoping (e.g. only OCR enforcement, not all of hhs.gov)
+                if full_domain_path not in url:
+                    continue
+            elif not _is_gov_url(url):
+                # Unrestricted search (state_gov) — only trust .gov results
                 continue
 
             title = (item.get("title") or "").strip()
@@ -463,7 +506,10 @@ class LiveResearchService:
     ) -> List[LiveResearchResult]:
         """Legacy DuckDuckGo HTML scrape — fallback only."""
         results: List[LiveResearchResult] = []
-        search_query = f"{source_config['search_prefix']} {query}"
+        # state_gov has no fixed domain — restrict via the site: operator
+        # instead, then _parse_ddg_results double-checks with _is_gov_url.
+        prefix = source_config["search_prefix"] + (" site:.gov" if not source_config["domain"] else "")
+        search_query = f"{prefix} {query}"
         try:
             search_url = "https://html.duckduckgo.com/html/"
             params = {"q": search_query, "kl": "us-en"}
@@ -502,9 +548,13 @@ class LiveResearchService:
             clean_title = re.sub(r'<[^>]+>', '', title).strip()
             clean_snippet = re.sub(r'<[^>]+>', '', snippet).strip()
 
-            # Only include results from the curated domain
+            # Only include results from the curated domain (or, for state_gov
+            # which has no fixed domain, any .gov result)
             domain = source_config["domain"]
-            if domain not in url:
+            if domain:
+                if domain not in url:
+                    continue
+            elif not _is_gov_url(url):
                 continue
 
             # Try to extract date from snippet
