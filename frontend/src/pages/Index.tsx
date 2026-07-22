@@ -724,6 +724,7 @@ export default function Index() {
             const msg = snapshot.error || "Generation failed.";
             setError(msg);
             toast.error("Generation Failed", { description: msg });
+            setLoading(false);
             try { localStorage.removeItem(JOB_KEY); } catch {}
             resolved = true;
           }
