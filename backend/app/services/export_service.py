@@ -1283,9 +1283,6 @@ def generate_docx(result: AnalysisResult, file_name: Optional[str] = None,
                    live_research_used: bool = False,
                    verification_overall: Optional[str] = None) -> bytes:
     """Generate a clean, template-style .docx gap analysis report and return as bytes.
-    Opens with a one-page certificate-style summary (regulations reviewed) before
-    the detailed findings -- this used to require a separate certificate download
-    for the same information.
 
     kb_sources_used/live_research_used/verification_overall live on the parent
     ComplianceActionPackage, not on AnalysisResult itself, so they're passed in
@@ -1293,13 +1290,6 @@ def generate_docx(result: AnalysisResult, file_name: Optional[str] = None,
     despite the whole point of the app being source-grounded verification."""
     doc = Document()
     _setup_document(doc)
-    _build_certificate_content(
-        doc,
-        policy_type=result.policy_type,
-        regulations=result.regulations_applied,
-        date_str=datetime.now().strftime("%B %d, %Y"),
-    )
-    doc.add_page_break()
     _build_gap_analysis_section(doc, result, file_name=file_name)
     doc.add_paragraph()
     _add_sources_used_section(doc, kb_sources_used, live_research_used, verification_overall)
@@ -1543,139 +1533,5 @@ def generate_updated_policy_export(
     return file_bytes, filename
 
 
-# ── Compliance Certificate ──
-
-def _build_certificate_content(
-    doc: Document,
-    *,
-    policy_type: str,
-    regulations: List[str],
-    date_str: str,
-):
-    """
-    Builds the one-page certificate-style summary: policy type and regulations
-    reviewed. Shared by the standalone certificate export and the gap analysis
-    report, which now opens with this as page 1 instead of requiring a
-    separate download for the same summary.
-    """
-    # ── Header bar ──
-    hdr = doc.add_paragraph()
-    hdr.paragraph_format.space_before = Pt(0)
-    hdr.paragraph_format.space_after = Pt(0)
-    hdr_run = hdr.add_run("  COMPLIANCE ASSESSMENT CERTIFICATE  ")
-    hdr_run.bold = True
-    hdr_run.font.size = Pt(13)
-    hdr_run.font.color.rgb = COLOR_WHITE
-    hdr.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _shade_paragraph(hdr, "1A1A2E")
-
-    doc.add_paragraph()
-
-    # ── Tool / issuer ──
-    _add_styled_paragraph(
-        doc,
-        "POLICY GAP ANALYZER",
-        bold=True,
-        size=18,
-        color=COLOR_DARK_NAVY,
-        space_before=0,
-        space_after=0,
-        alignment=WD_ALIGN_PARAGRAPH.CENTER,
-    )
-    _add_styled_paragraph(
-        doc,
-        "Multi-Industry Compliance Intelligence System",
-        size=10,
-        color=COLOR_GRAY,
-        italic=True,
-        space_before=0,
-        space_after=100,
-        alignment=WD_ALIGN_PARAGRAPH.CENTER,
-    )
-
-    _add_horizontal_rule(doc)
-
-    # ── Certificate title ──
-    _add_styled_paragraph(
-        doc,
-        "CERTIFICATE OF COMPLIANCE ASSESSMENT",
-        bold=True,
-        size=14,
-        color=COLOR_DARK_NAVY,
-        space_before=80,
-        space_after=20,
-        alignment=WD_ALIGN_PARAGRAPH.CENTER,
-    )
-    _add_styled_paragraph(
-        doc,
-        f"Assessment Date: {date_str}",
-        size=10,
-        color=COLOR_GRAY,
-        space_before=0,
-        space_after=120,
-        alignment=WD_ALIGN_PARAGRAPH.CENTER,
-    )
-
-    # ── Policy type ──
-    _add_styled_paragraph(
-        doc,
-        "POLICY / PROGRAM ASSESSED",
-        bold=True,
-        size=9,
-        color=COLOR_GRAY,
-        space_before=0,
-        space_after=20,
-    )
-    _add_styled_paragraph(
-        doc,
-        policy_type,
-        bold=True,
-        size=13,
-        color=COLOR_DARK_NAVY,
-        space_before=0,
-        space_after=140,
-    )
-
-    # ── Regulations reviewed ──
-    if regulations:
-        _add_styled_paragraph(
-            doc,
-            f"REGULATIONS & STANDARDS REVIEWED ({len(regulations)})",
-            bold=True,
-            size=9,
-            color=COLOR_GRAY,
-            space_before=60,
-            space_after=20,
-        )
-        regs_text = " • ".join(regulations[:12])
-        if len(regulations) > 12:
-            regs_text += f" + {len(regulations) - 12} more"
-        _add_styled_paragraph(doc, regs_text, size=9, color=COLOR_BLACK, space_after=80)
-
-    _add_horizontal_rule(doc)
-
-    # ── Disclaimer ──
-    disclaimer = (
-        "This certificate documents that the above policy or program was reviewed on the date shown "
-        "using AI-assisted regulatory analysis. This assessment is informational only and does not "
-        "constitute legal advice or a guarantee of regulatory compliance. All findings should be "
-        "independently reviewed by qualified compliance counsel before formal adoption or regulatory filing."
-    )
-    _add_styled_paragraph(
-        doc,
-        disclaimer,
-        size=8,
-        color=COLOR_LIGHT_GRAY,
-        italic=True,
-        space_before=40,
-        space_after=0,
-    )
-
-
-def _shade_paragraph(para, hex_color: str):
-    """Apply background shading to an entire paragraph (simulated highlight box)."""
-    pPr = para._p.get_or_add_pPr()
-    shd = parse_xml(f'<w:shd {nsdecls("w")} w:val="clear" w:color="auto" w:fill="{hex_color}"/>')
-    pPr.append(shd)
 
 
