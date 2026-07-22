@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { diffWordsWithSpace } from "diff";
 import {
   FileDown, Loader2, Shield, AlertTriangle, CheckCircle2, ChevronDown, MapPin,
   FileText, RefreshCw, GitCompare, LayoutDashboard,
@@ -13,6 +14,7 @@ import {
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
   type DraftedPolicy, type ChatMessage, type RewrittenPolicy, type RewrittenPolicySection,
+  type SourceSnippet,
   STATUS_LABELS,
   getSourceTypeLabel, getSourceTypeColor, getSourceTypeBg, getVerificationIcon,
 } from "@/lib/api";
@@ -176,7 +178,7 @@ type TabKey = typeof TABS[number]["key"];
 
 // ── Gap Row Component ──
 
-function GapRowItem({ row, urlMap }: { row: GapRow; urlMap?: Record<string, string> }) {
+function GapRowItem({ row, urlMap, snippets }: { row: GapRow; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null }) {
   const [open, setOpen] = useState(false);
   const s = STATUS_MAP[row.status] || STATUS_MAP.gap;
   const r = RISK_MAP[row.risk_level] || RISK_MAP.moderate;
@@ -235,18 +237,18 @@ function GapRowItem({ row, urlMap }: { row: GapRow; urlMap?: Record<string, stri
           {row.current_state && (
             <div>
               <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1 font-medium">Current Policy Language</p>
-              <p className="text-[12px] sm:text-[13px] text-foreground/70 italic leading-relaxed border-l-2 border-muted-foreground/30 pl-3">"{linkifyRegulations(stripCiteTags(row.current_state))}"</p>
+              <p className="text-[12px] sm:text-[13px] text-foreground/70 italic leading-relaxed border-l-2 border-muted-foreground/30 pl-3">"{linkifyRegulations(stripCiteTags(row.current_state), urlMap, snippets)}"</p>
             </div>
           )}
           <div>
             <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1 font-medium">Finding</p>
-            <p className="text-[13px] sm:text-sm text-foreground leading-relaxed">{linkifyRegulations(stripCiteTags(row.finding))}</p>
+            <p className="text-[13px] sm:text-sm text-foreground leading-relaxed">{linkifyRegulations(stripCiteTags(row.finding), urlMap, snippets)}</p>
           </div>
           <div className="rounded-xl p-3 sm:p-4 neu-inset">
             <p className="text-[10px] font-mono uppercase tracking-wider mb-1.5 font-medium" style={{ color: "hsl(var(--primary))" }}>Suggested Policy Language</p>
-            <p className="text-[13px] sm:text-sm text-foreground/85 italic leading-relaxed">"{linkifyRegulations(stripCiteTags(row.suggested_language))}"</p>
+            <p className="text-[13px] sm:text-sm text-foreground/85 italic leading-relaxed">"{linkifyRegulations(stripCiteTags(row.suggested_language), urlMap, snippets)}"</p>
           </div>
-          <p className="text-[10px] font-mono text-muted-foreground break-all">Cite: {linkifyRegulations(stripCiteTags(row.citation))}</p>
+          <p className="text-[10px] font-mono text-muted-foreground break-all">Cite: {linkifyRegulations(stripCiteTags(row.citation), urlMap, snippets)}</p>
           {row.source_attribution && <SourceBadge attribution={row.source_attribution} urlMap={urlMap} />}
         </div>
       )}
@@ -310,6 +312,7 @@ export default function Index() {
   });
   const [loading, setLoading] = useState(false);
   const [pkgStreaming, setPkgStreaming] = useState(false);
+  const [showRedline, setShowRedline] = useState(false);
   const [draftStreamText, setDraftStreamText] = useState("");
   const [loadSec, setLoadSec] = useState(0);
   const [error, setError] = useState("");
@@ -1195,10 +1198,10 @@ export default function Index() {
                 {draftResult.sections.length > 0 ? draftResult.sections.map((sec, i) => (
                   <div key={i}>
                     <h3 className="text-[13px] font-bold text-foreground mb-2 uppercase tracking-wide">{sec.title}</h3>
-                    <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(sec.content)}</p>
+                    <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(sec.content, undefined, draftResult.source_snippets)}</p>
                   </div>
                 )) : (
-                  <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(draftResult.full_text)}</p>
+                  <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(draftResult.full_text, undefined, draftResult.source_snippets)}</p>
                 )}
               </div>
             </div>
@@ -1292,6 +1295,7 @@ export default function Index() {
               <GapAnalysisTab
                 result={pkg.gap_analysis}
                 urlMap={pkg.kb_source_urls}
+                snippets={pkg.source_snippets}
                 severityFilter={severityFilter}
                 onChangeFilter={setSeverityFilter}
               />
@@ -1304,25 +1308,35 @@ export default function Index() {
                       <p className="text-[11px] text-muted-foreground font-mono">Effective: {pkg.rewritten_policy.effective_date}</p>
                     )}
                   </div>
-                  <button
-                    disabled={correctedExporting}
-                    onClick={async () => {
-                      setCorrectedExporting(true);
-                      try {
-                        await exportUpdatedPolicy(pkg);
-                        toast.success("Corrected policy downloaded");
-                      } catch (e: any) {
-                        toast.error("Download failed", { description: e.message });
-                      } finally {
-                        setCorrectedExporting(false);
-                      }
-                    }}
-                    title="Downloads this corrected policy, formatted and ready to review, as a Word file."
-                    className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn active:neu-pressed touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
-                  >
-                    {correctedExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
-                    {correctedExporting ? "DOWNLOADING..." : "DOWNLOAD CORRECTED POLICY (.DOCX)"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowRedline((s) => !s)}
+                      title={showRedline ? "Show the corrected policy as clean text" : "Show exactly what changed vs. the original, tracked-changes style"}
+                      className={`font-mono text-[10px] font-bold tracking-wider px-3 py-2 rounded-xl neu-btn touch-manipulation inline-flex items-center gap-1.5 ${showRedline ? "neu-pressed text-primary" : "text-foreground"}`}
+                    >
+                      <GitCompare className="w-3.5 h-3.5" />
+                      {showRedline ? "CLEAN VIEW" : "REDLINE VIEW"}
+                    </button>
+                    <button
+                      disabled={correctedExporting}
+                      onClick={async () => {
+                        setCorrectedExporting(true);
+                        try {
+                          await exportUpdatedPolicy(pkg);
+                          toast.success("Corrected policy downloaded");
+                        } catch (e: any) {
+                          toast.error("Download failed", { description: e.message });
+                        } finally {
+                          setCorrectedExporting(false);
+                        }
+                      }}
+                      title="Downloads this corrected policy, formatted and ready to review, as a Word file."
+                      className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn active:neu-pressed touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
+                    >
+                      {correctedExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                      {correctedExporting ? "DOWNLOADING..." : "DOWNLOAD CORRECTED POLICY (.DOCX)"}
+                    </button>
+                  </div>
                 </div>
                 {pkg.rewritten_policy.change_summary && (
                   <div className="rounded-xl neu-sm p-4">
@@ -1330,13 +1344,24 @@ export default function Index() {
                     <p className="text-[13px] text-foreground leading-relaxed">{pkg.rewritten_policy.change_summary}</p>
                   </div>
                 )}
+                {showRedline ? (
+                  <div className="rounded-xl neu-raised p-6">
+                    <p className="nyt-eyebrow mb-1">Redline — Original vs. Corrected</p>
+                    <p className="text-[11px] text-muted-foreground mb-4">
+                      <del className="rounded px-0.5" style={{ background: "hsl(0 72% 51% / 0.12)", color: "hsl(0 72% 38%)" }}>Removed</del>
+                      {" "}·{" "}
+                      <ins className="no-underline rounded px-0.5" style={{ background: "hsl(160 60% 42% / 0.18)", color: "hsl(160 60% 24%)" }}>Added</ins>
+                    </p>
+                    <RedlineView original={text} corrected={pkg.rewritten_policy.full_text} />
+                  </div>
+                ) : (
                 <div className="rounded-xl neu-raised p-6">
                   <p className="nyt-eyebrow mb-4">Full Corrected Policy</p>
                   <div className="space-y-5">
                     {pkg.rewritten_policy.sections.length > 0 ? pkg.rewritten_policy.sections.map((sec, i) => (
                       <div key={i}>
                         <h3 className="text-[13px] font-bold text-foreground mb-2 uppercase tracking-wide">{sec.section_title}</h3>
-                        <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(sec.rewritten_text)}</p>
+                        <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(sec.rewritten_text, undefined, pkg.source_snippets)}</p>
                         {(sec.changes_summary || sec.regulation_refs?.length > 0) && (
                           <div className="mt-2 pl-3 border-l-2" style={{ borderColor: "hsl(0 72% 51% / 0.4)" }}>
                             {sec.changes_summary && (
@@ -1372,10 +1397,11 @@ export default function Index() {
                         )}
                       </div>
                     )) : (
-                      <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(pkg.rewritten_policy.full_text)}</p>
+                      <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">{linkifyRegulations(pkg.rewritten_policy.full_text, undefined, pkg.source_snippets)}</p>
                     )}
                   </div>
                 </div>
+                )}
               </div>
             )}
             {/* Ask AI button */}
@@ -1425,6 +1451,35 @@ export default function Index() {
 // ──────────────────────────────────────────────
 // Tab Components
 // ──────────────────────────────────────────────
+
+// Computed word-level diff between the originally uploaded policy and the
+// corrected one -- pure post-processing on two strings that already exist,
+// not a second model generation, so it can't reintroduce the truncation
+// bug that duplicate model-written output caused elsewhere in this app.
+function RedlineView({ original, corrected }: { original: string; corrected: string }) {
+  const parts = useMemo(() => diffWordsWithSpace(original, corrected), [original, corrected]);
+  return (
+    <div className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">
+      {parts.map((part, i) => {
+        if (part.added) {
+          return (
+            <ins key={i} className="no-underline rounded px-0.5" style={{ background: "hsl(160 60% 42% / 0.18)", color: "hsl(160 60% 24%)" }}>
+              {part.value}
+            </ins>
+          );
+        }
+        if (part.removed) {
+          return (
+            <del key={i} className="rounded px-0.5" style={{ background: "hsl(0 72% 51% / 0.12)", color: "hsl(0 72% 38%)" }}>
+              {part.value}
+            </del>
+          );
+        }
+        return <span key={i}>{part.value}</span>;
+      })}
+    </div>
+  );
+}
 
 function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
   const ga = pkg.gap_analysis;
@@ -1536,7 +1591,7 @@ function SourceAttributionPanel({
 }
 
 
-function GapAnalysisTab({ result, urlMap, severityFilter, onChangeFilter }: { result: AnalysisResult; urlMap?: Record<string, string>; severityFilter?: "critical" | "gap" | "partial" | null; onChangeFilter?: (s: "critical" | "gap" | "partial" | null) => void }) {
+function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilter }: { result: AnalysisResult; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null; severityFilter?: "critical" | "gap" | "partial" | null; onChangeFilter?: (s: "critical" | "gap" | "partial" | null) => void }) {
   const criticalItems = result.gap_table.filter((r) => r.risk_level === "critical");
 
   // Inline filter chips — one row of buttons, each shows count, tap to narrow the list. "All" resets.
@@ -1582,7 +1637,7 @@ function GapAnalysisTab({ result, urlMap, severityFilter, onChangeFilter }: { re
             <p className="text-sm text-muted-foreground">No items in this category.</p>
           </div>
         ) : (
-          filteredRows.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} />)
+          filteredRows.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} snippets={snippets} />)
         )
       ) : (
         <>
@@ -1592,7 +1647,7 @@ function GapAnalysisTab({ result, urlMap, severityFilter, onChangeFilter }: { re
                 Immediate Action Required — {criticalItems.length} Critical Finding{criticalItems.length !== 1 ? "s" : ""}
               </p>
               {result.priority_findings?.slice(0, 3).map((f, i) => (
-                <p key={i} className="text-[11px] sm:text-xs text-foreground/80 leading-relaxed pl-3 border-l-2 border-l-destructive/30 mb-1">{linkifyRegulations(stripCiteTags(f))}</p>
+                <p key={i} className="text-[11px] sm:text-xs text-foreground/80 leading-relaxed pl-3 border-l-2 border-l-destructive/30 mb-1">{linkifyRegulations(stripCiteTags(f), urlMap, snippets)}</p>
               ))}
             </div>
           )}
@@ -1603,7 +1658,7 @@ function GapAnalysisTab({ result, urlMap, severityFilter, onChangeFilter }: { re
             </p>
           )}
 
-          {result.gap_table.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} />)}
+          {result.gap_table.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} snippets={snippets} />)}
         </>
       )}
     </div>

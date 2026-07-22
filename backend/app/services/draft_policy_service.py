@@ -184,6 +184,7 @@ def attach_attribution(data: dict, ctx: RetrievalContext) -> dict:
     sources = ctx.get_source_names()
     data["kb_sources_used"] = sources or None
     data["kb_source_urls"] = ctx.get_source_url_map() or None
+    data["source_snippets"] = ctx.get_source_snippets() or None
     data["live_research_used"] = ctx.live_research_used
     data["unverified_claim_count"] = report.unverified_claims
 

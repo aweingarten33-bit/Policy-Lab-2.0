@@ -360,6 +360,15 @@ class ImplementationChecklist(BaseModel):
     )
 
 
+class SourceSnippet(BaseModel):
+    """A single retrieved source chunk exposed to the UI -- the actual text
+    behind a citation, not just a source-name badge."""
+    citation: Optional[str] = None
+    source_name: str
+    url: Optional[str] = None
+    text: str
+
+
 class ComplianceActionPackage(BaseModel):
     """
     The Complete Compliance Action Package — all 7 outputs from a single policy upload.
@@ -415,6 +424,10 @@ class ComplianceActionPackage(BaseModel):
     unverified_claim_count: Optional[int] = Field(
         None,
         description="Number of claims that could not be verified from source material"
+    )
+    source_snippets: Optional[List[SourceSnippet]] = Field(
+        None,
+        description="Actual retrieved source passages, so the UI can show the real text behind a citation"
     )
 
 
@@ -492,6 +505,9 @@ class DraftedPolicy(BaseModel):
     )
     unverified_claim_count: Optional[int] = Field(
         None, description="Number of citations in the draft that could not be verified against loaded sources"
+    )
+    source_snippets: Optional[List[SourceSnippet]] = Field(
+        None, description="Actual retrieved source passages, so the UI can show the real text behind a citation"
     )
 
 

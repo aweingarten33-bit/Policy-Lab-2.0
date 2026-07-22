@@ -219,6 +219,7 @@ export interface ComplianceActionPackage {
   error_message?: string;
   kb_sources_used?: string[];
   kb_source_urls?: Record<string, string>;
+  source_snippets?: SourceSnippet[];
   live_research_used: boolean;
   verification_overall?: string;
   unverified_claim_count?: number;
@@ -436,9 +437,17 @@ export interface DraftedPolicy {
   drafting_notes?: string;
   kb_sources_used?: string[] | null;
   kb_source_urls?: Record<string, string> | null;
+  source_snippets?: SourceSnippet[] | null;
   live_research_used?: boolean;
   verification_overall?: string | null;
   unverified_claim_count?: number | null;
+}
+
+export interface SourceSnippet {
+  citation?: string | null;
+  source_name: string;
+  url?: string | null;
+  text: string;
 }
 
 /**

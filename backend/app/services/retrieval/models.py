@@ -189,6 +189,30 @@ class RetrievalContext(BaseModel):
                 url_map[name] = url
         return url_map
 
+    def get_source_snippets(self, max_chars: int = 500) -> List[dict]:
+        """Return de-duplicated {citation, source_name, url, text} dicts for
+        every retrieved chunk (curated + live), text truncated for payload
+        size. Lets the UI show the actual retrieved passage behind a
+        citation instead of just a source-name badge -- proof, not a claim."""
+        seen = set()
+        snippets: List[dict] = []
+        for r in self.get_all_sources():
+            meta = r.chunk.metadata
+            key = (meta.citation or "").strip().lower() or f"{meta.source_name}:{r.chunk.text[:80]}"
+            if key in seen:
+                continue
+            seen.add(key)
+            text = r.chunk.text.strip()
+            if len(text) > max_chars:
+                text = text[:max_chars].rsplit(" ", 1)[0] + "…"
+            snippets.append({
+                "citation": meta.citation,
+                "source_name": meta.source_name,
+                "url": meta.url,
+                "text": text,
+            })
+        return snippets
+
     def get_source_citations(self) -> List[str]:
         """Return unique citations from all results."""
         citations = []

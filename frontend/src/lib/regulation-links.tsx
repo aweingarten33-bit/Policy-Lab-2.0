@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
+import type { SourceSnippet } from "@/lib/api";
 
 type Rule = { pattern: RegExp; url: (m: RegExpExecArray) => string };
 
@@ -128,6 +129,80 @@ const FALLBACK_RULES: Rule[] = [
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// ── Grounded citation matching ──
+// Reduces a citation-like string to its "title-part" key (e.g. "45 CFR
+// §164.312(a)(1)" -> "45-164") so an inline citation can be matched against
+// a retrieved source snippet even when the exact section/subsection differs
+// -- we're proving the *regulation* was actually retrieved, not claiming
+// that specific subsection was verified word-for-word.
+function citationKey(s: string): string | null {
+  const m = /(\d+)\s*C\.?F\.?R\.?[^\d]{0,15}?(\d+)/i.exec(s);
+  if (m) return `${m[1]}-${m[2]}`;
+  const u = /(\d+)\s*U\.?S\.?C\.?[^\d]{0,10}?(\d+)/i.exec(s);
+  if (u) return `usc-${u[1]}-${u[2]}`;
+  return null;
+}
+
+function buildSnippetIndex(snippets?: SourceSnippet[] | null): Map<string, SourceSnippet> {
+  const index = new Map<string, SourceSnippet>();
+  if (!snippets) return index;
+  for (const snip of snippets) {
+    const key = snip.citation ? citationKey(snip.citation) : null;
+    if (key && !index.has(key)) index.set(key, snip);
+  }
+  return index;
+}
+
+// Popover showing the actual retrieved passage behind a citation -- proof
+// the model didn't just invent the reference, not just a source-name badge.
+function GroundedCitation({ label, url, snippet }: { label: string; url: string; snippet: SourceSnippet }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  return (
+    <span ref={ref} className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="text-primary hover:underline underline decoration-dotted decoration-1 underline-offset-2 font-medium"
+        title="Click to see the actual retrieved source text"
+      >
+        {label}
+      </button>
+      {open && (
+        <span className="absolute z-50 left-0 top-full mt-1.5 w-80 max-w-[85vw] rounded-xl neu-raised bg-card p-3.5 text-left block">
+          <span className="block text-[9px] font-mono uppercase tracking-wider text-primary mb-1.5">
+            🌐 Retrieved Source Material
+          </span>
+          <span className="block text-[9px] font-mono text-muted-foreground mb-2">{snippet.source_name}</span>
+          <span className="block text-[11px] leading-relaxed text-foreground/85 whitespace-pre-wrap">
+            &ldquo;{snippet.text}&rdquo;
+          </span>
+          {(snippet.url || url) && (
+            <a
+              href={snippet.url || url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block text-[10px] font-mono text-primary hover:underline"
+            >
+              Open full source ↗
+            </a>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
 // Build a per-call ruleset that includes any source names from the provided
 // urlMap as exact-string patterns. This lets named KB sources like
 // "Stony Brook Medicine HIPAA Privacy Policy" become clickable wherever they
@@ -184,8 +259,10 @@ export function lookupRegulationUrl(
 export function linkifyRegulations(
   text: string,
   urlMap?: Record<string, string>,
+  snippets?: SourceSnippet[] | null,
 ): React.ReactNode {
   if (!text) return text;
+  const snippetIndex = buildSnippetIndex(snippets);
 
   type Hit = { start: number; end: number; url: string; label: string };
   const hits: Hit[] = [];
@@ -219,17 +296,23 @@ export function linkifyRegulations(
   let last = 0;
   filtered.forEach((h, i) => {
     if (h.start > last) parts.push(text.slice(last, h.start));
+    const key = citationKey(h.label);
+    const snippet = key ? snippetIndex.get(key) : undefined;
     parts.push(
-      <a
-        key={`reg-${i}-${h.start}`}
-        href={h.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-primary hover:underline"
-        title={`Open source: ${h.url}`}
-      >
-        {h.label}
-      </a>
+      snippet ? (
+        <GroundedCitation key={`reg-${i}-${h.start}`} label={h.label} url={h.url} snippet={snippet} />
+      ) : (
+        <a
+          key={`reg-${i}-${h.start}`}
+          href={h.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+          title={`Open source: ${h.url}`}
+        >
+          {h.label}
+        </a>
+      )
     );
     last = h.end;
   });

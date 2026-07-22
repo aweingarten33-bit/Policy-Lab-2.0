@@ -245,6 +245,7 @@ class PackageOrchestrator:
         # Track overall KB sources and live research usage
         all_kb_sources: List[str] = []
         all_kb_source_urls: Dict[str, str] = {}
+        all_source_snippets: Dict[str, dict] = {}
         any_live_research = False
         total_unverified = 0
 
@@ -309,6 +310,9 @@ class PackageOrchestrator:
 
                 all_kb_sources.extend(s for s in sources if s not in all_kb_sources)
                 all_kb_source_urls.update(retrieval_ctx.get_source_url_map())
+                for snip in retrieval_ctx.get_source_snippets():
+                    key = (snip["citation"] or "").strip().lower() or snip["source_name"]
+                    all_source_snippets.setdefault(key, snip)
                 if live_used:
                     any_live_research = True
                 total_unverified += sum(1 for a in attributions if a.verification_status == VerificationStatus.unverified)
@@ -336,6 +340,7 @@ class PackageOrchestrator:
         # ── Final: Set package-level metadata ──
         package.kb_sources_used = all_kb_sources if all_kb_sources else None
         package.kb_source_urls = all_kb_source_urls if all_kb_source_urls else None
+        package.source_snippets = list(all_source_snippets.values()) if all_source_snippets else None
         package.live_research_used = any_live_research
         package.unverified_claim_count = total_unverified
 
@@ -387,6 +392,7 @@ class PackageOrchestrator:
 
         all_kb_sources: List[str] = []
         all_kb_source_urls: Dict[str, str] = {}
+        all_source_snippets: Dict[str, dict] = {}
         any_live_research = False
         total_unverified = 0
 
@@ -433,6 +439,9 @@ class PackageOrchestrator:
             gap_result.verification_summary = ver_summary
             all_kb_sources.extend(s for s in sources if s not in all_kb_sources)
             all_kb_source_urls.update(retrieval_ctx.get_source_url_map())
+            for snip in retrieval_ctx.get_source_snippets():
+                key = (snip["citation"] or "").strip().lower() or snip["source_name"]
+                all_source_snippets.setdefault(key, snip)
             if live_used:
                 any_live_research = True
             total_unverified += sum(1 for a in attributions if a.verification_status == VerificationStatus.unverified)
@@ -440,6 +449,7 @@ class PackageOrchestrator:
             package.status = PackageStatus.analyzing
             package.kb_sources_used = all_kb_sources if all_kb_sources else None
             package.kb_source_urls = all_kb_source_urls if all_kb_source_urls else None
+            package.source_snippets = list(all_source_snippets.values()) if all_source_snippets else None
             logger.info(f"[{package_id}] Gap analysis complete — streaming first result")
         except Exception as e:
             logger.error(f"[{package_id}] Gap analysis failed: {e}")
@@ -461,6 +471,7 @@ class PackageOrchestrator:
 
         package.kb_sources_used = all_kb_sources if all_kb_sources else None
         package.kb_source_urls = all_kb_source_urls if all_kb_source_urls else None
+        package.source_snippets = list(all_source_snippets.values()) if all_source_snippets else None
         package.live_research_used = any_live_research
         package.unverified_claim_count = total_unverified
         package.status = PackageStatus.complete
