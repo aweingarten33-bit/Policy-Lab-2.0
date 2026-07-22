@@ -264,8 +264,15 @@ class VerificationService:
         # Normalize both citations
         def normalize(c: str) -> str:
             c = c.lower().strip()
-            c = re.sub(r'\s+', ' ', c)        # Collapse whitespace
-            c = re.sub(r'[§¶]', '', c)         # Remove section symbols
+            c = re.sub(r'[§¶]', '', c)         # Remove section symbols first --
+                                                # eCFR-ingested citations are stored
+                                                # as "45 CFR § 164.312" (space after §)
+                                                # while the model writes "§164.312" (no
+                                                # space); removing § before collapsing
+                                                # whitespace left a stray double-space
+                                                # that made every real citation fail to
+                                                # match its own source.
+            c = re.sub(r'\s+', ' ', c).strip()  # Then collapse whitespace
             c = c.replace('section', 'sec')    # Normalize
             c = c.replace('part ', 'part')     # Normalize
             return c
