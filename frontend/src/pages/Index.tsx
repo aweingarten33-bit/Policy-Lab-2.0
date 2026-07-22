@@ -860,10 +860,13 @@ export default function Index() {
     <div className="min-h-screen text-foreground">
       {/* Header */}
       <header className="aqua-kiss aqua-bar sticky top-0 z-10 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-2 relative">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+        <div className="flex flex-col min-w-0 flex-1">
           <span className="nyt-masthead text-[26px] sm:text-3xl text-foreground whitespace-nowrap overflow-visible leading-[1.3] py-0.5 inline-block">
             The Policy Lab
           </span>
+          <p className="text-[9px] sm:text-[10px] text-muted-foreground/70 leading-tight -mt-0.5">
+            AI-assisted, not AI-decided. AI can make mistakes, including wrong or fabricated citations — you're the final approver, so review every finding, citation, and suggested change before adopting or submitting it. Final judgment and responsibility remain yours.
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {!backendOnline && (
@@ -905,9 +908,6 @@ export default function Index() {
                   </p>
                 </>
               )}
-              <p className="text-xs sm:text-sm text-muted-foreground/70 max-w-xl leading-relaxed mt-4">
-                AI-assisted, not AI-decided — you're the final reviewer. Check every result before adopting or submitting it.
-              </p>
             </div>
 
             {/* Mode toggle — NYT-style underline tabs */}
