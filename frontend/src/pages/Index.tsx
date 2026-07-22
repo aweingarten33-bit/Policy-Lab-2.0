@@ -1393,27 +1393,6 @@ export default function Index() {
 // Tab Components
 // ──────────────────────────────────────────────
 
-function ComplianceGauge({ score }: { score: number }) {
-  const clamped = Math.max(0, Math.min(100, score));
-  const radius = 36;
-  const circ = 2 * Math.PI * radius;
-  const dash = (clamped / 100) * circ;
-  const color = clamped >= 70 ? "#22c55e" : clamped >= 40 ? "#f59e0b" : "#ef4444";
-  const label = clamped >= 70 ? "Mostly Compliant" : clamped >= 40 ? "Partial Gaps" : "Critical Gaps";
-  return (
-    <div className="flex flex-col items-center justify-center gap-1">
-      <svg width="88" height="88" viewBox="0 0 88 88">
-        <circle cx="44" cy="44" r={radius} fill="none" stroke="hsl(var(--border))" strokeWidth="7" />
-        <circle cx="44" cy="44" r={radius} fill="none" stroke={color} strokeWidth="7"
-          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
-          transform="rotate(-90 44 44)" style={{ transition: "stroke-dasharray 0.6s ease" }} />
-        <text x="44" y="48" textAnchor="middle" fontSize="15" fontWeight="700" fill={color} fontFamily="monospace">{clamped.toFixed(0)}%</text>
-      </svg>
-      <p className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground">{label}</p>
-    </div>
-  );
-}
-
 function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
   const ga = pkg.gap_analysis;
   const totalIssues = ga.critical_count + ga.gap_count + ga.partial_count;
@@ -1422,25 +1401,16 @@ function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
     <div className="space-y-4">
       {/* Status banner */}
       <div className="rounded-2xl bg-card neu-raised p-4 sm:p-5">
-        <div className="flex items-start gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-3">
-              {totalIssues > 0 ? <AlertTriangle className="w-4 h-4 text-destructive" /> : <CheckCircle2 className="w-4 h-4 text-green-600" />}
-              <span className="text-[10px] font-mono uppercase tracking-wider font-medium text-muted-foreground">The Policy Lab — Compliance Report</span>
-            </div>
-            <p className="text-[13px] sm:text-sm text-foreground/85 leading-relaxed">{ga.audit_ready_summary}</p>
-            <div className="flex flex-wrap gap-2 mt-3">
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{ga.policy_type}</span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{ga.regulations_applied?.length || 0} regulations</span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{totalIssues} issues</span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{pkg.completed_outputs.length}/7 outputs</span>
-            </div>
-          </div>
-          {ga.compliance_score != null && (
-            <div className="shrink-0">
-              <ComplianceGauge score={ga.compliance_score} />
-            </div>
-          )}
+        <div className="flex items-center gap-2 mb-3">
+          {totalIssues > 0 ? <AlertTriangle className="w-4 h-4 text-destructive" /> : <CheckCircle2 className="w-4 h-4 text-green-600" />}
+          <span className="text-[10px] font-mono uppercase tracking-wider font-medium text-muted-foreground">The Policy Lab — Compliance Report</span>
+        </div>
+        <p className="text-[13px] sm:text-sm text-foreground/85 leading-relaxed">{ga.audit_ready_summary}</p>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{ga.policy_type}</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{ga.regulations_applied?.length || 0} regulations</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{totalIssues} issues</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{pkg.completed_outputs.length}/7 outputs</span>
         </div>
       </div>
 
