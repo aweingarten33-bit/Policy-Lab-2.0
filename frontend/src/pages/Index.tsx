@@ -32,7 +32,8 @@ function formatElapsed(totalSeconds: number): string {
 // ── Demo samples ──
 // Realistic-but-flawed sample policy so first-time visitors can see what
 // the analyzer actually does on a real document.
-const SAMPLE_POLICY_TEXT = `HIPAA PRIVACY AND SECURITY POLICY
+const SAMPLE_POLICY_TEXTS: Record<string, string> = {
+  healthcare: `HIPAA PRIVACY AND SECURITY POLICY
 Northbridge Family Medicine, P.C.
 Adopted: January 2019  |  Last reviewed: March 2022
 
@@ -64,7 +65,76 @@ Patients may request a copy of their medical records by submitting a written req
 Violations of this policy may result in disciplinary action, up to and including termination.
 
 10. POLICY REVIEW
-This policy is reviewed by the office manager every two to three years.`;
+This policy is reviewed by the office manager every two to three years.`,
+
+  home_health: `HOME HEALTH AIDE SUPERVISION & CARE COORDINATION POLICY
+Meridian Home Health Services, LLC
+Adopted: March 2020  |  Last reviewed: January 2023
+
+1. PURPOSE
+Meridian Home Health Services is committed to providing safe, high-quality skilled home health care in compliance with Medicare Conditions of Participation. All clinical and aide staff must follow this policy.
+
+2. SCOPE
+This policy applies to all registered nurses, home health aides, and clinical supervisors providing services to patients under an active plan of care.
+
+3. COMPREHENSIVE ASSESSMENT
+The admitting clinician completes a comprehensive assessment, including OASIS data collection where required, at the start of care. Reassessments are completed periodically to reflect the patient's condition.
+
+4. PLAN OF CARE
+Each patient has a physician-signed plan of care. The plan of care is reviewed by the care team as needed based on clinical judgment.
+
+5. HOME HEALTH AIDE SUPERVISION
+Registered nurses supervise home health aides providing hands-on care. Supervisory visits are conducted periodically to ensure quality of care and are documented in the patient's chart.
+
+6. AIDE COMPETENCY & TRAINING
+New home health aides complete an orientation covering basic caregiving skills before their first patient assignment. Ongoing training is available through the agency's online learning portal.
+
+7. MISSED OR LATE VISITS
+If a scheduled visit is missed, the assigned clinician or aide should notify the office. The scheduling coordinator will work to reschedule the visit.
+
+8. QUALITY ASSESSMENT & PERFORMANCE IMPROVEMENT (QAPI)
+The agency reviews clinical outcomes and patient satisfaction data periodically to identify opportunities for improvement.
+
+9. PATIENT RIGHTS
+Patients are provided a copy of their rights and responsibilities at the start of care, including the right to file a complaint.
+
+10. SANCTIONS
+Failure to follow this policy may result in corrective action, up to and including termination.
+
+11. POLICY REVIEW
+This policy is reviewed by the Director of Nursing on an as-needed basis.`,
+
+  other: `WHISTLEBLOWER AND NON-RETALIATION POLICY
+Fieldstone Nonprofit Alliance
+Adopted: June 2021  |  Last reviewed: August 2023
+
+1. PURPOSE
+Fieldstone Nonprofit Alliance encourages staff and volunteers to report suspected wrongdoing without fear of retaliation.
+
+2. SCOPE
+This policy applies to all employees, board members, contractors, and volunteers.
+
+3. PROTECTED DISCLOSURES
+Staff may report concerns about financial misconduct, legal violations, or unsafe practices to their supervisor or the Executive Director.
+
+4. REPORTING PROCESS
+Reports should be made in writing when possible. The organization will look into reports as time allows.
+
+5. CONFIDENTIALITY
+The organization will try to keep the identity of the reporting individual confidential.
+
+6. NON-RETALIATION
+Retaliation against anyone who reports a concern in good faith is not tolerated.
+
+7. INVESTIGATION
+The Executive Director will determine how to handle each report on a case-by-case basis.
+
+8. SANCTIONS
+Violations of this policy may result in disciplinary action, up to and including termination.
+
+9. POLICY REVIEW
+This policy is reviewed periodically by the board.`,
+};
 
 const SAMPLE_DRAFT_DESCRIPTIONS: Record<string, string> = {
   healthcare:
@@ -980,8 +1050,8 @@ export default function Index() {
                     <button
                       type="button"
                       onClick={() => {
-                        setText(SAMPLE_POLICY_TEXT);
-                        setFileName("sample-policy.txt");
+                        setText(SAMPLE_POLICY_TEXTS[industry] ?? SAMPLE_POLICY_TEXTS.healthcare);
+                        setFileName(`sample-${industry}-policy.txt`);
                         setError("");
                         toast.success("Sample policy loaded — hit Generate to run it");
                       }}
