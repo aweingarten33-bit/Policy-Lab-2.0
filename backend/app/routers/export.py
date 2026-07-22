@@ -25,6 +25,9 @@ async def export_report(request: ExportRequest):
             result=request.result,
             file_name=request.file_name,
             export_format=request.export_format,
+            kb_sources_used=request.kb_sources_used,
+            live_research_used=request.live_research_used,
+            verification_overall=request.verification_overall,
         )
     except Exception as e:
         logger.error(f"Export generation failed: {e}")

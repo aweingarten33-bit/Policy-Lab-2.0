@@ -358,6 +358,9 @@ export async function exportGapAnalysis(
       result: pkg.gap_analysis,
       file_name: pkg.source_file_name,
       export_format: "docx",
+      kb_sources_used: pkg.kb_sources_used,
+      live_research_used: pkg.live_research_used,
+      verification_overall: pkg.verification_overall,
     }),
   });
 

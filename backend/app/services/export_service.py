@@ -1278,11 +1278,19 @@ def _build_footer_section(doc: Document):
 # Legacy single-report export (backward compatible)
 # ──────────────────────────────────────────────
 
-def generate_docx(result: AnalysisResult, file_name: Optional[str] = None) -> bytes:
+def generate_docx(result: AnalysisResult, file_name: Optional[str] = None,
+                   kb_sources_used: Optional[List[str]] = None,
+                   live_research_used: bool = False,
+                   verification_overall: Optional[str] = None) -> bytes:
     """Generate a clean, template-style .docx gap analysis report and return as bytes.
     Opens with a one-page certificate-style summary (regulations reviewed) before
     the detailed findings -- this used to require a separate certificate download
-    for the same information."""
+    for the same information.
+
+    kb_sources_used/live_research_used/verification_overall live on the parent
+    ComplianceActionPackage, not on AnalysisResult itself, so they're passed in
+    separately -- without them this report had no verification section at all,
+    despite the whole point of the app being source-grounded verification."""
     doc = Document()
     _setup_document(doc)
     _build_certificate_content(
@@ -1293,6 +1301,8 @@ def generate_docx(result: AnalysisResult, file_name: Optional[str] = None) -> by
     )
     doc.add_page_break()
     _build_gap_analysis_section(doc, result, file_name=file_name)
+    doc.add_paragraph()
+    _add_sources_used_section(doc, kb_sources_used, live_research_used, verification_overall)
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -1301,11 +1311,14 @@ def generate_docx(result: AnalysisResult, file_name: Optional[str] = None) -> by
 
 
 def generate_export(result: AnalysisResult, file_name: Optional[str] = None,
-                    export_format: ExportFormat = ExportFormat.docx) -> tuple[bytes, str]:
+                    export_format: ExportFormat = ExportFormat.docx,
+                    kb_sources_used: Optional[List[str]] = None,
+                    live_research_used: bool = False,
+                    verification_overall: Optional[str] = None) -> tuple[bytes, str]:
     """Generate a single gap analysis export file."""
     safe_name = (file_name or "Policy").rsplit(".", 1)[0].replace(" ", "_").replace("(", "").replace(")", "")[:60]
     date_str = datetime.now().strftime("%Y-%m-%d")
-    file_bytes = generate_docx(result, file_name)
+    file_bytes = generate_docx(result, file_name, kb_sources_used, live_research_used, verification_overall)
     filename = f"{safe_name}_Gap_Report_{date_str}.docx"
     return file_bytes, filename
 
@@ -1407,6 +1420,17 @@ def generate_draft_policy_docx(policy: dict) -> bytes:
         _add_horizontal_rule(doc)
         _add_styled_paragraph(doc, "DRAFTING NOTES", bold=True, size=10, color=COLOR_GRAY)
         _add_styled_paragraph(doc, policy["drafting_notes"], size=10, color=COLOR_GRAY, italic=True)
+
+    # Sources used -- this draft ran the same KB retrieval + live research as
+    # gap analysis, so it gets the same verification section, not just a
+    # generic disclaimer.
+    doc.add_paragraph()
+    _add_sources_used_section(
+        doc,
+        policy.get("kb_sources_used"),
+        policy.get("live_research_used", False),
+        policy.get("verification_overall"),
+    )
 
     # AI disclaimer
     doc.add_paragraph()

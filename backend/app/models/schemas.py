@@ -119,6 +119,11 @@ class ExportRequest(BaseModel):
     result: "AnalysisResult"
     file_name: Optional[str] = Field(None, description="Original file name for the report header")
     export_format: ExportFormat = Field(ExportFormat.docx, description="Export format: docx or pdf")
+    kb_sources_used: Optional[List[str]] = Field(
+        None, description="Knowledge base source names used, so the report can show its verification section"
+    )
+    live_research_used: bool = Field(False, description="Whether live research was used")
+    verification_overall: Optional[str] = Field(None, description="Verification summary sentence")
 
 
 class GapRow(BaseModel):
