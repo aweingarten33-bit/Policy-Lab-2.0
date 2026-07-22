@@ -124,6 +124,7 @@ class PackageOrchestrator:
             policy_type=policy_type,
             jurisdiction=jurisdiction,
             gap_findings=gap_findings,
+            industry=industry,
         )
 
         logger.info(

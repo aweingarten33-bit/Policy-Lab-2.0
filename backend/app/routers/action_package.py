@@ -121,6 +121,7 @@ async def fix_all_gaps(request: RewritePolicyRequest):
             policy_type=request.gap_analysis.policy_type or "",
             jurisdiction=request.jurisdiction,
             gap_findings=gap_findings,
+            industry=request.industry,
         )
         retrieval_context = await get_live_research_service().augment_retrieval_context(
             context=retrieval_context,

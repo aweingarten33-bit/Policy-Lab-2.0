@@ -132,6 +132,7 @@ async def _prepare_draft(
         policy_text=policy_description,
         policy_type="compliance_policy",
         jurisdiction=jurisdiction,
+        industry=industry_slug,
     )
 
     # State law is never in the KB (only federal eCFR content is seeded), so

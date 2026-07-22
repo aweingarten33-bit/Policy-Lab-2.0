@@ -43,17 +43,26 @@ def _extract_state_code(jurisdiction: Optional[str]) -> Optional[str]:
     return code if code in Jurisdiction.__members__ else None
 
 # ── Query templates for each generation step ──
+# {industry_name} and {key_regulations} are filled from the selected industry's
+# own config (see _build_query) so these aren't hardcoded to healthcare -- a
+# "Other/General" gas station policy shouldn't have "HIPAA... 45 CFR 164"
+# baked into its retrieval query, federal or live-research alike.
 
 QUERY_TEMPLATES = {
     "gap_analysis": (
-        "Healthcare compliance requirements for {policy_type} policy. "
-        "Federal regulations HIPAA OCR requirements 45 CFR 164. "
+        "{industry_name} compliance requirements for {policy_type} policy. "
+        "Federal regulations: {key_regulations}. "
         "Regulatory standards and mandatory policy elements."
     ),
     "rewritten_policy": (
-        "Required policy language for {policy_type} compliance. "
-        "Mandatory clauses and provisions for healthcare policy. "
+        "Required policy language for {policy_type} compliance in {industry_name}. "
+        "Mandatory clauses and provisions. Federal regulations: {key_regulations}. "
         "Regulatory text for policy sections."
+    ),
+    "draft_policy": (
+        "{industry_name} policy language and requirements for {policy_type}. "
+        "Federal regulations: {key_regulations}. "
+        "Real policy examples, templates, and mandatory clauses."
     ),
     "redline": (
         "Regulatory changes and updates for {policy_type}. "
@@ -106,6 +115,7 @@ class ComplianceRetriever:
         gap_findings: Optional[List[str]] = None,
         max_results_per_collection: int = 3,
         collections: Optional[List[str]] = None,
+        industry: Optional[str] = None,
     ) -> RetrievalContext:
         """
         Retrieve relevant source material for a specific generation step.
@@ -118,12 +128,14 @@ class ComplianceRetriever:
             gap_findings: Key findings from previous steps (for downstream steps)
             max_results_per_collection: Max results per collection
             collections: Specific collections to search (None = all relevant)
+            industry: Industry slug -- fills the query template so it isn't
+                hardcoded to healthcare regardless of what's selected
 
         Returns:
             RetrievalContext with all retrieved material ready for prompt injection
         """
         # Build the retrieval query
-        query = self._build_query(step_name, policy_text, policy_type, gap_findings)
+        query = self._build_query(step_name, policy_text, policy_type, gap_findings, industry)
 
         # Determine which collections to search
         target_collections = collections or self._get_relevant_collections(step_name, jurisdiction)
@@ -207,13 +219,22 @@ class ComplianceRetriever:
         policy_text: str,
         policy_type: str,
         gap_findings: Optional[List[str]] = None,
+        industry: Optional[str] = None,
     ) -> str:
         """Build a retrieval query for a specific generation step."""
+        from app.services.industry_config import get_industry
+        cfg = get_industry(industry or "healthcare")
+        industry_name = cfg["name"]
+        key_regulations = ", ".join(cfg.get("regulations", [])[:4]) or "applicable federal regulations"
+
         template = QUERY_TEMPLATES.get(step_name, QUERY_TEMPLATES["gap_analysis"])
 
-        # Fill in the template
+        # Fill in the template. Extra kwargs a given template doesn't use
+        # (e.g. the legacy per-step templates below) are simply ignored.
         query = template.format(
-            policy_type=policy_type or "healthcare compliance",
+            policy_type=policy_type or f"{industry_name} compliance",
+            industry_name=industry_name,
+            key_regulations=key_regulations,
         )
 
         # Add key phrases from the policy text (first 500 chars)
