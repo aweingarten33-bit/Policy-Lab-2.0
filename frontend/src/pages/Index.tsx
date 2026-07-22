@@ -905,6 +905,9 @@ export default function Index() {
                   </p>
                 </>
               )}
+              <p className="text-xs sm:text-sm text-muted-foreground/70 max-w-xl leading-relaxed mt-4">
+                AI-assisted, not AI-decided — you're the final reviewer. Check every result before adopting or submitting it.
+              </p>
             </div>
 
             {/* Mode toggle — NYT-style underline tabs */}
