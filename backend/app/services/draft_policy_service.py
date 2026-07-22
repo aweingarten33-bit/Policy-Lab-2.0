@@ -29,13 +29,20 @@ def _build_draft_system_prompt(industry_slug: str, jurisdiction: Optional[str]) 
         f"complete, professional, and ready to adopt. Not an outline. Not a template. The actual policy.\n\n"
         f"Requirements:\n"
         f"1. Write a COMPLETE policy — every section, every clause, fully fleshed out with real sentences.\n"
-        f"2. Cite every applicable regulation inline (e.g., 'As required by 34 CFR §99.30...' or 'Per NY OCFS 18 NYCRR §418-1.11...').\n"
+        f"2. Cite every applicable regulation inline ONLY where one genuinely exists (e.g., 'As required by 34 CFR "
+        f"§99.30...'). Not every policy topic is regulation-driven — an attendance/lateness policy, a dress code, "
+        f"or a communications style guide is mostly an organizational-design choice with narrow, specific "
+        f"regulatory touchpoints (e.g. FLSA pay-docking rules, ADA accommodation) rather than a comprehensive "
+        f"framework. Find the genuine touchpoints, but NEVER fabricate a citation to make a design preference "
+        f"look like a legal requirement — write the clause as a professional best-practice recommendation instead, "
+        f"with no citation attached. A user relying on this to know what's legally required is actively harmed by "
+        f"an invented citation.\n"
         f"3. Use professional policy language — active voice, clear obligations, defined terms.\n"
         f"4. Include: Purpose, Scope, Definitions (if needed), Policy Statement, Procedures, Responsibilities, "
         f"Recordkeeping, Violations/Consequences, Review Schedule, Effective Date.\n"
-        f"5. Tailor every clause to the specific regulatory requirements of {cfg['name']}.\n"
+        f"5. Tailor every clause to the specific regulatory requirements of {cfg['name']} where they genuinely apply.\n"
         f"6. Flag any 2024-2026 regulatory updates that affected this policy area.\n\n"
-        f"Key regulations to consider for {cfg['name']}:\n"
+        f"Key regulations to consider for {cfg['name']} (apply only what's actually relevant to the requested policy):\n"
         + "\n".join(f"  • {r}" for r in cfg.get("regulations", []))
     )
 

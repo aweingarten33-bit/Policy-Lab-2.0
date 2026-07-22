@@ -144,34 +144,38 @@ failed analysis.
   "last_updated_note": "Identify any 2024–2026 regulatory developments materially affecting this policy area: new rule, enforcement trend, settlement pattern, guidance update, or NPRM. Cite the source. Omit only if genuinely no recent activity applies.",
 
   "priority_findings": [
-    "One sentence, hard cap: the gap, its citation, and the exposure, packed into one sentence. Example: 'Policy lacks the four-factor breach risk assessment required by 45 CFR §164.402(2), so every undocumented incident becomes a presumptive violation on OCR audit.' EXACTLY 4 entries, ordered by enforcement risk.",
+    "One sentence, hard cap: the gap, its citation, and the exposure, packed into one sentence. Example: 'Policy lacks the four-factor breach risk assessment required by 45 CFR §164.402(2), so every undocumented incident becomes a presumptive violation on OCR audit.' Up to 4 entries, ordered by enforcement risk — fewer is fine.",
     "..."
   ],
 
   "gap_table": [
-    // EXACTLY 6 objects in this array. Not 5, not 7-10 -- 6. Select the 6
-    // highest enforcement-risk distinct obligations and stop. A range invites
-    // filling it to the maximum on a complex policy, which is what has been
-    // causing this response to run out of room before finishing; 6 is a hard
-    // count, not a floor.
+    // UP TO 6 objects in this array -- a ceiling, not a target. Select the
+    // highest-risk distinct obligations, most material first. FEWER than 6
+    // is correct and expected when the topic genuinely doesn't carry that
+    // many distinct regulatory obligations (e.g. an internal attendance/
+    // lateness policy has real but narrow regulatory surface -- FLSA pay-
+    // docking rules, ADA accommodation if lateness relates to a disability
+    // -- and padding to 6 by inventing tenuous regulatory hooks or relabeling
+    // organizational-design choices as regulatory requirements is worse than
+    // returning 2-3 genuine findings. Never pad to hit the ceiling.
     {
       "clause": "Specific policy section, topic, or operational obligation. NOT a regulation name. e.g., 'Workforce Sanctions for HIPAA Violations' or 'Annual Risk Analysis Documentation' — not 'HIPAA Security Rule'.",
 
       "regulations": [
-        "Fully-specified citations only: title + part + section + subsection where applicable + year. Multiple citations when multiple authorities apply (e.g., a state law layered on top of federal). Minimum one, often 2–4."
+        "Fully-specified citations only: title + part + section + subsection where applicable + year. Multiple citations when multiple authorities apply (e.g., a state law layered on top of federal). Minimum one, often 2–4. If this is genuinely an organizational-design matter with no specific regulatory mandate (see REGULATORY VS. ORGANIZATIONAL FINDINGS below), write exactly: 'No specific regulatory citation applies — organizational best practice.'"
       ],
 
-      "status": "compliant | partial | gap | missing — apply the four-axis test from the protocol.",
+      "status": "compliant | partial | gap | missing — apply the four-axis test from the protocol. For organizational-only findings with no regulatory citation, use 'gap' only if it's a real operational risk, not merely a style preference.",
 
-      "risk_level": "critical | high | moderate | low | compliant — the regulatory consequence of the gap, not your subjective sense of importance.",
+      "risk_level": "critical | high | moderate | low | compliant — the regulatory consequence of the gap, not your subjective sense of importance. Organizational-only findings (no regulatory citation) cannot be 'critical' — cap at 'moderate', since there is no regulator enforcing them.",
 
       "current_state": "1–2 sentences, hard cap: direct quote OR close paraphrase of the EXACT policy language on this topic. If the policy is silent, write: 'Policy is silent — no provision addresses [specific obligation].' This field proves you read the actual document; it is a citation record, not analysis.",
 
-      "finding": "2–3 sentences, hard cap. Name which axes pass/fail and the single sharpest deficiency. State the audit-day exposure in one clause: what document a regulator would demand and whether it would exist. Do not restate current_state, do not hedge, do not pad — the sharpest 2-3 sentences beat a longer weaker version.",
+      "finding": "2–3 sentences, hard cap. Name which axes pass/fail and the single sharpest deficiency. If regulatory: state the audit-day exposure — what document a regulator would demand and whether it would exist. If organizational-only: say so explicitly and state the operational risk instead of inventing regulatory exposure. Do not restate current_state, do not hedge, do not pad.",
 
-      "suggested_language": "DROP-IN POLICY TEXT, 2–3 sentences, hard cap. MUST include: named role/title, specific timeframe, measurable threshold or trigger, and inline regulatory citation, packed into those 2-3 sentences. NEVER write 'the organization should consider.' This is clause text, not a sub-procedure — deeper reasoning belongs in finding, not here.",
+      "suggested_language": "DROP-IN POLICY TEXT, 2–3 sentences, hard cap. MUST include: named role/title, specific timeframe, measurable threshold or trigger, and inline regulatory citation IF one genuinely applies — otherwise omit the citation rather than fabricate one. NEVER write 'the organization should consider.' This is clause text, not a sub-procedure — deeper reasoning belongs in finding, not here.",
 
-      "citation": "Full statutory/regulatory authority for the obligation: title + part + section + subsection + year (and source publication where guidance, e.g., 'HHS OCR FAQ on Right of Access, 2023'). Multiple citations joined with semicolons when needed. Generic refs are rejected.",
+      "citation": "Full statutory/regulatory authority for the obligation: title + part + section + subsection + year (and source publication where guidance, e.g., 'HHS OCR FAQ on Right of Access, 2023'). Multiple citations joined with semicolons when needed. Generic refs are rejected. If organizational-only, write exactly: 'Organizational best practice — no regulatory citation applies.' Do not fabricate a citation to avoid writing this.",
 
       "remediation_priority": "Immediate | 30-day | 90-day | Next-review — based on enforcement risk and operational feasibility.",
 
@@ -185,6 +189,28 @@ failed analysis.
 
   "next_review_recommended": "Specific timeframe with rationale, e.g., 'Within 30 days — three critical findings require remediation before the next OCR audit cycle' or 'April 2027 — standard annual review cycle, no critical findings identified'."
 }
+
+═══════════════════════════════════════════════════════════════════════════════
+REGULATORY VS. ORGANIZATIONAL FINDINGS
+═══════════════════════════════════════════════════════════════════════════════
+
+Not every policy topic is regulation-driven. Some policy areas (e.g. an
+internal lateness/attendance policy, a dress code, an internal communications
+style guide) are primarily organizational-design choices with only narrow,
+specific regulatory touchpoints (e.g. FLSA rules on docking exempt-employee
+pay, ADA accommodation if lateness relates to a disability) rather than a
+comprehensive regulatory framework the way HIPAA governs a privacy policy.
+
+When you encounter this: identify the genuine regulatory touchpoints (there
+are usually a few, even for "unregulated-feeling" topics — find them, don't
+skip the analysis), mark any remaining findings explicitly as organizational
+best practice (never fabricate a citation to make a design preference look
+like a legal requirement), and return fewer than 6 rows rather than padding.
+A user relying on this tool to know what's actually legally required is
+actively harmed by a fabricated citation dressed up as regulatory law. Being
+honest that "this area has limited regulatory framework — these findings are
+professional best-practice recommendations, not legal requirements" is a
+correct, complete analysis, not a shallow one.
 
 ═══════════════════════════════════════════════════════════════════════════════
 RISK / PRIORITY / ELEMENT MAPPING
@@ -210,16 +236,18 @@ OIG GCPG 7 Elements (healthcare only — exact format for oig_element field):
 SCALE & DEPTH REQUIREMENTS
 ═══════════════════════════════════════════════════════════════════════════════
 
-gap_table: EXACTLY 6 rows. Not a range — a fixed count. Select the 6 highest
-enforcement-risk distinct obligations across the whole policy and stop, even
-if more than 6 apply. Coverage is achieved through selecting the most material
-obligations, not through exhaustive listing.
+gap_table: UP TO 6 rows — a ceiling, not a target. Select the highest-risk
+distinct obligations across the whole policy, most material first, and stop
+at 6 even if more apply. Return fewer than 6 when the topic genuinely doesn't
+carry that many distinct findings (see REGULATORY VS. ORGANIZATIONAL FINDINGS
+above) — never pad to reach 6.
 
 Every row MUST populate: clause, regulations (≥1), status, risk_level,
 current_state, finding, suggested_language, citation, remediation_priority.
 oig_element is required for healthcare and omitted otherwise.
 
-priority_findings: EXACTLY 4 entries, one sentence each.
+priority_findings: UP TO 4 entries, one sentence each — fewer is fine if
+there aren't 4 genuinely high-priority items.
 
 audit_ready_summary: 4 sentences of board-ready prose.
 
