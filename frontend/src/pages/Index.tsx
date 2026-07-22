@@ -1498,7 +1498,6 @@ function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{ga.policy_type}</span>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{ga.regulations_applied?.length || 0} regulations</span>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{totalIssues} issues</span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{pkg.completed_outputs.length}/7 outputs</span>
         </div>
       </div>
     </div>
