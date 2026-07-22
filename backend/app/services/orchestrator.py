@@ -227,7 +227,7 @@ class PackageOrchestrator:
         Args:
             text: The policy text to analyze
             file_name: Original file name
-            industry: Industry vertical slug (healthcare, education, hoa)
+            industry: Industry vertical slug (healthcare, home_health, other)
             jurisdiction: State/jurisdiction code
             requested_outputs: Which outputs to generate. None = all outputs.
             enable_live_research: Whether to use controlled live research

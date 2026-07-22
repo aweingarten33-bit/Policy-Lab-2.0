@@ -529,7 +529,7 @@ def _build_cover_page(doc: Document, package: ComplianceActionPackage, file_name
     _add_styled_paragraph(doc, "", size=24, space_after=200)
     _add_styled_paragraph(doc, "COMPLIANCE ACTION PACKAGE", bold=True, size=28,
                           color=COLOR_DARK_NAVY, alignment=WD_ALIGN_PARAGRAPH.CENTER, space_after=80)
-    _add_styled_paragraph(doc, "Source-Grounded Healthcare Regulatory Compliance Deliverable", bold=False, size=14,
+    _add_styled_paragraph(doc, "Source-Grounded Regulatory Compliance Deliverable", bold=False, size=14,
                           color=COLOR_GRAY, alignment=WD_ALIGN_PARAGRAPH.CENTER, space_after=100)
 
     _add_horizontal_rule(doc)
