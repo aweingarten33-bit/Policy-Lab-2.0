@@ -1,6 +1,5 @@
 """
-Action Package Router — API endpoints for the Complete Compliance Action Package.
-Generates all 7 outputs from a single policy upload.
+Action Package Router — API endpoints for gap analysis and the "Fix All Gaps" rewrite.
 """
 
 import asyncio
@@ -18,6 +17,8 @@ from app.services.orchestrator import get_orchestrator
 from app.services.text_extraction import extract_text_from_file
 from app.services.job_store import get_job_store
 from app.services.rewrite_service import generate_rewritten_policy
+from app.services.retrieval.retriever import get_retriever
+from app.services.retrieval.live_research import get_live_research_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["action-package"])
@@ -112,11 +113,28 @@ async def fix_all_gaps(request: RewritePolicyRequest):
     end so every finding is resolved. Does not re-run the analysis itself.
     """
     try:
+        retriever = get_retriever()
+        gap_findings = [row.finding for row in request.gap_analysis.gap_table if row.finding]
+        retrieval_context = retriever.retrieve_for_step(
+            step_name="rewritten_policy",
+            policy_text=request.text,
+            policy_type=request.gap_analysis.policy_type or "",
+            jurisdiction=request.jurisdiction,
+            gap_findings=gap_findings,
+        )
+        retrieval_context = await get_live_research_service().augment_retrieval_context(
+            context=retrieval_context,
+            policy_type=request.gap_analysis.policy_type or "",
+            industry=request.industry,
+            jurisdiction=request.jurisdiction,
+        )
+
         return await generate_rewritten_policy(
             original_text=request.text,
             gap_analysis=request.gap_analysis,
             jurisdiction=request.jurisdiction,
             industry=request.industry,
+            retrieval_context=retrieval_context,
         )
     except ValueError as e:
         logger.error(f"Rewrite error: {e}")

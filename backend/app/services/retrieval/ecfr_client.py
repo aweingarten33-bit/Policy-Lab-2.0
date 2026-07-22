@@ -4,11 +4,15 @@ eCFR Client — Pulls live regulatory text directly from the Electronic Code of 
 Source: https://www.ecfr.gov/api/
 No API key required. Content is the current, authoritative, in-force regulatory text.
 
-Covers:
-  - 45 CFR Part 164 (HIPAA Privacy, Security, Breach Notification)
-  - 45 CFR Part 160 (General HIPAA Provisions)
-  - 42 CFR Part 2 (Substance Abuse Confidentiality)
-  - 42 CFR Part 482 (Conditions of Participation — Hospitals)
+ECFR_TARGETS (what gets fetched into the knowledge base) is derived from every
+industry's "ecfr_targets" list in industry_config.py, deduplicated by (title,
+part). This used to be a separate hardcoded healthcare-only list here, which
+meant the KB never actually contained Home Health (42 CFR 484/424) or Other
+(29 CFR 1630/1604/825) source material — those industries' gap analyses and
+drafts were citing regulations from the model's own training data rather than
+verified, dated source chunks, even though the product is positioned as
+"source-grounded." Deriving from industry_config.py keeps the two in sync
+automatically whenever an industry's regulation list changes.
 
 Each pull is timestamped so outputs clearly show when the regulation was retrieved.
 """
@@ -28,13 +32,25 @@ logger = logging.getLogger(__name__)
 
 ECFR_BASE = "https://www.ecfr.gov/api/versioner/v1"
 
+
+def _build_ecfr_targets() -> List[tuple]:
+    """Union of every industry's ecfr_targets, deduplicated by (title, part)."""
+    from app.services.industry_config import INDUSTRIES
+
+    seen = set()
+    targets: List[tuple] = []
+    for cfg in INDUSTRIES.values():
+        for title, part, label, category in cfg.get("ecfr_targets", []):
+            key = (title, part)
+            if key in seen:
+                continue
+            seen.add(key)
+            targets.append((title, part, label, category))
+    return targets
+
+
 # Regulations to pull — (title, part, label, category)
-ECFR_TARGETS = [
-    (45, 160, "45 CFR Part 160 — General HIPAA Provisions", SourceCategory.federal_regulation),
-    (45, 164, "45 CFR Part 164 — HIPAA Privacy, Security & Breach", SourceCategory.federal_regulation),
-    (42, 2,   "42 CFR Part 2 — Substance Abuse Confidentiality", SourceCategory.federal_regulation),
-    (42, 482, "42 CFR Part 482 — Conditions of Participation (Hospitals)", SourceCategory.federal_regulation),
-]
+ECFR_TARGETS = _build_ecfr_targets()
 
 
 class ECFRClient:

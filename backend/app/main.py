@@ -3,8 +3,9 @@ Policy Gap Analyzer — FastAPI Backend v3.0
 Source-Grounded Compliance Intelligence System.
 
 Features:
-  - Complete Compliance Action Package (7 outputs from a single policy upload)
-  - Curated internal retrieval (RAG) from healthcare compliance knowledge base
+  - Gap analysis + "Fix All Gaps" rewrite from a single policy upload
+  - Policy drafting from a plain-English description
+  - Curated internal retrieval (RAG) from an eCFR-sourced compliance knowledge base
   - Controlled live research from curated regulatory sources
   - Post-generation verification against source material
   - Source attribution on every output (verified, retrieved, live research, model inference)
@@ -118,7 +119,7 @@ async def lifespan(app: FastAPI):
 # ── Create the app ──
 app = FastAPI(
     title="Policy Gap Analyzer API",
-    description="Source-Grounded Healthcare Compliance Intelligence System. Upload a policy, get gap analysis, rewritten policy, redline, adjacent policies, 90-day remediation plan, board summary, and implementation checklist — all grounded in curated regulatory source material.",
+    description="Source-Grounded Compliance Intelligence System for Hospitals, Home Health, and other industries. Upload a policy for gap analysis, generate a corrected rewrite from the findings (Fix All Gaps), or draft a new policy from scratch — all grounded in curated regulatory source material.",
     version="3.0.0",
     lifespan=lifespan,
     docs_url="/docs" if not settings.is_production else None,
