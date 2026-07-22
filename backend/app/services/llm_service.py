@@ -139,25 +139,21 @@ failed analysis.
 
   "scope": "2–3 sentences naming what was examined (the policy artifact and its stated coverage), the regulatory frameworks evaluated against it (federal, state, industry standard), and any explicit limits of this analysis (e.g., 'Did not evaluate operational implementation, only the written policy text').",
 
-  "methodology": "2–3 sentences: AI-assisted regulatory gap analysis applying the four-axis evaluation (presence, specificity, operability, accountability), audit-day simulation against the relevant enforcement body, and citation verification against current regulatory text. State plainly that findings require independent confirmation by qualified compliance counsel before any formal compliance determination, board reporting, or regulatory submission.",
-
-  "regulations_applied": ["Every regulation/statute/guidance evaluated — fully cited with title + part + year (e.g., '45 CFR Part 164 Subpart D — HIPAA Breach Notification (current through 2024)'). At least 6–12 entries for any non-trivial healthcare or education policy."],
+  "regulations_applied": ["Every regulation/statute/guidance evaluated — fully cited with title + part + year (e.g., '45 CFR Part 164 Subpart D — HIPAA Breach Notification (current through 2024)'). 6-10 entries."],
 
   "last_updated_note": "Identify any 2024–2026 regulatory developments materially affecting this policy area: new rule, enforcement trend, settlement pattern, guidance update, or NPRM. Cite the source. Omit only if genuinely no recent activity applies.",
 
-  "critical_count": <integer — count of rows with risk_level='critical'>,
-  "gap_count": <integer — count of rows with risk_level='high'>,
-  "partial_count": <integer — count of rows with risk_level='moderate'>,
-  "compliant_count": <integer — count of rows with risk_level='compliant' or 'low'>,
-
-  "compliance_score": <number 0–100. Formula: (compliant*1.0 + partial*0.5) / total_rows * 100. Round to one decimal. Be honest — a score above 80 with critical findings present is a contradiction the user will notice.>,
-
   "priority_findings": [
-    "One sentence, hard cap: the gap, its citation, and the exposure, packed into one sentence. Example: 'Policy lacks the four-factor breach risk assessment required by 45 CFR §164.402(2), so every undocumented incident becomes a presumptive violation on OCR audit.' Include 3–4 such findings, ordered by enforcement risk.",
+    "One sentence, hard cap: the gap, its citation, and the exposure, packed into one sentence. Example: 'Policy lacks the four-factor breach risk assessment required by 45 CFR §164.402(2), so every undocumented incident becomes a presumptive violation on OCR audit.' EXACTLY 4 entries, ordered by enforcement risk.",
     "..."
   ],
 
   "gap_table": [
+    // EXACTLY 6 objects in this array. Not 5, not 7-10 -- 6. Select the 6
+    // highest enforcement-risk distinct obligations and stop. A range invites
+    // filling it to the maximum on a complex policy, which is what has been
+    // causing this response to run out of room before finishing; 6 is a hard
+    // count, not a floor.
     {
       "clause": "Specific policy section, topic, or operational obligation. NOT a regulation name. e.g., 'Workforce Sanctions for HIPAA Violations' or 'Annual Risk Analysis Documentation' — not 'HIPAA Security Rule'.",
 
@@ -214,16 +210,16 @@ OIG GCPG 7 Elements (healthcare only — exact format for oig_element field):
 SCALE & DEPTH REQUIREMENTS
 ═══════════════════════════════════════════════════════════════════════════════
 
-gap_table: 6–10 rows, hard ceiling. Cover the highest enforcement-risk distinct
-obligations first — if more than 10 apply, cover the 10 highest-risk ones and
-stop; do not attempt to cover more by writing shorter rows. Sparse output
-(<6 rows) is a failed analysis on any healthcare or education policy.
+gap_table: EXACTLY 6 rows. Not a range — a fixed count. Select the 6 highest
+enforcement-risk distinct obligations across the whole policy and stop, even
+if more than 6 apply. Coverage is achieved through selecting the most material
+obligations, not through exhaustive listing.
 
 Every row MUST populate: clause, regulations (≥1), status, risk_level,
 current_state, finding, suggested_language, citation, remediation_priority.
 oig_element is required for healthcare and omitted otherwise.
 
-priority_findings: 3–4 entries, one sentence each.
+priority_findings: EXACTLY 4 entries, one sentence each.
 
 audit_ready_summary: 4 sentences of board-ready prose.
 
@@ -231,17 +227,17 @@ audit_ready_summary: 4 sentences of board-ready prose.
 HARD OUTPUT BUDGET — READ BEFORE WRITING
 ═══════════════════════════════════════════════════════════════════════════════
 
-Every field above has a hard sentence cap for a reason: your entire response
-must fit inside a strict token limit, and a shorter COMPLETE, valid JSON
-response is always correct where a longer one that gets cut off mid-document
-is always a total failure — none of it is usable if the JSON never closes.
+Every field above has a hard sentence cap, and gap_table has a fixed count
+instead of a range, for the same reason: your entire response must fit inside
+a strict token limit, and a shorter COMPLETE, valid JSON response is always
+correct where a longer one that gets cut off mid-document is always a total
+failure — none of it is usable if the JSON never closes, no matter how good
+the content was up to that point.
 
-If you sense you are running long while writing gap_table, stop adding rows
-at 6 (the floor, not the ceiling) rather than risk not finishing. Write every
-field at its hard cap, not up to it — a 2-sentence finding beats a 3-sentence
-one if it says the same thing. Do not use the row/sentence ranges above as a
-target to fill; they are maximums, and hitting the floor with a complete
-response beats hitting the ceiling with a truncated one."""
+Write every field at its hard cap, not up to it — a 2-sentence finding beats
+a 3-sentence one if it says the same thing. These caps are maximums, not
+targets to fill. A complete response using less of the budget always beats
+a longer one that doesn't finish."""
 
 
 def _build_system_prompt(industry_slug: Optional[str] = None, jurisdiction: Optional[str] = None) -> str:
@@ -374,34 +370,41 @@ def _parse_llm_response(raw_text: str) -> AnalysisResult:
             oig_element=row_data.get("oig_element"),
         ))
 
-    # ── Compliance score: use LLM value or compute fallback ──
-    llm_score = data.get("compliance_score")
-    if llm_score is not None:
-        try:
-            compliance_score = float(llm_score)
-        except (TypeError, ValueError):
-            compliance_score = None
-    else:
-        compliance_score = None
+    # ── Counts and score: always computed from the parsed rows, never trusted
+    # from the model. These are mechanically derivable from gap_table, and
+    # asking the model to also self-report them wasted tokens and risked the
+    # exact contradiction the old prompt warned about ("a score above 80 with
+    # critical findings is a contradiction the user will notice") -- a
+    # contradiction that's now structurally impossible instead of just
+    # discouraged. ──
+    critical_count = sum(1 for r in gap_table if r.risk_level == "critical")
+    gap_count = sum(1 for r in gap_table if r.risk_level == "high")
+    partial_count = sum(1 for r in gap_table if r.risk_level == "moderate")
+    compliant_count = sum(1 for r in gap_table if r.risk_level in ("compliant", "low"))
 
-    if compliance_score is None and gap_table:
+    if gap_table:
         total = len(gap_table)
         compliant_pts = sum(
             1.0 if r.status.value == "compliant" else (0.5 if r.status.value == "partial" else 0.0)
             for r in gap_table
         )
         compliance_score = round(compliant_pts / total * 100, 1)
+    else:
+        compliance_score = None
 
     return AnalysisResult(
         policy_type=data.get("policy_type", "Unknown"),
         scope=data.get("scope", "Analysis of uploaded policy against applicable regulations"),
-        methodology=data.get("methodology", "AI-assisted regulatory gap analysis. Findings and citations should be independently verified by qualified compliance counsel."),
+        methodology="AI-assisted regulatory gap analysis applying a four-axis evaluation (presence, specificity, "
+                     "operability, accountability) against applicable regulatory citations. Findings require "
+                     "independent confirmation by qualified compliance counsel before any formal compliance "
+                     "determination, board reporting, or regulatory submission.",
         regulations_applied=data.get("regulations_applied", []),
         last_updated_note=data.get("last_updated_note"),
-        critical_count=data.get("critical_count", 0),
-        gap_count=data.get("gap_count", 0),
-        partial_count=data.get("partial_count", 0),
-        compliant_count=data.get("compliant_count", 0),
+        critical_count=critical_count,
+        gap_count=gap_count,
+        partial_count=partial_count,
+        compliant_count=compliant_count,
         compliance_score=compliance_score,
         priority_findings=data.get("priority_findings", []),
         gap_table=gap_table,
