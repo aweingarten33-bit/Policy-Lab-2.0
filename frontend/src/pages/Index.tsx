@@ -1575,7 +1575,7 @@ function SourceAttributionPanel({
       {liveResearchUsed && (
         <div className="mb-3">
           <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full" style={{ color: "hsl(270 60% 50%)", background: "hsl(270 60% 50% / 0.1)" }}>🌐 Live Research Used</span>
-          <p className="text-[9px] text-muted-foreground mt-1">Some findings were augmented with controlled live research from curated regulatory sources.</p>
+          <p className="text-[9px] text-muted-foreground mt-1">This result was checked against a live search of curated regulatory sources, in addition to the built-in knowledge base.</p>
         </div>
       )}
 
@@ -1591,7 +1591,7 @@ function SourceAttributionPanel({
       {(!kbSourcesUsed || kbSourcesUsed.length === 0) && !liveResearchUsed && (
         <div className="rounded-lg p-3" style={{ background: "hsl(38 85% 52% / 0.08)" }}>
           <p className="text-[10px] font-mono font-bold" style={{ color: "hsl(38 85% 44%)" }}>⚠️ Model-Only Mode</p>
-          <p className="text-[10px] text-muted-foreground mt-1">No source material was available in the knowledge base. All findings are model inference only and MUST be independently verified by qualified compliance counsel.</p>
+          <p className="text-[10px] text-muted-foreground mt-1">No source material was available in the knowledge base. This result is model inference only and MUST be independently verified by qualified compliance counsel.</p>
         </div>
       )}
     </div>
