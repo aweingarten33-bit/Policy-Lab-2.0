@@ -21,7 +21,7 @@ export default function Legal() {
           The fine print.
         </h1>
         <p className="text-sm text-muted-foreground mb-10 leading-relaxed">
-          Last updated: April 30, 2026
+          Last updated: July 22, 2026
         </p>
 
         <section className="space-y-3 mb-10">

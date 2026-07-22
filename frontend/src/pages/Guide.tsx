@@ -38,9 +38,11 @@ export default function Guide() {
             <p className="text-sm leading-relaxed text-foreground/80">
               Upload or paste an existing policy. You get back a gap analysis: what's missing, what's
               vague, what's a real regulatory exposure versus an organizational best practice, each
-              finding cited to a specific regulation. From there, <span className="font-bold">Fix All Gaps</span> rewrites
-              the whole policy to resolve every finding, and you can download either the findings report
-              or the corrected policy as an editable Word file.
+              finding cited to a specific regulation — click a citation to see the actual retrieved
+              regulatory text it's grounded in, not just a source name. From there, <span className="font-bold">Fix All Gaps</span> rewrites
+              the whole policy to resolve every finding. Toggle <span className="font-bold">Redline View</span> to
+              see exactly what changed against your original, tracked-changes style, and download either
+              the findings report or the corrected policy as an editable Word file.
             </p>
           </div>
           <div className="rounded-2xl p-5 neu-raised">
@@ -48,8 +50,9 @@ export default function Guide() {
             <p className="text-sm leading-relaxed text-foreground/80">
               No existing document required. Describe the policy in plain English — the more specific,
               the better the result — and get a complete, ready-to-adopt policy written from scratch,
-              every section, regulations cited inline where they genuinely apply. Download it as an
-              editable Word file (.docx), ready to review, revise, and adopt.
+              every section, regulations cited inline where they genuinely apply and clickable to the
+              actual retrieved source text. Download it as an editable Word file (.docx), ready to
+              review, revise, and adopt.
             </p>
           </div>
         </section>
