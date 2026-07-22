@@ -154,12 +154,15 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> =
   missing:   { label: "Missing",   color: "hsl(0 72% 48%)",   bg: "hsl(0 72% 51% / 0.1)" },
 };
 
+// Two tiers, not four -- a "Moderate" bucket reads as safe to skip. Everything
+// is either a real compliance/legal exposure (Must Fix) or a best-practice
+// improvement (Should Fix); nothing gets a middle ground to hide in.
 const RISK_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  critical: { label: "CRITICAL", color: "hsl(0 72% 48%)", bg: "hsl(0 72% 51% / 0.1)" },
-  high:     { label: "HIGH",     color: "hsl(25 90% 44%)", bg: "hsl(25 90% 50% / 0.1)" },
-  moderate: { label: "MODERATE", color: "hsl(38 85% 44%)", bg: "hsl(38 85% 52% / 0.1)" },
-  low:      { label: "LOW",      color: "hsl(200 60% 44%)", bg: "hsl(200 60% 50% / 0.1)" },
-  compliant:{ label: "COMPLIANT", color: "hsl(160 60% 36%)", bg: "hsl(160 60% 42% / 0.1)" },
+  critical: { label: "MUST FIX",    color: "hsl(0 72% 48%)",  bg: "hsl(0 72% 51% / 0.1)" },
+  high:     { label: "MUST FIX",    color: "hsl(0 72% 48%)",  bg: "hsl(0 72% 51% / 0.1)" },
+  moderate: { label: "SHOULD FIX",  color: "hsl(38 85% 44%)", bg: "hsl(38 85% 52% / 0.1)" },
+  low:      { label: "SHOULD FIX",  color: "hsl(38 85% 44%)", bg: "hsl(38 85% 52% / 0.1)" },
+  compliant:{ label: "COMPLIANT",   color: "hsl(160 60% 36%)", bg: "hsl(160 60% 42% / 0.1)" },
 };
 
 function stripCiteTags(text: string): string {
@@ -333,7 +336,7 @@ export default function Index() {
   // back onto the screen after the user has already left.
   const cancelledRef = useRef(false);
   // Severity filter for the Gap Analysis tab's filter chips (Critical/High/Moderate).
-  const [severityFilter, setSeverityFilter] = useState<"critical" | "gap" | "partial" | null>(null);
+  const [severityFilter, setSeverityFilter] = useState<"must_fix" | "should_fix" | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const DRAFT_PLACEHOLDERS: Record<string, string> = {
     healthcare: [
@@ -1505,22 +1508,21 @@ function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
 }
 
 
-function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilter }: { result: AnalysisResult; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null; severityFilter?: "critical" | "gap" | "partial" | null; onChangeFilter?: (s: "critical" | "gap" | "partial" | null) => void }) {
-  const criticalItems = result.gap_table.filter((r) => r.risk_level === "critical");
+function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilter }: { result: AnalysisResult; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null; severityFilter?: "must_fix" | "should_fix" | null; onChangeFilter?: (s: "must_fix" | "should_fix" | null) => void }) {
+  const isMustFix = (r: typeof result.gap_table[number]) => r.risk_level === "critical" || r.risk_level === "high";
+  const mustFixItems = result.gap_table.filter(isMustFix);
 
   // Inline filter chips — one row of buttons, each shows count, tap to narrow the list. "All" resets.
+  // Two tiers only, no middle ground: it's either a real compliance/legal
+  // exposure or a best-practice improvement.
   const chips = [
-    { key: null,        label: "All",       count: result.gap_table.length, color: "hsl(220 14% 22%)" },
-    { key: "critical" as const,  label: "Critical",  count: result.gap_table.filter((r) => r.risk_level === "critical").length, color: "hsl(0 72% 48%)" },
-    { key: "gap" as const,       label: "High",      count: result.gap_table.filter((r) => r.status === "gap").length,          color: "hsl(25 90% 44%)" },
-    { key: "partial" as const,   label: "Moderate",  count: result.gap_table.filter((r) => r.status === "partial").length,      color: "hsl(38 85% 44%)" },
+    { key: null,               label: "All",         count: result.gap_table.length, color: "hsl(220 14% 22%)" },
+    { key: "must_fix" as const,   label: "Must Fix",    count: mustFixItems.length,                              color: "hsl(0 72% 48%)" },
+    { key: "should_fix" as const, label: "Should Fix",  count: result.gap_table.length - mustFixItems.length,    color: "hsl(38 85% 44%)" },
   ];
 
   const filterPredicate = severityFilter
-    ? (r: typeof result.gap_table[number]) => {
-        if (severityFilter === "critical") return r.risk_level === "critical";
-        return r.status === severityFilter;
-      }
+    ? (r: typeof result.gap_table[number]) => severityFilter === "must_fix" ? isMustFix(r) : !isMustFix(r)
     : null;
   const filteredRows = filterPredicate ? result.gap_table.filter(filterPredicate) : null;
 
@@ -1555,10 +1557,10 @@ function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilt
         )
       ) : (
         <>
-          {criticalItems.length > 0 && (
+          {mustFixItems.length > 0 && (
             <div className="rounded-2xl p-4 neu-raised border-l-4 border-l-destructive" style={{ background: "hsl(0 72% 51% / 0.04)" }}>
               <p className="text-[11px] font-mono uppercase tracking-wider font-bold text-destructive mb-2">
-                Immediate Action Required — {criticalItems.length} Critical Finding{criticalItems.length !== 1 ? "s" : ""}
+                Must Fix — {mustFixItems.length} Finding{mustFixItems.length !== 1 ? "s" : ""}
               </p>
               {result.priority_findings?.slice(0, 3).map((f, i) => (
                 <p key={i} className="text-[11px] sm:text-xs text-foreground/80 leading-relaxed pl-3 border-l-2 border-l-destructive/30 mb-1">{linkifyRegulations(stripCiteTags(f), urlMap, snippets)}</p>

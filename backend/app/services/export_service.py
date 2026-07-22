@@ -588,12 +588,14 @@ def _build_cover_page(doc: Document, package: ComplianceActionPackage, file_name
 def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
                                  file_name: Optional[str] = None,
                                  standalone: bool = True):
-    # Map our 4-tier risk model onto the template's 3-tier vocabulary.
-    # Multiple source levels can map to the same target bucket so no row is silently dropped.
+    # Two tiers, not four -- a middle "Moderate" bucket reads as safe to skip.
+    # Everything is either a real compliance/legal exposure (Must Fix) or a
+    # best-practice improvement (Should Fix). (Previously this also had a bug:
+    # "Moderate" was mapped to RiskLevel.high and "Critical" excluded high
+    # entirely, silently mislabeling every high-risk finding as moderate.)
     severity_groups = [
-        ("Critical", [RiskLevel.critical]),
-        ("Moderate", [RiskLevel.high]),
-        ("Minor", [RiskLevel.moderate, RiskLevel.low]),
+        ("Must Fix", [RiskLevel.critical, RiskLevel.high]),
+        ("Should Fix", [RiskLevel.moderate, RiskLevel.low]),
     ]
     grouped = {label: [r for r in result.gap_table if r.risk_level in levels]
                for label, levels in severity_groups}
@@ -621,9 +623,8 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
     _add_styled_paragraph(doc, "Summary of Findings", bold=True, size=14,
                           color=COLOR_DARK_NAVY, space_after=80)
     _add_styled_paragraph(doc, f"Total Issues Identified: {total_issues}", size=11, space_after=40)
-    _add_styled_paragraph(doc, f"Critical: {counts['Critical']}", size=11, space_after=20)
-    _add_styled_paragraph(doc, f"Moderate: {counts['Moderate']}", size=11, space_after=20)
-    _add_styled_paragraph(doc, f"Minor: {counts['Minor']}", size=11, space_after=160)
+    _add_styled_paragraph(doc, f"Must Fix: {counts['Must Fix']}", size=11, space_after=20)
+    _add_styled_paragraph(doc, f"Should Fix: {counts['Should Fix']}", size=11, space_after=160)
 
     # Executive Summary
     _add_styled_paragraph(doc, "Executive Summary", bold=True, size=14,
