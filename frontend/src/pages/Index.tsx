@@ -34,14 +34,14 @@ function formatElapsed(totalSeconds: number): string {
 // the analyzer actually does on a real document.
 const SAMPLE_POLICY_TEXTS: Record<string, string> = {
   healthcare: `HIPAA PRIVACY AND SECURITY POLICY
-Northbridge Family Medicine, P.C.
+Northbridge Regional Hospital, P.C.
 Adopted: January 2019  |  Last reviewed: March 2022
 
 1. PURPOSE
-Northbridge Family Medicine is committed to protecting the privacy of patient health information. All employees must follow this policy.
+Northbridge Regional Hospital is committed to protecting the privacy of patient health information. All employees must follow this policy.
 
 2. SCOPE
-This policy applies to all staff, contractors, and volunteers who handle patient information at our two clinic locations.
+This policy applies to all staff, contractors, and volunteers who handle patient information across our inpatient and outpatient departments.
 
 3. PROTECTED HEALTH INFORMATION
 Staff should keep patient information confidential and only share it when necessary for treatment, payment, or operations.
@@ -296,7 +296,7 @@ function SourceBadge({ attribution, urlMap }: { attribution?: SourceAttribution;
 // ── Main Page ──
 
 const FALLBACK_INDUSTRIES: IndustryOption[] = [
-  { slug: "healthcare", name: "Healthcare", icon: "🏥", description: "Hospitals, clinics, health plans, covered entities" },
+  { slug: "healthcare", name: "Hospitals", icon: "🏥", description: "Acute care hospitals, hospital systems, hospital-based compliance and privacy programs" },
   { slug: "home_health", name: "Home Health", icon: "🏠", description: "Medicare-certified home health agencies, home care agencies" },
   { slug: "other", name: "Other / General", icon: "📋", description: "Any organization — best practices and inferred regulations" },
 ];

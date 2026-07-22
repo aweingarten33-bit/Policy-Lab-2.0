@@ -15,9 +15,9 @@ from app.services.retrieval.models import SourceCategory
 
 INDUSTRIES: dict = {
     "healthcare": {
-        "name": "Healthcare",
+        "name": "Hospitals",
         "icon": "🏥",
-        "description": "Hospitals, clinics, health plans, covered entities, business associates",
+        "description": "Acute care hospitals, hospital systems, and hospital-based compliance and privacy programs",
         "ecfr_targets": [
             (45, 160, "45 CFR Part 160 — General HIPAA Provisions", SourceCategory.federal_regulation),
             (45, 164, "45 CFR Part 164 — HIPAA Privacy, Security & Breach Notification", SourceCategory.federal_regulation),
