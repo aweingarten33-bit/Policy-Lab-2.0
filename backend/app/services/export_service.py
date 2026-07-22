@@ -1280,9 +1280,9 @@ def _build_footer_section(doc: Document):
 
 def generate_docx(result: AnalysisResult, file_name: Optional[str] = None) -> bytes:
     """Generate a clean, template-style .docx gap analysis report and return as bytes.
-    Opens with a one-page certificate-style summary (score, rating, finding counts,
-    regulations reviewed, review cadence) before the detailed findings -- this used
-    to require a separate certificate download for the same information."""
+    Opens with a one-page certificate-style summary (finding counts, regulations
+    reviewed, review cadence) before the detailed findings -- this used to require
+    a separate certificate download for the same information."""
     doc = Document()
     _setup_document(doc)
     _build_certificate_content(
@@ -1543,10 +1543,10 @@ def _build_certificate_content(
     date_str: str,
 ):
     """
-    Builds the one-page certificate-style summary: score/rating banner, finding
-    counts, regulations reviewed, and review cadence. Shared by the standalone
-    certificate export and the gap analysis report, which now opens with this
-    as page 1 instead of requiring a separate download for the same summary.
+    Builds the one-page certificate-style summary: finding counts, regulations
+    reviewed, and review cadence. Shared by the standalone certificate export
+    and the gap analysis report, which now opens with this as page 1 instead
+    of requiring a separate download for the same summary.
     """
     # ── Header bar ──
     hdr = doc.add_paragraph()
@@ -1625,59 +1625,6 @@ def _build_certificate_content(
         space_before=0,
         space_after=140,
     )
-
-    # ── Score ──
-    if score is not None:
-        score_val = float(score)
-        if score_val >= 80:
-            score_color = "27AE60"
-            rating = "GOOD STANDING"
-        elif score_val >= 60:
-            score_color = "F39C12"
-            rating = "NEEDS IMPROVEMENT"
-        else:
-            score_color = "C0392B"
-            rating = "SIGNIFICANT GAPS IDENTIFIED"
-
-        _add_styled_paragraph(
-            doc,
-            "OVERALL COMPLIANCE SCORE",
-            bold=True,
-            size=9,
-            color=COLOR_GRAY,
-            space_before=0,
-            space_after=20,
-        )
-
-        score_p = doc.add_paragraph()
-        score_p.paragraph_format.space_before = Pt(0)
-        score_p.paragraph_format.space_after = Pt(6)
-        score_run = score_p.add_run(f"  {score_val:.1f}%  — {rating}  ")
-        score_run.bold = True
-        score_run.font.size = Pt(14)
-        score_run.font.color.rgb = COLOR_WHITE
-        _shade_paragraph(score_p, score_color)
-
-        # Visual score bar using a table
-        bar_table = doc.add_table(rows=1, cols=2)
-        bar_table.style = "Table Grid"
-        bar_table.autofit = False
-        total_width = Inches(5.5)
-        filled = int(round(score_val / 100 * 55))  # out of 55 tenths
-        unfilled = 55 - filled
-
-        bar_table.columns[0].width = Inches(filled / 10)
-        bar_table.columns[1].width = Inches(unfilled / 10)
-
-        filled_cell = bar_table.cell(0, 0)
-        _shade_cell(filled_cell, score_color)
-        filled_cell.paragraphs[0].add_run(" ")
-
-        empty_cell = bar_table.cell(0, 1)
-        _shade_cell(empty_cell, "EEEEEE")
-        empty_cell.paragraphs[0].add_run(" ")
-
-        doc.add_paragraph()
 
     # ── Finding counts table ──
     _add_styled_paragraph(
