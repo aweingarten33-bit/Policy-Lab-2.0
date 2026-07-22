@@ -1280,9 +1280,9 @@ def _build_footer_section(doc: Document):
 
 def generate_docx(result: AnalysisResult, file_name: Optional[str] = None) -> bytes:
     """Generate a clean, template-style .docx gap analysis report and return as bytes.
-    Opens with a one-page certificate-style summary (regulations reviewed, review
-    cadence) before the detailed findings -- this used to require a separate
-    certificate download for the same information."""
+    Opens with a one-page certificate-style summary (regulations reviewed) before
+    the detailed findings -- this used to require a separate certificate download
+    for the same information."""
     doc = Document()
     _setup_document(doc)
     _build_certificate_content(
@@ -1543,10 +1543,10 @@ def _build_certificate_content(
     date_str: str,
 ):
     """
-    Builds the one-page certificate-style summary: regulations reviewed and
-    review cadence. Shared by the standalone certificate export and the gap
-    analysis report, which now opens with this as page 1 instead of requiring
-    a separate download for the same summary.
+    Builds the one-page certificate-style summary: policy type and regulations
+    reviewed. Shared by the standalone certificate export and the gap analysis
+    report, which now opens with this as page 1 instead of requiring a
+    separate download for the same summary.
     """
     # ── Header bar ──
     hdr = doc.add_paragraph()
@@ -1641,22 +1641,6 @@ def _build_certificate_content(
         if len(regulations) > 12:
             regs_text += f" + {len(regulations) - 12} more"
         _add_styled_paragraph(doc, regs_text, size=9, color=COLOR_BLACK, space_after=80)
-
-    # ── Review cycle ──
-    if review_freq or next_review:
-        _add_styled_paragraph(
-            doc,
-            "NEXT REVIEW",
-            bold=True,
-            size=9,
-            color=COLOR_GRAY,
-            space_before=40,
-            space_after=20,
-        )
-        review_text = f"{review_freq}"
-        if next_review:
-            review_text += f" — {next_review}"
-        _add_styled_paragraph(doc, review_text, size=10, bold=True, color=COLOR_DARK_NAVY, space_after=80)
 
     _add_horizontal_rule(doc)
 

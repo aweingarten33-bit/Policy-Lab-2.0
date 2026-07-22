@@ -3,7 +3,7 @@ import {
   FileDown, Loader2, Shield, AlertTriangle, CheckCircle2, ChevronDown, MapPin,
   FileText, RefreshCw, GitCompare, LayoutDashboard,
   Download, X, MessageCircle, Send, ChevronRight, ChevronLeft,
-  CalendarClock, MessageSquare, RotateCcw, Wand2, HelpCircle, ArrowRight,
+  MessageSquare, RotateCcw, Wand2, HelpCircle, ArrowRight,
 } from "lucide-react";
 import { extractText } from "@/lib/extract-text";
 import { linkifyRegulations, lookupRegulationUrl } from "@/lib/regulation-links";
@@ -1243,7 +1243,7 @@ export default function Index() {
                 <button
                   onClick={handleDownloadGapAnalysis}
                   disabled={exporting}
-                  title="Downloads the full gap analysis report as a Word document — opens with a one-page compliance certificate summary (regulations reviewed, review cadence), followed by every finding, citation, and suggested policy language."
+                  title="Downloads the full gap analysis report as a Word document — opens with a one-page compliance certificate summary (regulations reviewed), followed by every finding, citation, and suggested policy language."
                   className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl neu-sm text-muted-foreground hover:text-foreground touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
                 >
                   {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
@@ -1404,22 +1404,6 @@ function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
         </div>
       </div>
 
-
-      {/* Review Date */}
-      {(pkg.gap_analysis?.next_review_recommended || pkg.gap_analysis?.review_frequency) && (
-        <div className="rounded-xl p-4 neu-raised flex items-start gap-3">
-          <CalendarClock className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--primary))" }} />
-          <div>
-            <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1">Policy Review Schedule</p>
-            {pkg.gap_analysis.review_frequency && (
-              <p className="text-sm font-semibold text-foreground">{pkg.gap_analysis.review_frequency}</p>
-            )}
-            {pkg.gap_analysis.next_review_recommended && (
-              <p className="text-xs text-muted-foreground mt-0.5">Next review: {pkg.gap_analysis.next_review_recommended}</p>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Source Attribution & Verification Status */}
       <div className="rounded-xl p-4 neu-raised">
