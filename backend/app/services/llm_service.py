@@ -153,7 +153,7 @@ failed analysis.
   "compliance_score": <number 0–100. Formula: (compliant*1.0 + partial*0.5) / total_rows * 100. Round to one decimal. Be honest — a score above 80 with critical findings present is a contradiction the user will notice.>,
 
   "priority_findings": [
-    "Each entry: 1–2 sentences naming the gap, the exact regulatory citation, AND the audit-day exposure. Example: 'Policy lacks the four-factor breach risk assessment required by 45 CFR §164.402(2). On OCR audit, the org cannot produce a defensible determination of whether past incidents were reportable breaches — every undocumented incident becomes a presumptive violation.' Include 3–6 such findings, ordered by enforcement risk.",
+    "One sentence, hard cap: the gap, its citation, and the exposure, packed into one sentence. Example: 'Policy lacks the four-factor breach risk assessment required by 45 CFR §164.402(2), so every undocumented incident becomes a presumptive violation on OCR audit.' Include 3–4 such findings, ordered by enforcement risk.",
     "..."
   ],
 
@@ -169,11 +169,11 @@ failed analysis.
 
       "risk_level": "critical | high | moderate | low | compliant — the regulatory consequence of the gap, not your subjective sense of importance.",
 
-      "current_state": "1–3 sentences: direct quote OR close paraphrase of the EXACT policy language on this topic, in quotation marks where quoted. If the policy is silent, write: 'Policy is silent — no provision addresses [specific obligation].' If the policy partially addresses it, quote what IS there and identify what is missing. This field proves you read the actual document and is the audit-day evidence record.",
+      "current_state": "1–2 sentences, hard cap: direct quote OR close paraphrase of the EXACT policy language on this topic. If the policy is silent, write: 'Policy is silent — no provision addresses [specific obligation].' This field proves you read the actual document; it is a citation record, not analysis.",
 
-      "finding": "3–6 sentences. Walk the four-axis evaluation: which axes pass, which fail, why. Name the specific deficiency (vagueness, missing role assignment, no timeframe, no evidence trail, no escalation path, etc.). State the audit-day exposure: what document a regulator would demand and whether it would exist; what interview question they would ask and what the answer would reveal. End with the counterfactual: if a violation occurred tomorrow, why this policy as written would not survive scrutiny.",
+      "finding": "2–3 sentences, hard cap. Name which axes pass/fail and the single sharpest deficiency. State the audit-day exposure in one clause: what document a regulator would demand and whether it would exist. Do not restate current_state, do not hedge, do not pad — the sharpest 2-3 sentences beat a longer weaker version.",
 
-      "suggested_language": "DROP-IN POLICY TEXT — fully drafted, ready to paste. MUST include: named role/title with authority, specific timeframe in hours/days, measurable threshold or trigger event, documentation/evidence requirement (form, log, attestation), and inline regulatory citation. NEVER write 'the organization should consider' — write the actual operational language. Cap at 3–5 sentences even for critical findings — this is drop-in clause text, not a sub-procedure; deeper analysis belongs in the finding field, not here.",
+      "suggested_language": "DROP-IN POLICY TEXT, 2–3 sentences, hard cap. MUST include: named role/title, specific timeframe, measurable threshold or trigger, and inline regulatory citation, packed into those 2-3 sentences. NEVER write 'the organization should consider.' This is clause text, not a sub-procedure — deeper reasoning belongs in finding, not here.",
 
       "citation": "Full statutory/regulatory authority for the obligation: title + part + section + subsection + year (and source publication where guidance, e.g., 'HHS OCR FAQ on Right of Access, 2023'). Multiple citations joined with semicolons when needed. Generic refs are rejected.",
 
@@ -183,7 +183,7 @@ failed analysis.
     }
   ],
 
-  "audit_ready_summary": "5–7 sentences. Written for a compliance officer to read verbatim to their board or hand to outside counsel without editing. Open with the policy type and overall posture in one sentence. State the count and severity distribution of findings. Name the 2–3 highest-exposure gaps in plain English with their regulatory authority. State the recommended remediation cadence. Close with the standing recommendation: independent legal review before formal adoption or regulatory submission. Professional, factual, no hedging. No bullet points — flowing prose suitable for board minutes.",
+  "audit_ready_summary": "4 sentences, hard cap: overall posture, severity distribution, the single highest-exposure gap, and the standing recommendation for independent legal review. Written for a compliance officer to read verbatim to their board. Flowing prose, no bullet points.",
 
   "review_frequency": "Annual | Bi-Annual | Quarterly | Immediate Revision Required — chosen to match severity. Critical findings → 'Immediate Revision Required'. Multiple high findings → 'Quarterly'. Healthy posture → 'Annual'.",
 
@@ -214,21 +214,34 @@ OIG GCPG 7 Elements (healthcare only — exact format for oig_element field):
 SCALE & DEPTH REQUIREMENTS
 ═══════════════════════════════════════════════════════════════════════════════
 
-gap_table: 8–14 rows for any non-trivial policy. Cover every distinct
-regulatory dimension applicable, prioritizing the highest enforcement-risk
-obligations first. Do not pad with duplicate findings — each row is a distinct
-obligation. Sparse output (<8 rows) is a failed analysis on any healthcare or
-education policy. If more than 14 distinct obligations apply, cover the 14
-highest-risk ones in full depth rather than covering all of them shallowly.
+gap_table: 6–10 rows, hard ceiling. Cover the highest enforcement-risk distinct
+obligations first — if more than 10 apply, cover the 10 highest-risk ones and
+stop; do not attempt to cover more by writing shorter rows. Sparse output
+(<6 rows) is a failed analysis on any healthcare or education policy.
 
 Every row MUST populate: clause, regulations (≥1), status, risk_level,
 current_state, finding, suggested_language, citation, remediation_priority.
 oig_element is required for healthcare and omitted otherwise.
 
-priority_findings: 3–6 entries. Each is a complete sentence ending with the
-audit-day exposure clause.
+priority_findings: 3–4 entries, one sentence each.
 
-audit_ready_summary: 5–7 sentences of board-ready prose."""
+audit_ready_summary: 4 sentences of board-ready prose.
+
+═══════════════════════════════════════════════════════════════════════════════
+HARD OUTPUT BUDGET — READ BEFORE WRITING
+═══════════════════════════════════════════════════════════════════════════════
+
+Every field above has a hard sentence cap for a reason: your entire response
+must fit inside a strict token limit, and a shorter COMPLETE, valid JSON
+response is always correct where a longer one that gets cut off mid-document
+is always a total failure — none of it is usable if the JSON never closes.
+
+If you sense you are running long while writing gap_table, stop adding rows
+at 6 (the floor, not the ceiling) rather than risk not finishing. Write every
+field at its hard cap, not up to it — a 2-sentence finding beats a 3-sentence
+one if it says the same thing. Do not use the row/sentence ranges above as a
+target to fill; they are maximums, and hitting the floor with a complete
+response beats hitting the ceiling with a truncated one."""
 
 
 def _build_system_prompt(industry_slug: Optional[str] = None, jurisdiction: Optional[str] = None) -> str:
