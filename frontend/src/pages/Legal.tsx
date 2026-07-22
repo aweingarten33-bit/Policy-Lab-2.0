@@ -75,11 +75,11 @@ export default function Legal() {
             servers after your request is processed.
           </p>
           <p className="text-sm leading-relaxed text-foreground/85">
-            To generate output, the text you submit is sent to third-party AI
-            providers (currently OpenAI, Anthropic, Google, Groq, and Mistral)
-            for processing. Those providers have their own privacy policies and
-            data-handling practices, which apply to your content while it is in
-            their systems.
+            To generate output, the text you submit is sent to a third-party
+            AI provider for processing, and to search regulatory sources
+            online. Those providers have their own privacy policies and
+            data-handling practices, which apply to your content while it is
+            in their systems.
           </p>
           <p className="text-sm leading-relaxed text-foreground/85">
             <span className="font-bold">Do not paste anything you would not be comfortable sending to a third-party AI provider.</span>{" "}
@@ -148,7 +148,7 @@ export default function Legal() {
           </h2>
           <p className="text-sm leading-relaxed text-foreground/85">
             Questions, concerns, or notices regarding this tool can be directed
-            to the operator at the contact listed in the site footer.
+            to its operator, Andrew Weingarten.
           </p>
         </section>
 
