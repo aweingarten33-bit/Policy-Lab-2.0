@@ -879,17 +879,6 @@ export default function Index() {
           {!backendOnline && (
             <span className="text-[9px] font-mono px-2 py-1 rounded-full bg-destructive/10 text-destructive border border-destructive/20">BACKEND OFFLINE</span>
           )}
-          {pkg && !loading && (
-            <>
-              <button onClick={handleDownloadGapAnalysis} disabled={exporting} title="Downloads the full gap analysis report as a Word document — opens with a one-page compliance certificate summary (score, rating, finding counts), followed by every finding, citation, and suggested policy language." className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-foreground transition-all tracking-wider touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
-                {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}Report (.docx)
-              </button>
-              <button onClick={reset} className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-muted-foreground transition-all tracking-wider touch-manipulation">New</button>
-            </>
-          )}
-          {draftResult && !loading && (
-            <button onClick={reset} className="font-mono text-[10px] font-medium px-3 py-2 rounded-xl bg-card neu-btn active:neu-pressed text-muted-foreground transition-all tracking-wider touch-manipulation">New</button>
-          )}
           {!pkg && !draftResult && !loading && (
             <button
               type="button"
@@ -1261,6 +1250,30 @@ export default function Index() {
         {/* ─── Results with Tabs ─── */}
         {pkg && !loading && (
           <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-[10px] font-mono uppercase tracking-widest text-primary font-medium mb-1">Gap Analysis</p>
+                <h2 className="text-xl sm:text-2xl font-bold text-foreground leading-tight">{fileName || pkg.gap_analysis?.policy_type || "Analyzed Policy"}</h2>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={handleDownloadGapAnalysis}
+                  disabled={exporting}
+                  title="Downloads the full gap analysis report as a Word document — opens with a one-page compliance certificate summary (score, rating, finding counts), followed by every finding, citation, and suggested policy language."
+                  className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn active:neu-pressed touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
+                >
+                  {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                  {exporting ? "DOWNLOADING..." : "DOWNLOAD REPORT (.DOCX)"}
+                </button>
+                <button onClick={reset} className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl neu-sm text-muted-foreground hover:text-foreground touch-manipulation">
+                  START OVER
+                </button>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+              <strong className="text-foreground/80 font-medium">Download Report</strong> gets you the full findings as an editable Word file (.docx) — opens with a one-page compliance certificate (score, rating, finding counts), followed by every finding, citation, and drop-in policy language.
+            </p>
+
             {/* Tab bar */}
             <div className="flex gap-1 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
               {availableTabs.map((tab) => {
@@ -1281,10 +1294,6 @@ export default function Index() {
               )}
             </div>
 
-            <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
-              <strong className="text-foreground/80 font-medium">Report (.docx)</strong> — opens with a one-page compliance certificate (score, rating, finding counts), followed by every finding, citation, and drop-in policy language.
-            </p>
-
             {/* Tab content */}
             {activeTab === "overview" && <OverviewTab pkg={pkg} />}
             {activeTab === "gap_analysis" && pkg.gap_analysis && (
@@ -1299,7 +1308,7 @@ export default function Index() {
             <button
               onClick={() => openChat("analysis")}
               style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))" }}
-              className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-30 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-lg font-mono text-[10px] font-bold tracking-wider touch-manipulation"
+              className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-30 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-lg font-mono text-[10px] font-bold tracking-wider touch-manipulation"
             >
               <MessageSquare className="w-4 h-4" />
               <span>ASK AI</span>
