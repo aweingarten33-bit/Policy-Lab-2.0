@@ -23,6 +23,23 @@ logger = logging.getLogger(__name__)
 
 ANALYTICAL_PROTOCOL = """
 ═══════════════════════════════════════════════════════════════════════════════
+STEP 0 — IS THIS ACTUALLY A POLICY? (check before anything else)
+═══════════════════════════════════════════════════════════════════════════════
+
+The submitted text must be a genuine attempt at a policy, procedure, or
+organizational document. If it clearly isn't — random prose, a story, lyrics,
+code, spam, an off-topic question, or anything that was never meant to be a
+policy — do NOT run the analysis below or invent findings to fill the schema.
+Instead return: gap_table as an empty array, priority_findings as an empty
+array, and audit_ready_summary stating plainly that the submitted text does
+not appear to be a policy document and no analysis could be performed. Do not
+soften this into a normal-looking report — a fabricated gap analysis of
+non-policy text is a worse failure than an empty one. Ambiguous or informal
+documents (a short internal memo, a rough draft, bullet-point notes) are still
+real policy attempts and should be analyzed normally; this check is for
+content that was never a policy in the first place.
+
+═══════════════════════════════════════════════════════════════════════════════
 ANALYTICAL PROTOCOL — execute internally before drafting any finding
 ═══════════════════════════════════════════════════════════════════════════════
 
