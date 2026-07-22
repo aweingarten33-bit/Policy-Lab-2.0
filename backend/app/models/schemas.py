@@ -478,6 +478,21 @@ class DraftedPolicy(BaseModel):
     sections: List[DraftedPolicySection] = Field(default_factory=list)
     full_text: str
     drafting_notes: Optional[str] = None
+    kb_sources_used: Optional[List[str]] = Field(
+        None, description="Knowledge base / live research source names used to ground this draft"
+    )
+    kb_source_urls: Optional[Dict[str, str]] = Field(
+        None, description="Mapping of source name to URL for the sources above"
+    )
+    live_research_used: bool = Field(
+        False, description="Whether live research was used to ground this draft"
+    )
+    verification_overall: Optional[str] = Field(
+        None, description="Human-readable summary of how well-grounded this draft is"
+    )
+    unverified_claim_count: Optional[int] = Field(
+        None, description="Number of citations in the draft that could not be verified against loaded sources"
+    )
 
 
 class DraftPolicyExportRequest(BaseModel):

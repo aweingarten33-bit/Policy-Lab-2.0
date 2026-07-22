@@ -244,6 +244,11 @@ async def draft_policy_endpoint(request: DraftPolicyRequest):
             sections=sections,
             full_text=data.get("full_text", ""),
             drafting_notes=data.get("drafting_notes"),
+            kb_sources_used=data.get("kb_sources_used"),
+            kb_source_urls=data.get("kb_source_urls"),
+            live_research_used=data.get("live_research_used", False),
+            verification_overall=data.get("verification_overall"),
+            unverified_claim_count=data.get("unverified_claim_count"),
         )
     except Exception as e:
         error_msg = str(e)
@@ -271,6 +276,11 @@ def _build_policy_dict(data: dict) -> dict:
         "sections": sections,
         "full_text": data.get("full_text", ""),
         "drafting_notes": data.get("drafting_notes"),
+        "kb_sources_used": data.get("kb_sources_used"),
+        "kb_source_urls": data.get("kb_source_urls"),
+        "live_research_used": data.get("live_research_used", False),
+        "verification_overall": data.get("verification_overall"),
+        "unverified_claim_count": data.get("unverified_claim_count"),
     }
 
 
@@ -284,20 +294,24 @@ async def draft_policy_stream_endpoint(request: DraftPolicyRequest):
     generation stops with it. Use /api/draft-policy/start for a version that
     survives the client going away."""
     import json as _json
-    from app.services.draft_policy_service import draft_policy_stream, parse_draft_response
+    from app.services.draft_policy_service import draft_policy_stream, parse_draft_response, attach_attribution
 
     async def event_stream():
         raw_text = ""
+        context_holder: dict = {}
         try:
             async for chunk in draft_policy_stream(
                 policy_description=request.policy_description,
                 industry=request.industry,
                 jurisdiction=request.jurisdiction,
+                context_holder=context_holder,
             ):
                 raw_text += chunk
                 yield f"data: {_json.dumps({'delta': chunk})}\n\n"
 
             data = parse_draft_response(raw_text)
+            if context_holder.get("ctx") is not None:
+                data = attach_attribution(data, context_holder["ctx"])
             yield f"data: {_json.dumps({'done': True, 'policy': _build_policy_dict(data)})}\n\n"
         except Exception as e:
             logger.error(f"Draft stream error: {e}")
@@ -327,21 +341,25 @@ _draft_running_tasks: dict[str, asyncio.Task] = {}
 
 
 async def _run_draft_job(job_id: str, request: DraftPolicyRequest) -> None:
-    from app.services.draft_policy_service import draft_policy_stream, parse_draft_response
+    from app.services.draft_policy_service import draft_policy_stream, parse_draft_response, attach_attribution
     from app.services.draft_job_store import get_draft_job_store
 
     store = get_draft_job_store()
     raw_text = ""
+    context_holder: dict = {}
     try:
         async for chunk in draft_policy_stream(
             policy_description=request.policy_description,
             industry=request.industry,
             jurisdiction=request.jurisdiction,
+            context_holder=context_holder,
         ):
             raw_text += chunk
             await store.append_text(job_id, chunk)
 
         data = parse_draft_response(raw_text)
+        if context_holder.get("ctx") is not None:
+            data = attach_attribution(data, context_holder["ctx"])
         await store.mark_complete(job_id, _build_policy_dict(data))
     except Exception as e:
         logger.exception(f"Background draft job {job_id} failed")

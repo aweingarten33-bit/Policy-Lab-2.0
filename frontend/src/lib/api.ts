@@ -434,6 +434,11 @@ export interface DraftedPolicy {
   sections: Array<{ title: string; content: string }>;
   full_text: string;
   drafting_notes?: string;
+  kb_sources_used?: string[] | null;
+  kb_source_urls?: Record<string, string> | null;
+  live_research_used?: boolean;
+  verification_overall?: string | null;
+  unverified_claim_count?: number | null;
 }
 
 /**

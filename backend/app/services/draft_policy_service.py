@@ -16,6 +16,8 @@ from app.services.provider import get_provider
 from app.services.industry_config import get_industry, get_regulations
 from app.services.retrieval.retriever import get_retriever
 from app.services.retrieval.live_research import get_live_research_service
+from app.services.retrieval.verification import get_verification_service
+from app.services.retrieval.models import RetrievalContext
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +126,10 @@ async def _prepare_draft(
     policy_description: str,
     industry: Optional[str],
     jurisdiction: Optional[str],
-) -> tuple[str, str]:
-    """Build the system/user prompts, injecting KB reference material if found."""
+) -> tuple[str, str, RetrievalContext]:
+    """Build the system/user prompts, injecting KB reference material if found.
+    Also returns the RetrievalContext so callers can attach source attribution
+    to the final drafted policy, the same way gap analysis does."""
     industry_slug = industry or "healthcare"
 
     system_prompt = _build_draft_system_prompt(industry_slug, jurisdiction)
@@ -163,7 +167,51 @@ async def _prepare_draft(
         )
         logger.info(f"Draft KB: {ctx.total_sources_found} reference chunks injected")
 
-    return system_prompt, user_message
+    return system_prompt, user_message, ctx
+
+
+def attach_attribution(data: dict, ctx: RetrievalContext) -> dict:
+    """Attach source-attribution/verification fields to a parsed draft dict,
+    mirroring what the gap-analysis package already surfaces in the UI --
+    otherwise Draft silently retrieves and live-searches sources but never
+    shows the user any proof of it."""
+    verifier = get_verification_service()
+    report = verifier.verify_section(
+        section_name="draft_policy",
+        section_text=data.get("full_text", ""),
+        retrieval_context=ctx,
+    )
+    sources = ctx.get_source_names()
+    data["kb_sources_used"] = sources or None
+    data["kb_source_urls"] = ctx.get_source_url_map() or None
+    data["live_research_used"] = ctx.live_research_used
+    data["unverified_claim_count"] = report.unverified_claims
+
+    if report.total_claims == 0:
+        if ctx.total_sources_found > 0:
+            data["verification_overall"] = (
+                f"No specific citations detected for verification. Draft based on "
+                f"{ctx.total_sources_found} retrieved source chunks. All content "
+                f"should be independently verified."
+            )
+        else:
+            data["verification_overall"] = (
+                "No source material was available in the knowledge base. This draft "
+                "is model inference only and MUST be independently verified."
+            )
+    elif report.unverified_claims > 0:
+        data["verification_overall"] = (
+            f"{report.unverified_claims} of {report.total_claims} citations could not "
+            f"be verified against loaded sources. These require independent review by "
+            f"qualified compliance counsel."
+        )
+    else:
+        data["verification_overall"] = (
+            f"All {report.total_claims} citation(s) verified against {len(sources)} "
+            f"source(s) in the knowledge base. Content should still be independently confirmed."
+        )
+
+    return data
 
 
 def parse_draft_response(raw_text: str) -> dict:
@@ -216,7 +264,7 @@ async def draft_policy(
     Returns a dict with policy_title, full_text, sections, regulations_applied, etc.
     """
     provider = get_provider()
-    system_prompt, user_message = await _prepare_draft(policy_description, industry, jurisdiction)
+    system_prompt, user_message, ctx = await _prepare_draft(policy_description, industry, jurisdiction)
 
     raw_text = await provider.complete(
         system_prompt=system_prompt,
@@ -225,22 +273,31 @@ async def draft_policy(
         temperature=0.3,
         models=settings.llm_cascade_models_draft,
     )
-    return parse_draft_response(raw_text)
+    data = parse_draft_response(raw_text)
+    return attach_attribution(data, ctx)
 
 
 async def draft_policy_stream(
     policy_description: str,
     industry: Optional[str] = None,
     jurisdiction: Optional[str] = None,
+    context_holder: Optional[dict] = None,
 ):
     """
     Same as draft_policy(), but yields raw text chunks as they're generated
     instead of waiting for the full response. The caller is responsible for
     accumulating the chunks and calling parse_draft_response() once the
     generator is exhausted.
+
+    Since a generator can't also return a value, pass a dict as
+    context_holder -- the RetrievalContext is stashed into it (key "ctx")
+    once built, so the caller can read it after the stream finishes and
+    call attach_attribution() itself.
     """
     provider = get_provider()
-    system_prompt, user_message = await _prepare_draft(policy_description, industry, jurisdiction)
+    system_prompt, user_message, ctx = await _prepare_draft(policy_description, industry, jurisdiction)
+    if context_holder is not None:
+        context_holder["ctx"] = ctx
 
     async for chunk in provider.complete_stream(
         system_prompt=system_prompt,

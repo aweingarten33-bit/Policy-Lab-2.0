@@ -1210,6 +1210,14 @@ export default function Index() {
               </div>
             )}
 
+            <SourceAttributionPanel
+              kbSourcesUsed={draftResult.kb_sources_used}
+              kbSourceUrls={draftResult.kb_source_urls}
+              liveResearchUsed={draftResult.live_research_used}
+              verificationOverall={draftResult.verification_overall}
+              unverifiedClaimCount={draftResult.unverified_claim_count}
+            />
+
             {/* Ask AI button for draft */}
             <button
               onClick={() => openChat("draft")}
@@ -1440,61 +1448,89 @@ function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
       </div>
 
 
-      {/* Source Attribution & Verification Status */}
-      <div className="rounded-xl p-4 neu-raised">
-        <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-3">Source Attribution & Verification</p>
+      <SourceAttributionPanel
+        kbSourcesUsed={pkg.kb_sources_used}
+        kbSourceUrls={pkg.kb_source_urls}
+        liveResearchUsed={pkg.live_research_used}
+        verificationOverall={pkg.verification_overall}
+        unverifiedClaimCount={pkg.unverified_claim_count}
+      />
+    </div>
+  );
+}
 
-        {pkg.kb_sources_used && pkg.kb_sources_used.length > 0 && (
-          <div className="mb-3">
-            <p className="text-[10px] font-mono uppercase tracking-wider mb-1.5" style={{ color: "hsl(200 60% 44%)" }}>Knowledge Base Sources Used</p>
-            <div className="flex flex-wrap gap-1.5">
-              {pkg.kb_sources_used.map((src, i) => {
-                const url = pkg.kb_source_urls?.[src];
-                const baseStyle = { color: "hsl(200 60% 44%)", background: "hsl(200 60% 50% / 0.1)" };
-                return url ? (
-                  <a
-                    key={i}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[9px] font-mono px-2 py-0.5 rounded-full inline-flex items-center gap-1 hover:underline"
-                    style={baseStyle}
-                    title={`Open authoritative source: ${url}`}
-                  >
-                    {src}
-                    <span aria-hidden="true">↗</span>
-                  </a>
-                ) : (
-                  <span key={i} className="text-[9px] font-mono px-2 py-0.5 rounded-full" style={baseStyle}>{src}</span>
-                );
-              })}
-            </div>
-          </div>
-        )}
+// ── Source Attribution & Verification Panel ──
+// Shared between Analyze (OverviewTab) and Draft results -- both flows
+// retrieve from the knowledge base and run live research the same way, so
+// both should show the same proof of it instead of Draft silently doing the
+// work and never surfacing it.
+function SourceAttributionPanel({
+  kbSourcesUsed,
+  kbSourceUrls,
+  liveResearchUsed,
+  verificationOverall,
+  unverifiedClaimCount,
+}: {
+  kbSourcesUsed?: string[] | null;
+  kbSourceUrls?: Record<string, string> | null;
+  liveResearchUsed?: boolean;
+  verificationOverall?: string | null;
+  unverifiedClaimCount?: number | null;
+}) {
+  return (
+    <div className="rounded-xl p-4 neu-raised">
+      <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-3">Source Attribution & Verification</p>
 
-        {pkg.live_research_used && (
-          <div className="mb-3">
-            <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full" style={{ color: "hsl(270 60% 50%)", background: "hsl(270 60% 50% / 0.1)" }}>🌐 Live Research Used</span>
-            <p className="text-[9px] text-muted-foreground mt-1">Some findings were augmented with controlled live research from curated regulatory sources.</p>
+      {kbSourcesUsed && kbSourcesUsed.length > 0 && (
+        <div className="mb-3">
+          <p className="text-[10px] font-mono uppercase tracking-wider mb-1.5" style={{ color: "hsl(200 60% 44%)" }}>Knowledge Base Sources Used</p>
+          <div className="flex flex-wrap gap-1.5">
+            {kbSourcesUsed.map((src, i) => {
+              const url = kbSourceUrls?.[src];
+              const baseStyle = { color: "hsl(200 60% 44%)", background: "hsl(200 60% 50% / 0.1)" };
+              return url ? (
+                <a
+                  key={i}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[9px] font-mono px-2 py-0.5 rounded-full inline-flex items-center gap-1 hover:underline"
+                  style={baseStyle}
+                  title={`Open authoritative source: ${url}`}
+                >
+                  {src}
+                  <span aria-hidden="true">↗</span>
+                </a>
+              ) : (
+                <span key={i} className="text-[9px] font-mono px-2 py-0.5 rounded-full" style={baseStyle}>{src}</span>
+              );
+            })}
           </div>
-        )}
+        </div>
+      )}
 
-        {pkg.verification_overall && (
-          <div className="rounded-lg p-3 neu-inset">
-            <p className="text-[10px] font-mono uppercase tracking-wider mb-1" style={{ color: pkg.unverified_claim_count && pkg.unverified_claim_count > 0 ? "hsl(38 85% 44%)" : "hsl(160 60% 36%)" }}>
-              {pkg.unverified_claim_count && pkg.unverified_claim_count > 0 ? "⚠️ Verification Status" : "✅ Verification Status"}
-            </p>
-            <p className="text-[11px] text-foreground/80 leading-relaxed">{pkg.verification_overall}</p>
-          </div>
-        )}
+      {liveResearchUsed && (
+        <div className="mb-3">
+          <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full" style={{ color: "hsl(270 60% 50%)", background: "hsl(270 60% 50% / 0.1)" }}>🌐 Live Research Used</span>
+          <p className="text-[9px] text-muted-foreground mt-1">Some findings were augmented with controlled live research from curated regulatory sources.</p>
+        </div>
+      )}
 
-        {(!pkg.kb_sources_used || pkg.kb_sources_used.length === 0) && !pkg.live_research_used && (
-          <div className="rounded-lg p-3" style={{ background: "hsl(38 85% 52% / 0.08)" }}>
-            <p className="text-[10px] font-mono font-bold" style={{ color: "hsl(38 85% 44%)" }}>⚠️ Model-Only Mode</p>
-            <p className="text-[10px] text-muted-foreground mt-1">No source material was available in the knowledge base. All findings are model inference only and MUST be independently verified by qualified compliance counsel.</p>
-          </div>
-        )}
-      </div>
+      {verificationOverall && (
+        <div className="rounded-lg p-3 neu-inset">
+          <p className="text-[10px] font-mono uppercase tracking-wider mb-1" style={{ color: unverifiedClaimCount && unverifiedClaimCount > 0 ? "hsl(38 85% 44%)" : "hsl(160 60% 36%)" }}>
+            {unverifiedClaimCount && unverifiedClaimCount > 0 ? "⚠️ Verification Status" : "✅ Verification Status"}
+          </p>
+          <p className="text-[11px] text-foreground/80 leading-relaxed">{verificationOverall}</p>
+        </div>
+      )}
+
+      {(!kbSourcesUsed || kbSourcesUsed.length === 0) && !liveResearchUsed && (
+        <div className="rounded-lg p-3" style={{ background: "hsl(38 85% 52% / 0.08)" }}>
+          <p className="text-[10px] font-mono font-bold" style={{ color: "hsl(38 85% 44%)" }}>⚠️ Model-Only Mode</p>
+          <p className="text-[10px] text-muted-foreground mt-1">No source material was available in the knowledge base. All findings are model inference only and MUST be independently verified by qualified compliance counsel.</p>
+        </div>
+      )}
     </div>
   );
 }
