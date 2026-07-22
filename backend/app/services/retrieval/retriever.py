@@ -13,6 +13,7 @@ Pipeline:
 """
 
 import logging
+import re
 from typing import Optional, List, Dict, Any
 
 from app.services.retrieval.models import (
@@ -22,6 +23,24 @@ from app.services.retrieval.models import (
 from app.services.retrieval.store import get_store
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_state_code(jurisdiction: Optional[str]) -> Optional[str]:
+    """Pull a 2-letter state code out of a jurisdiction string.
+
+    The frontend sends "City, ST" when a city is entered alongside the state
+    (e.g. "Brooklyn, NY"), or just "ST" when only the state is picked. A plain
+    Jurisdiction(jurisdiction.upper()) enum lookup only matches the latter —
+    any city text silently broke state-law retrieval and fell back to
+    federal-only. This matches a trailing 2-letter code either way.
+    """
+    if not jurisdiction:
+        return None
+    match = re.search(r"\b([A-Za-z]{2})\s*$", jurisdiction.strip())
+    if not match:
+        return None
+    code = match.group(1).upper()
+    return code if code in Jurisdiction.__members__ else None
 
 # ── Query templates for each generation step ──
 
@@ -232,8 +251,8 @@ class ComplianceRetriever:
 
         collections = step_collections.get(step_name, base_collections)
 
-        # Add state law if jurisdiction is specified
-        if jurisdiction and jurisdiction.upper() != "FEDERAL":
+        # Add state law if a resolvable state code was specified
+        if _extract_state_code(jurisdiction):
             collections.append("state_law")
 
         return collections
@@ -244,12 +263,13 @@ class ComplianceRetriever:
             return None
 
         # Search for both federal and the specific jurisdiction
-        try:
-            jur_enum = Jurisdiction(jurisdiction.upper())
-            return {"jurisdiction": {"$in": ["federal", jur_enum.value]}}
-        except ValueError:
-            # Unknown jurisdiction, just search federal
-            return {"jurisdiction": "federal"}
+        state_code = _extract_state_code(jurisdiction)
+        if state_code:
+            return {"jurisdiction": {"$in": ["federal", state_code]}}
+
+        # Jurisdiction was specified but not resolvable to a state code —
+        # fall back to federal-only rather than an unfiltered mix of every state.
+        return {"jurisdiction": "federal"}
 
     def _parse_metadata(self, meta_dict: Dict[str, Any], collection_name: str) -> SourceMetadata:
         """Parse a metadata dict from ChromaDB into a SourceMetadata object."""
