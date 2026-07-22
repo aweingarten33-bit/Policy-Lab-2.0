@@ -41,23 +41,27 @@ Return ONLY valid JSON — no markdown fences, no preamble:
   "sections": [
     {
       "section_title": "Section heading (e.g., 'I. PURPOSE')",
-      "original_text": "The exact text from the original policy for this section (or 'NEW SECTION' if it didn't exist)",
-      "rewritten_text": "The complete rewritten text for this section",
-      "changes_summary": "Brief summary of what was changed in this section and why (regulatory citations)",
+      "rewritten_text": "The complete rewritten text for this section — 3-6 sentences, or numbered steps for a procedures section. Write it once, at its final length, not a draft to expand on.",
+      "changes_summary": "One sentence: what changed in this section and why (regulatory citation if applicable)",
       "regulation_refs": ["45 CFR §164.xxx", "42 CFR Part 2.xxx"]
     }
-  ],
-  "full_text": "The complete rewritten policy as one continuous document, formatted for direct adoption. Include section headers, numbered paragraphs, and all regulatory citations inline."
+  ]
 }
+
+Do NOT include the original section text anywhere in your output, and do NOT include a
+"full_text" field — the caller assembles the final document from "sections" after
+parsing. Writing the original text back or the whole document a second time wastes
+output budget better spent on the actual rewrite.
 
 CRITICAL RULES:
 - Every gap finding from the analysis MUST be addressed in the rewrite
 - Missing sections must be created from scratch with compliant language
 - Partial sections must be completed with the missing mandatory elements
 - Suggested language from the gap analysis should be incorporated but improved for policy-grade writing
-- The full_text field must be a single cohesive document, not a list of fragments
-- Aim for 6-12 sections minimum
-- Use roman numerals for major sections (I, II, III...) and letters for subsections (A, B, C...)"""
+- 6-10 sections — enough to be complete, not padded
+- Use roman numerals for major sections (I, II, III...) and letters for subsections (A, B, C...)
+- Write every section at its final length, not up to some maximum — a complete response
+  that finishes always beats a longer one that gets cut off"""
 
 
 def _build_rewrite_system_prompt(industry_slug: Optional[str] = None) -> str:
@@ -147,18 +151,25 @@ GAP ANALYSIS FINDINGS (fix ALL of these):
     for sec_data in data.get("sections", []):
         sections.append(RewrittenPolicySection(
             section_title=sec_data.get("section_title", ""),
-            original_text=sec_data.get("original_text", ""),
+            original_text="",
             rewritten_text=sec_data.get("rewritten_text", ""),
             changes_summary=sec_data.get("changes_summary", ""),
             regulation_refs=sec_data.get("regulation_refs", []),
         ))
+
+    # Built here instead of by the model — asking it to write the whole document a
+    # second time as one block was the main driver of the rewrite getting cut off
+    # before the JSON could close (see REWRITE_TASK_INSTRUCTIONS).
+    full_text = "\n\n".join(
+        f"{s.section_title}\n\n{s.rewritten_text}" for s in sections
+    )
 
     return RewrittenPolicy(
         policy_title=data.get("policy_title", "Rewritten Policy"),
         effective_date=data.get("effective_date", "Upon adoption"),
         version_note=data.get("version_note", "Compliance rewrite based on gap analysis"),
         sections=sections,
-        full_text=data.get("full_text", ""),
+        full_text=full_text,
         change_summary=data.get("change_summary", ""),
     )
 
