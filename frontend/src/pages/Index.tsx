@@ -3,7 +3,7 @@ import {
   FileDown, Loader2, Shield, AlertTriangle, CheckCircle2, ChevronDown, MapPin,
   FileText, RefreshCw, GitCompare, LayoutDashboard,
   Download, X, MessageCircle, Send, ChevronRight, ChevronLeft,
-  MessageSquare, RotateCcw, Wand2, HelpCircle, ArrowRight,
+  MessageSquare, RotateCcw, Wand2, ArrowRight,
 } from "lucide-react";
 import { extractText } from "@/lib/extract-text";
 import { linkifyRegulations, lookupRegulationUrl } from "@/lib/regulation-links";
@@ -863,16 +863,6 @@ export default function Index() {
           {!backendOnline && (
             <span className="text-[9px] font-mono px-2 py-1 rounded-full bg-destructive/10 text-destructive border border-destructive/20">BACKEND OFFLINE</span>
           )}
-          {!pkg && !draftResult && !loading && (
-            <button
-              type="button"
-              aria-label="Help"
-              title="The Policy Lab — source-grounded policy drafting & gap analysis"
-              className="w-8 h-8 rounded-full border border-[hsl(220_13%_85%)] flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-[hsl(220_14%_96%)] transition-colors"
-            >
-              <HelpCircle className="w-4 h-4" strokeWidth={1.5} />
-            </button>
-          )}
         </div>
       </header>
 
@@ -884,20 +874,20 @@ export default function Index() {
               {mode === "analyze" && (
                 <>
                   <h1 className="font-serif-display text-4xl sm:text-6xl lg:text-7xl font-black text-foreground mb-6 sm:mb-8 leading-[1.02] tracking-tight">
-                    Upload your policy.<br />Know exactly where you stand.
+                    Upload your policy.<br />See what's missing.
                   </h1>
                   <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
-                    Gap analysis, rewritten policy, and redline — all from one upload. Complete picture. Nothing left to guess.
+                    Get a compliance gap analysis with regulations cited, plus a corrected version you can download.
                   </p>
                 </>
               )}
               {mode === "draft" && (
                 <>
                   <h1 className="font-serif-display text-4xl sm:text-6xl lg:text-7xl font-black text-foreground mb-6 sm:mb-8 leading-[1.02] tracking-tight">
-                    Tell us what you need.<br />We'll write you a policy.
+                    Tell us what you need.<br />We'll draft it.
                   </h1>
                   <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
-                    A policy generator that writes every section from scratch, specific to your situation. The more detail you give, the better the output. Every regulation cited.
+                    Describe the policy and get a complete draft written from scratch, with regulations cited.
                   </p>
                 </>
               )}
