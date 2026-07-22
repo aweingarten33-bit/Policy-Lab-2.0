@@ -3,7 +3,7 @@ export default function Legal() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-foreground/8 px-4 py-4">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <span className="font-serif-display text-lg font-bold tracking-tight">
+          <span className="nyt-masthead text-lg text-foreground leading-[1.25] py-0.5">
             The Policy Lab
           </span>
         </div>
