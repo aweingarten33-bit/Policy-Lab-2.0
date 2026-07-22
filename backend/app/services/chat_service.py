@@ -6,12 +6,19 @@ findings or the drafted policy using the context already generated — it does
 not edit or rewrite policy text. Rewriting the gap analysis is handled by the
 dedicated "Fix All Gaps" action; drafting a new policy is handled by the
 dedicated Draft flow.
+
+Every turn does a live web search against curated regulatory sources (plus
+state .gov sources when a jurisdiction is set), same as gap analysis, draft,
+and Fix All Gaps -- a chat answer about what a regulation requires is a
+factual claim like any other output here and gets verified the same way.
 """
 
 import logging
 from typing import Optional
 
 from app.services.provider import get_provider
+from app.services.retrieval.retriever import get_retriever
+from app.services.retrieval.live_research import get_live_research_service
 from app.models.schemas import ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -59,6 +66,30 @@ async def chat(
         messages.append({
             "role": "assistant",
             "content": "Understood — I have full context. What would you like to know?",
+        })
+
+    # Live-verify against curated regulatory sources (+ state .gov sources if
+    # a jurisdiction is set) for whatever the user is actually asking about,
+    # same as every other output in this app.
+    retrieval_ctx = get_retriever().retrieve_for_step(
+        step_name="chat",
+        policy_text=message,
+        jurisdiction=jurisdiction,
+        industry=industry,
+    )
+    retrieval_ctx = await get_live_research_service().augment_retrieval_context(
+        context=retrieval_ctx,
+        industry=industry,
+        jurisdiction=jurisdiction,
+    )
+    if retrieval_ctx.total_sources_found > 0:
+        messages.append({
+            "role": "user",
+            "content": f"VERIFIED SOURCE MATERIAL for this question:\n\n{retrieval_ctx.formatted_context}",
+        })
+        messages.append({
+            "role": "assistant",
+            "content": "Got it — I'll ground my answer in that source material.",
         })
 
     recent_history = history[-10:]
