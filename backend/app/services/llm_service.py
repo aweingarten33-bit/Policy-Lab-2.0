@@ -149,13 +149,13 @@ failed analysis.
   ],
 
   "gap_table": [
-    // UP TO 6 objects in this array -- a ceiling, not a target. Select the
-    // highest-risk distinct obligations, most material first. FEWER than 6
+    // UP TO 10 objects in this array -- a ceiling, not a target. Select the
+    // highest-risk distinct obligations, most material first. FEWER than 10
     // is correct and expected when the topic genuinely doesn't carry that
     // many distinct regulatory obligations (e.g. an internal attendance/
     // lateness policy has real but narrow regulatory surface -- FLSA pay-
     // docking rules, ADA accommodation if lateness relates to a disability
-    // -- and padding to 6 by inventing tenuous regulatory hooks or relabeling
+    // -- and padding by inventing tenuous regulatory hooks or relabeling
     // organizational-design choices as regulatory requirements is worse than
     // returning 2-3 genuine findings. Never pad to hit the ceiling.
     {
@@ -232,11 +232,11 @@ OIG GCPG 7 Elements (Healthcare & Home Health industries only — exact format f
 SCALE & DEPTH REQUIREMENTS
 ═══════════════════════════════════════════════════════════════════════════════
 
-gap_table: UP TO 6 rows — a ceiling, not a target. Select the highest-risk
+gap_table: UP TO 10 rows — a ceiling, not a target. Select the highest-risk
 distinct obligations across the whole policy, most material first, and stop
-at 6 even if more apply. Return fewer than 6 when the topic genuinely doesn't
+at 10 even if more apply. Return fewer than 10 when the topic genuinely doesn't
 carry that many distinct findings (see REGULATORY VS. ORGANIZATIONAL FINDINGS
-above) — never pad to reach 6.
+above) — never pad to reach 10.
 
 Every row MUST populate: clause, regulations (≥1), status, risk_level,
 current_state, finding, suggested_language, citation, remediation_priority.
