@@ -8,11 +8,11 @@ import {
 import { extractText } from "@/lib/extract-text";
 import { linkifyRegulations, lookupRegulationUrl } from "@/lib/regulation-links";
 import {
-  generateActionPackage, generateActionPackageStream, startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, cancelActionPackageJob, exportGapAnalysis, exportDraftPolicy, exportUpdatedPolicy, fixAllGaps, healthCheck,
-  getIndustries, draftPolicy, startDraftJob, streamDraftJob, getDraftJobStatus, cancelDraftJob, sendChatMessage,
+  startActionPackageJob, streamActionPackageJob, getActionPackageJobStatus, cancelActionPackageJob, exportGapAnalysis, exportDraftPolicy, exportUpdatedPolicy, fixAllGaps, healthCheck,
+  getIndustries, startDraftJob, streamDraftJob, getDraftJobStatus, cancelDraftJob, sendChatMessage,
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
-  type DraftedPolicy, type ChatMessage, type RewrittenPolicy, type RewrittenPolicySection, type RedlineChange,
+  type DraftedPolicy, type ChatMessage, type RewrittenPolicy, type RewrittenPolicySection,
   STATUS_LABELS,
   getSourceTypeLabel, getSourceTypeColor, getSourceTypeBg, getVerificationIcon,
 } from "@/lib/api";
@@ -1631,51 +1631,6 @@ function RewrittenPolicyTab({ policy }: { policy: RewrittenPolicy }) {
     </div>
   );
 }
-
-
-function RedlineTab({ changes }: { changes: RedlineChange[] }) {
-  const added = changes.filter(c => c.type === "added").length;
-  const removed = changes.filter(c => c.type === "removed").length;
-  const modified = changes.filter(c => c.type === "modified").length;
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-2xl bg-card neu-raised p-4 flex gap-6">
-        <div className="text-center"><p className="text-lg font-bold" style={{ color: "hsl(160 60% 36%)" }}>{added}</p><p className="text-[10px] font-mono text-muted-foreground">Added</p></div>
-        <div className="text-center"><p className="text-lg font-bold" style={{ color: "hsl(0 72% 48%)" }}>{removed}</p><p className="text-[10px] font-mono text-muted-foreground">Removed</p></div>
-        <div className="text-center"><p className="text-lg font-bold" style={{ color: "hsl(38 85% 44%)" }}>{modified}</p><p className="text-[10px] font-mono text-muted-foreground">Modified</p></div>
-      </div>
-
-      <div className="space-y-2">
-        {changes.map((change, i) => (
-          <div key={i} className="rounded-xl overflow-hidden neu-sm">
-            <div className="px-4 py-2 flex items-center gap-2">
-              <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full" style={{
-                color: change.type === "added" ? "hsl(160 60% 36%)" : change.type === "removed" ? "hsl(0 72% 48%)" : "hsl(38 85% 44%)",
-                background: change.type === "added" ? "hsl(160 60% 42% / 0.1)" : change.type === "removed" ? "hsl(0 72% 51% / 0.1)" : "hsl(38 85% 52% / 0.1)",
-              }}>
-                {change.type.toUpperCase()}
-              </span>
-              {change.section && <span className="text-[10px] font-mono text-muted-foreground">{change.section}</span>}
-              {change.regulation_ref && <span className="text-[9px] font-mono text-muted-foreground ml-auto">{change.regulation_ref}</span>}
-            </div>
-            <div className="px-4 pb-3">
-              {change.type === "added" && <p className="text-xs leading-relaxed" style={{ color: "hsl(160 60% 36%)" }}>+ {change.revised_text}</p>}
-              {change.type === "removed" && <p className="text-xs leading-relaxed line-through" style={{ color: "hsl(0 72% 48%)" }}>- {change.original_text}</p>}
-              {change.type === "modified" && (
-                <>
-                  <p className="text-xs leading-relaxed line-through" style={{ color: "hsl(0 72% 48%)" }}>- {change.original_text}</p>
-                  <p className="text-xs leading-relaxed" style={{ color: "hsl(160 60% 36%)" }}>+ {change.revised_text}</p>
-                </>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 
 
 // ──────────────────────────────────────────────

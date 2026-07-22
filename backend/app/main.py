@@ -14,6 +14,8 @@ Features:
 import asyncio
 import logging
 import os
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +31,6 @@ from app.models.schemas import (
     DraftedPolicySection,
     ChatRequest,
     ChatResponse,
-    CertificateExportRequest,
 )
 
 # Configure logging
@@ -144,6 +145,52 @@ async def api_key_middleware(request: Request, call_next):
             status_code=401,
             content={"detail": "Invalid or missing API key. Set x-api-key header."},
         )
+
+    return await call_next(request)
+
+
+# ── Rate Limiting ──
+# In-memory per-IP fixed-window limiter for the expensive LLM-backed POST
+# endpoints. No auth is required to use this app (see api_key_middleware
+# above — api_key is unset by default), so without this, anyone who finds
+# the URL could script repeated calls against paid Anthropic/OpenAI/Gemini
+# keys. Same in-memory-per-instance tradeoff as job_store.py: fine for a
+# single Render instance, would need a shared store (e.g. Redis) if this
+# ever scales to multiple instances.
+_RATE_LIMIT_WINDOW = 60.0  # seconds
+_RATE_LIMIT_MAX = 20       # requests per window per IP
+_RATE_LIMITED_PREFIXES = (
+    "/api/action-package",
+    "/api/draft-policy",
+    "/api/chat",
+)
+_rate_limit_buckets: dict[str, deque] = defaultdict(deque)
+_rate_limit_lock = asyncio.Lock()
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.method == "POST" and any(request.url.path.startswith(p) for p in _RATE_LIMITED_PREFIXES):
+        ip = _client_ip(request)
+        now = time.monotonic()
+        async with _rate_limit_lock:
+            bucket = _rate_limit_buckets[ip]
+            while bucket and now - bucket[0] > _RATE_LIMIT_WINDOW:
+                bucket.popleft()
+            if len(bucket) >= _RATE_LIMIT_MAX:
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Too many requests. Please wait a moment and try again."},
+                    headers={"Retry-After": str(int(_RATE_LIMIT_WINDOW))},
+                )
+            bucket.append(now)
 
     return await call_next(request)
 
@@ -424,29 +471,6 @@ async def compliance_chat(request: ChatRequest):
                 detail="Rate limited. Please wait a moment before retrying.",
             )
         raise HTTPException(status_code=500, detail=f"Chat failed: {error_msg}")
-
-
-@app.post("/api/export-certificate")
-async def export_certificate(request: CertificateExportRequest):
-    """Export a professional compliance assessment certificate as a .docx file."""
-    from app.services.export_service import generate_certificate_export
-
-    try:
-        pkg_dict = request.package.model_dump(mode="json")
-        file_name = request.file_name
-        file_bytes, filename = generate_certificate_export(pkg_dict)
-        if file_name:
-            safe = file_name.replace(" ", "_").replace("/", "-")[:50]
-            filename = f"Compliance_Certificate_{safe}.docx"
-        return StreamingResponse(
-            iter([file_bytes]),
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Certificate export failed: {str(e)}"
-        )
 
 
 # ── Serve React frontend static files in production ──

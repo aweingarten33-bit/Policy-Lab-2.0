@@ -114,28 +114,6 @@ class SourceAttribution(BaseModel):
 
 # ── Core Models (Phase 1) ──
 
-class AnalysisRequest(BaseModel):
-    """Request body for policy gap analysis."""
-    text: str = Field(..., min_length=50, description="The policy text to analyze")
-    file_name: Optional[str] = Field(None, description="Original file name, if uploaded")
-    industry: Optional[str] = Field(
-        "healthcare",
-        description="Industry vertical: 'healthcare', 'home_health', 'other'. Determines which regulations are applied."
-    )
-    jurisdiction: Optional[str] = Field(
-        None,
-        description="State/jurisdiction code (e.g., 'NY', 'CA'). If provided, adds state-specific regulations."
-    )
-    regulation_scope: Optional[List[str]] = Field(
-        None,
-        description="Specific regulation families to check (e.g., ['HIPAA', '42-CFR-2']). If omitted, checks ALL applicable regulations."
-    )
-    enable_live_research: bool = Field(
-        False,
-        description="Whether to use controlled live research when the KB is insufficient"
-    )
-
-
 class ExportRequest(BaseModel):
     """Request body for generating an export file."""
     result: "AnalysisResult"
@@ -484,12 +462,6 @@ class PackageExportRequest(BaseModel):
         None,
         description="Which sections to include in the export. If omitted, includes ALL sections."
     )
-
-
-class CertificateExportRequest(BaseModel):
-    """Request body for exporting a compliance assessment certificate."""
-    package: ComplianceActionPackage
-    file_name: Optional[str] = Field(None, description="Original file name, used to customize the output filename")
 
 
 class DraftPolicyRequest(BaseModel):

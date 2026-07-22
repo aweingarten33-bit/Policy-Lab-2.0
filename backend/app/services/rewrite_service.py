@@ -1,20 +1,16 @@
 """
-Rewrite Service — Generates a fully rewritten compliant policy and redline document.
-Uses the gap analysis to produce publication-ready policy text with tracked changes.
+Rewrite Service — Generates a fully rewritten compliant policy from a gap analysis.
+Used by the "Fix All Gaps" action.
 """
 
 import json
 import re
 import logging
-from typing import Optional, List
+from typing import Optional
 
-from app.config import settings  # <-- FIX #1: ADDED THIS LINE
 from app.services.provider import get_provider
 from app.services.industry_config import get_industry
-from app.models.schemas import (
-    AnalysisResult, RewrittenPolicy, RewrittenPolicySection,
-    RedlineChange, GapRow, RiskLevel,
-)
+from app.models.schemas import AnalysisResult, RewrittenPolicy, RewrittenPolicySection
 from app.services.retrieval.models import RetrievalContext
 
 logger = logging.getLogger(__name__)
@@ -69,31 +65,6 @@ def _build_rewrite_system_prompt(industry_slug: Optional[str] = None) -> str:
     prompt, so a Home Health or Other rewrite doesn't get a hospital compliance voice."""
     cfg = get_industry(industry_slug or "healthcare")
     return cfg["persona"] + "\n\n" + REWRITE_TASK_INSTRUCTIONS
-
-
-REDLINE_SYSTEM_PROMPT = """You are a legal redline comparison expert. You compare an original healthcare policy with its rewritten version and produce a detailed change-by-change analysis.
-
-Return ONLY valid JSON — no markdown fences, no preamble:
-
-{
-  "changes": [
-    {
-      "type": "added|removed|modified",
-      "section": "Which section this change belongs to",
-      "original_text": "The original text (null if 'added')",
-      "revised_text": "The new text (null if 'removed')",
-      "regulation_ref": "The regulation citation that prompted this change, if applicable"
-    }
-  ]
-}
-
-Rules:
-- Every substantive change must be captured
-- Classify as 'added' (new text not in original), 'removed' (text deleted from original), or 'modified' (text changed)
-- Include the section heading for each change
-- Link changes to the regulation that required them where possible
-- Do NOT capture purely cosmetic changes (whitespace, formatting)
-- Capture ALL regulatory-mandated additions as 'added' type"""
 
 
 def _parse_json_response(raw_text: str) -> dict:
@@ -190,54 +161,6 @@ GAP ANALYSIS FINDINGS (fix ALL of these):
         full_text=data.get("full_text", ""),
         change_summary=data.get("change_summary", ""),
     )
-
-
-async def generate_redline(
-    original_text: str,
-    rewritten_policy: RewrittenPolicy,
-    gap_analysis: AnalysisResult,
-    retrieval_context: Optional[RetrievalContext] = None,
-) -> List[RedlineChange]:
-    """
-    Generate a redline document comparing original vs rewritten policy.
-    If retrieval_context is provided, uses retrieved source material for verification.
-    """
-    provider = get_provider()
-
-    user_message = f"""ORIGINAL POLICY:
-{original_text}
-
-REWRITTEN POLICY:
-{rewritten_policy.full_text}
-
-Compare these two documents and identify every substantive change. Focus on regulatory compliance changes."""
-
-    # Inject retrieved source material for verification
-    if retrieval_context and retrieval_context.formatted_context:
-        user_message += f"\n\n{retrieval_context.formatted_context}"
-
-    logger.info("Generating redline document")
-
-    raw_response = await provider.complete(
-        system_prompt=REDLINE_SYSTEM_PROMPT,
-        user_message=user_message,
-        max_tokens=settings.llm_max_tokens_long,
-        temperature=0.1,
-    )
-
-    data = _parse_json_response(raw_response)
-
-    changes = []
-    for change_data in data.get("changes", []):
-        changes.append(RedlineChange(
-            type=change_data.get("type", "modified"),
-            original_text=change_data.get("original_text"),
-            revised_text=change_data.get("revised_text"),
-            section=change_data.get("section"),
-            regulation_ref=change_data.get("regulation_ref"),
-        ))
-
-    return changes
 
 
 def _build_gap_context(gap_analysis: AnalysisResult) -> str:

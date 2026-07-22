@@ -24,13 +24,13 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 12000        # gap analysis
     llm_max_tokens_long: int = 12000   # rewrite, action plan, board summary, etc.
 
-    # ── Legacy fields (kept for backward compat) ──
-    llm_primary_model: str = "gemini/gemini-2.0-flash"
-    llm_fallback_model: str = "gemini/gemini-2.0-flash"
-    llm_provider_mode: str = "auto"
-
     # ── App Settings ──
-    cors_origins: str = "*"
+    # Locked to the production domain + local dev by default. Frontend and
+    # backend are served from the same origin in production (single Docker
+    # image), so this only matters for cross-origin callers, not the app
+    # itself. Override via the CORS_ORIGINS env var (comma-separated) if
+    # the Render domain changes or another origin needs access.
+    cors_origins: str = "https://policy-lab-2-0.onrender.com,http://localhost:5173,http://localhost:8080"
     host: str = "0.0.0.0"
     port: int = 8000
     environment: str = "development"
@@ -102,15 +102,6 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment.lower() == "production"
-
-    # ── Backward compat properties ──
-    @property
-    def claude_model(self) -> str:
-        return self.llm_primary_model
-
-    @property
-    def claude_max_tokens(self) -> int:
-        return self.llm_max_tokens
 
 
 settings = Settings()

@@ -1678,55 +1678,6 @@ def _build_certificate_content(
     )
 
 
-def generate_compliance_certificate(pkg_dict: dict) -> bytes:
-    """
-    Generate a professional one-page compliance assessment certificate.
-    Suitable for filing with regulators, accreditors, or boards.
-    """
-    doc = Document()
-
-    # Narrow margins for a certificate feel
-    for section in doc.sections:
-        section.top_margin = Cm(1.8)
-        section.bottom_margin = Cm(1.8)
-        section.left_margin = Cm(2.2)
-        section.right_margin = Cm(2.2)
-
-    gap = pkg_dict.get("gap_analysis", {})
-    created_at = pkg_dict.get("created_at", datetime.now().isoformat())
-    try:
-        date_obj = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-        date_str = date_obj.strftime("%B %d, %Y")
-    except Exception:
-        date_str = datetime.now().strftime("%B %d, %Y")
-
-    _build_certificate_content(
-        doc,
-        policy_type=gap.get("policy_type") or pkg_dict.get("policy_type", "Compliance Assessment"),
-        score=gap.get("compliance_score"),
-        critical=gap.get("critical_count", 0),
-        gap_count=gap.get("gap_count", 0),
-        partial=gap.get("partial_count", 0),
-        compliant=gap.get("compliant_count", 0),
-        regulations=gap.get("regulations_applied", []),
-        review_freq=gap.get("review_frequency", "Annual"),
-        next_review=gap.get("next_review_recommended", ""),
-        date_str=date_str,
-    )
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
-
-
-def _shade_cell(cell, hex_color: str):
-    """Apply a background color to a table cell."""
-    tc = cell._tc
-    tcPr = tc.get_or_add_tcPr()
-    shd = parse_xml(f'<w:shd {nsdecls("w")} w:val="clear" w:color="auto" w:fill="{hex_color}"/>')
-    tcPr.append(shd)
-
-
 def _shade_paragraph(para, hex_color: str):
     """Apply background shading to an entire paragraph (simulated highlight box)."""
     pPr = para._p.get_or_add_pPr()
@@ -1734,12 +1685,3 @@ def _shade_paragraph(para, hex_color: str):
     pPr.append(shd)
 
 
-def generate_certificate_export(pkg_dict: dict) -> tuple[bytes, str]:
-    """Generate a compliance certificate and return (bytes, filename)."""
-    gap = pkg_dict.get("gap_analysis", {})
-    policy_type = gap.get("policy_type") or pkg_dict.get("policy_type", "Assessment")
-    safe_name = policy_type.replace(" ", "_").replace("/", "-")[:50]
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    file_bytes = generate_compliance_certificate(pkg_dict)
-    filename = f"Compliance_Certificate_{safe_name}_{date_str}.docx"
-    return file_bytes, filename
