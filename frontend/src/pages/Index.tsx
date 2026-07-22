@@ -858,7 +858,7 @@ export default function Index() {
       {/* Header */}
       <header className="aqua-kiss aqua-bar sticky top-0 z-10 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-2 relative">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <span className="nyt-masthead text-[26px] sm:text-3xl text-foreground truncate leading-[1.25] py-0.5">
+          <span className="nyt-masthead text-[26px] sm:text-3xl text-foreground whitespace-nowrap overflow-visible leading-[1.3] py-0.5 inline-block">
             The Policy Lab
           </span>
         </div>
