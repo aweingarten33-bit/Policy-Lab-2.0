@@ -1288,14 +1288,7 @@ def generate_docx(result: AnalysisResult, file_name: Optional[str] = None) -> by
     _build_certificate_content(
         doc,
         policy_type=result.policy_type,
-        score=result.compliance_score,
-        critical=result.critical_count,
-        gap_count=result.gap_count,
-        partial=result.partial_count,
-        compliant=result.compliant_count,
         regulations=result.regulations_applied,
-        review_freq=result.review_frequency or "Annual",
-        next_review=result.next_review_recommended or "",
         date_str=datetime.now().strftime("%B %d, %Y"),
     )
     doc.add_page_break()
@@ -1532,14 +1525,7 @@ def _build_certificate_content(
     doc: Document,
     *,
     policy_type: str,
-    score: Optional[float],
-    critical: int,
-    gap_count: int,
-    partial: int,
-    compliant: int,
     regulations: List[str],
-    review_freq: str,
-    next_review: str,
     date_str: str,
 ):
     """

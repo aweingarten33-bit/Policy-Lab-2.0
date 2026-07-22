@@ -56,8 +56,6 @@ export interface AnalysisResult {
   verification_summary?: string;
   retrieved_sources_used?: string[];
   live_research_used: boolean;
-  review_frequency?: string;
-  next_review_recommended?: string;
 }
 
 // ── Chat Types ──

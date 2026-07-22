@@ -183,11 +183,7 @@ failed analysis.
     }
   ],
 
-  "audit_ready_summary": "4 sentences, hard cap: overall posture, severity distribution, the single highest-exposure gap, and the standing recommendation for independent legal review. Written for a compliance officer to read verbatim to their board. Flowing prose, no bullet points.",
-
-  "review_frequency": "Annual | Bi-Annual | Quarterly | Immediate Revision Required — chosen to match severity. Critical findings → 'Immediate Revision Required'. Multiple high findings → 'Quarterly'. Healthy posture → 'Annual'.",
-
-  "next_review_recommended": "Specific timeframe with rationale, e.g., 'Within 30 days — three critical findings require remediation before the next OCR audit cycle' or 'April 2027 — standard annual review cycle, no critical findings identified'."
+  "audit_ready_summary": "4 sentences, hard cap: overall posture, severity distribution, the single highest-exposure gap, and the standing recommendation for independent legal review. Written for a compliance officer to read verbatim to their board. Flowing prose, no bullet points."
 }
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -437,8 +433,6 @@ def _parse_llm_response(raw_text: str) -> AnalysisResult:
         priority_findings=data.get("priority_findings", []),
         gap_table=gap_table,
         audit_ready_summary=data.get("audit_ready_summary", ""),
-        review_frequency=data.get("review_frequency"),
-        next_review_recommended=data.get("next_review_recommended"),
     )
 
 
@@ -560,8 +554,6 @@ def _merge_results(results: list[AnalysisResult]) -> AnalysisResult:
         priority_findings=all_findings[:8],
         gap_table=merged_table,
         audit_ready_summary=primary.audit_ready_summary,
-        review_frequency=primary.review_frequency,
-        next_review_recommended=primary.next_review_recommended,
     )
 
 

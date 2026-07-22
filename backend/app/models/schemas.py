@@ -184,14 +184,6 @@ class AnalysisResult(BaseModel):
         False,
         description="Whether live research was used for this analysis"
     )
-    review_frequency: Optional[str] = Field(
-        None,
-        description="Recommended review frequency: Annual, Bi-Annual, Quarterly, or Immediate Revision Required"
-    )
-    next_review_recommended: Optional[str] = Field(
-        None,
-        description="Specific recommended date or timeframe for the next policy review, e.g. 'April 2026 (within 12 months)'"
-    )
 
 
 # ── Phase 2: Complete Compliance Action Package ──

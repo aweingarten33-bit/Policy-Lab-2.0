@@ -585,7 +585,6 @@ export default function Index() {
         `Regulations Reviewed: ${ga.regulations_applied?.slice(0, 8).join(", ")}`,
         `Priority Findings:\n${ga.priority_findings?.slice(0, 5).map((f, i) => `${i + 1}. ${f}`).join("\n")}`,
         `Executive Summary: ${ga.audit_ready_summary}`,
-        ga.review_frequency ? `Recommended Review: ${ga.review_frequency} — ${ga.next_review_recommended || ""}` : "",
       ].filter(Boolean).join("\n");
     }
     return "";
