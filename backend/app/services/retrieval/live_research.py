@@ -331,40 +331,13 @@ class LiveResearchService:
         jurisdiction: Optional[str] = None,
     ) -> bool:
         """
-        Decide whether live research is needed.
-
-        Live research is used when:
-          1. The user explicitly asks for current updates (needs_freshness=True)
-          2. A state/jurisdiction is selected — the knowledge base only ever
-             contains federal eCFR content, never state law, so state-specific
-             claims always need a live search regardless of how well the KB
-             covered the federal side
-          3. The curated KB returned very few or no results
-          4. The KB results are all low-relevance
+        Always True. Every generation does a live web search on top of KB
+        retrieval, unconditionally -- not just when the KB looks thin.
+        Kept as a method (instead of inlining `True` at every call site) so
+        the "why" stays documented in one place and any future exception
+        has one spot to go.
         """
-        # User explicitly asked for current info
-        if needs_freshness:
-            return True
-
-        # A state is selected — the KB never has state-law content to check
-        # against, so this always needs a live search, not just when the
-        # federal side of the KB happens to also be thin.
-        if jurisdiction:
-            return True
-
-        # KB returned nothing
-        if context.total_sources_found == 0:
-            return True
-
-        # KB returned very few results and they're all low relevance
-        if len(context.retrieved_chunks) <= 1:
-            avg_score = (
-                sum(r.score for r in context.retrieved_chunks) / len(context.retrieved_chunks)
-                if context.retrieved_chunks
-                else 0
-            )
-            if avg_score < 0.3:
-                return True
+        return True
 
         return False
 
