@@ -958,6 +958,11 @@ export default function Index() {
                 {jurisdiction && (
                   <span className="text-[10px] font-mono text-primary/70 font-medium">{jurisdiction}</span>
                 )}
+                <p className="text-[11px] text-muted-foreground/80 leading-relaxed px-0.5">
+                  {stateCode
+                    ? `Also checking ${stateCode} state law (health privacy, breach notification, licensure, employment) on top of federal — based on general legal knowledge, not a verified state-law source library.`
+                    : "No state selected — only federal regulations are checked. Pick a state to also check that state's specific requirements."}
+                </p>
               </div>
 
               <hr className="pl-divider" />
