@@ -80,15 +80,16 @@ class Settings(BaseSettings):
     @property
     def llm_cascade_models_draft(self) -> List[str]:
         """
-        Cascade for policy drafting specifically. Gemini primary — fastest of
-        the three paid providers and the one Harvey (comparable legal-AI
-        product) reports as their strongest model for drafting specifically.
-        Retrieval/live-research context is identical regardless of which
-        model ends up writing; only the writing step itself changes.
+        Cascade for policy drafting. Sonnet 5 primary — same tier as gap
+        analysis. Used to prefer Gemini/Haiku for speed, but with no Gemini
+        key configured that fallback logic never actually ran; it was Haiku
+        4.5 the whole time. A drafted policy is meant to hold up when run
+        back through gap analysis, so it gets the same model tier doing the
+        writing as the one doing the reviewing, not a lighter one.
         """
         return self._build_cascade([
+            ("anthropic_api_key", "anthropic/claude-sonnet-5"),
             ("gemini_api_key", "gemini/gemini-2.0-flash"),
-            ("anthropic_api_key", "anthropic/claude-haiku-4-5-20251001"),
             ("openai_api_key", "gpt-4o-mini"),
             ("groq_api_key", "groq/llama-3.3-70b-versatile"),
             ("mistral_api_key", "mistral/mistral-small-latest"),

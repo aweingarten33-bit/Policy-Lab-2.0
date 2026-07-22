@@ -41,7 +41,16 @@ def _build_draft_system_prompt(industry_slug: str, jurisdiction: Optional[str]) 
         f"4. Include: Purpose, Scope, Definitions (if needed), Policy Statement, Procedures, Responsibilities, "
         f"Recordkeeping, Violations/Consequences, Review Schedule, Effective Date.\n"
         f"5. Tailor every clause to the specific regulatory requirements of {cfg['name']} where they genuinely apply.\n"
-        f"6. Flag any 2024-2026 regulatory updates that affected this policy area.\n\n"
+        f"6. Flag any 2024-2026 regulatory updates that affected this policy area.\n"
+        f"7. Every obligation must be specific, operable, and accountable — not just present. This document will "
+        f"later be run through an adversarial gap analysis that checks each obligation on exactly those three "
+        f"axes, so write it to already pass: assign a specific named role or title (never 'appropriate staff,' "
+        f"'management,' or 'the department'), give an exact timeframe, interval, or numeric threshold (never "
+        f"'promptly,' 'periodically,' 'as needed,' 'as appropriate,' or 'in a timely manner'), and state what "
+        f"evidence proves it happened wherever the obligation is the kind that gets audited (a log entry, a "
+        f"signed form, a dated record, a specific retention period in days/months/years). A vague placeholder is "
+        f"not acceptable anywhere a concrete answer is knowable — decide on a reasonable specific value rather "
+        f"than hedging.\n\n"
         f"Key regulations to consider for {cfg['name']} (apply only what's actually relevant to the requested policy):\n"
         + "\n".join(f"  • {r}" for r in cfg.get("regulations", []))
     )
@@ -65,9 +74,9 @@ Return ONLY valid JSON — no markdown fences, no preamble. The sections array M
     { "title": "II. Scope", "content": "2-4 sentences — who is covered, what activities, which locations/entities." },
     { "title": "III. Definitions", "content": "One sentence per term, only terms actually used elsewhere in this policy — not a general glossary." },
     { "title": "IV. Policy Statement", "content": "3-6 sentences — the core policy position and commitments." },
-    { "title": "V. Procedures", "content": "Numbered steps, each one sentence: the action, the actor, and the timeframe. Cover the real procedure end-to-end without enumerating every hypothetical edge case." },
-    { "title": "VI. Roles and Responsibilities", "content": "One to two sentences per role — who is responsible for what." },
-    { "title": "VII. Recordkeeping", "content": "2-4 sentences — what records must be kept, retention periods, storage requirements." },
+    { "title": "V. Procedures", "content": "Numbered steps, each one sentence: the action, the specific named role who performs it, and an exact timeframe (a number of hours/days, not 'promptly' or 'as needed'). Cover the real procedure end-to-end without enumerating every hypothetical edge case." },
+    { "title": "VI. Roles and Responsibilities", "content": "One to two sentences per role — a specific named title (not 'management' or 'staff') and exactly what they are responsible for, including the authority they hold to do it." },
+    { "title": "VII. Recordkeeping", "content": "2-4 sentences — what records must be kept, the exact retention period (a number of days/months/years, not 'an appropriate period'), storage requirements, and who is responsible for maintaining them." },
     { "title": "VIII. Violations and Consequences", "content": "2-4 sentences — what constitutes a violation, reporting process, disciplinary consequences." },
     { "title": "IX. References", "content": "A list of the statutes, regulations, and guidance documents actually cited above — no additional prose." },
     { "title": "X. Review and Revision Schedule", "content": "1-3 sentences — how often reviewed, who is responsible, version control." }
