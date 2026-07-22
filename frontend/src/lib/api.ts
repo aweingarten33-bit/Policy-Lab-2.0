@@ -6,6 +6,22 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
+/**
+ * Extract a readable message from a FastAPI error response. Our own route
+ * handlers send `detail` as a plain string, but FastAPI's built-in Pydantic
+ * validation errors (e.g. hitting a field's min_length) send `detail` as an
+ * array of error objects instead — passed straight to `new Error()`, that
+ * stringifies to the literal text "[object Object]", not a useful message.
+ */
+function extractErrorDetail(errorData: any, fallback: string): string {
+  const detail = errorData?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map((d: any) => (typeof d?.msg === "string" ? d.msg : JSON.stringify(d))).join("; ");
+  }
+  return fallback;
+}
+
 // ── Source Attribution Types (Phase 3) ──
 
 export type SourceType = "model_knowledge" | "retrieved_source" | "live_research" | "verified_source";
@@ -276,7 +292,7 @@ export async function fixAllGaps(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: "Rewrite failed" }));
-    throw new Error(errorData.detail || `Rewrite failed (${response.status})`);
+    throw new Error(extractErrorDetail(errorData, `Rewrite failed (${response.status})`));
   }
 
   return response.json();
@@ -304,7 +320,7 @@ export async function exportUpdatedPolicy(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: "Export failed" }));
-    throw new Error(errorData.detail || `Export failed (${response.status})`);
+    throw new Error(extractErrorDetail(errorData, `Export failed (${response.status})`));
   }
 
   const blob = await response.blob();
@@ -346,7 +362,7 @@ export async function exportGapAnalysis(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: "Export failed" }));
-    throw new Error(errorData.detail || `Export failed (${response.status})`);
+    throw new Error(extractErrorDetail(errorData, `Export failed (${response.status})`));
   }
 
   const blob = await response.blob();
@@ -432,7 +448,7 @@ export async function exportDraftPolicy(policy: DraftedPolicy): Promise<void> {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: "Export failed" }));
-    throw new Error(errorData.detail || `Export failed (${response.status})`);
+    throw new Error(extractErrorDetail(errorData, `Export failed (${response.status})`));
   }
 
   const blob = await response.blob();
@@ -474,7 +490,7 @@ export async function startDraftJob(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: "Failed to start draft" }));
-    throw new Error(errorData.detail || `Job start failed (${response.status})`);
+    throw new Error(extractErrorDetail(errorData, `Job start failed (${response.status})`));
   }
   const data = await response.json();
   if (!data.job_id) throw new Error("Server did not return a job id");
@@ -589,7 +605,7 @@ export async function startActionPackageJob(
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: "Failed to start analysis" }));
-    throw new Error(errorData.detail || `Job start failed (${response.status})`);
+    throw new Error(extractErrorDetail(errorData, `Job start failed (${response.status})`));
   }
   const data = await response.json();
   if (!data.job_id) throw new Error("Server did not return a job id");
@@ -720,7 +736,7 @@ export async function sendChatMessage(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: "Chat failed" }));
-    throw new Error(errorData.detail || `Chat failed (${response.status})`);
+    throw new Error(extractErrorDetail(errorData, `Chat failed (${response.status})`));
   }
 
   return response.json();
