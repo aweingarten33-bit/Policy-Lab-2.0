@@ -222,10 +222,15 @@ class ComplianceRetriever:
         industry: Optional[str] = None,
     ) -> str:
         """Build a retrieval query for a specific generation step."""
-        from app.services.industry_config import get_industry
+        from app.services.industry_config import get_industry, BASELINE_EMPLOYMENT_REGS
         cfg = get_industry(industry or "healthcare")
         industry_name = cfg["name"]
-        key_regulations = ", ".join(cfg.get("regulations", [])[:4]) or "applicable federal regulations"
+        # Top industry-specific regs plus the baseline employment regs
+        # (deduped) -- otherwise a general HR-type request (e.g. an
+        # absenteeism policy) under a specific vertical like Hospitals only
+        # ever retrieves HIPAA/CMS content and never reaches FMLA/ADA.
+        industry_regs = cfg.get("regulations", [])[:3]
+        key_regulations = ", ".join(dict.fromkeys(industry_regs + BASELINE_EMPLOYMENT_REGS)) or "applicable federal regulations"
 
         template = QUERY_TEMPLATES.get(step_name, QUERY_TEMPLATES["gap_analysis"])
 

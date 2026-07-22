@@ -15,7 +15,7 @@ from app.config import settings
 from app.services.provider import get_provider
 from app.models.schemas import AnalysisResult, GapRow, GapStatus
 from app.services.retrieval.models import RetrievalContext
-from app.services.industry_config import get_industry
+from app.services.industry_config import get_industry, get_regulations
 
 logger = logging.getLogger(__name__)
 
@@ -331,7 +331,7 @@ def _build_user_prompt(
 
     base += (
         f"\n\nKey regulations to check for {cfg['name']} (this list is not exhaustive — identify all others that apply):\n"
-        + "\n".join(f"  • {r}" for r in cfg.get("regulations", []))
+        + "\n".join(f"  • {r}" for r in get_regulations(industry_slug or "healthcare"))
     )
 
     base += (

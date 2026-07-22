@@ -13,7 +13,7 @@ from typing import Optional
 
 from app.config import settings
 from app.services.provider import get_provider
-from app.services.industry_config import get_industry
+from app.services.industry_config import get_industry, get_regulations
 from app.services.retrieval.retriever import get_retriever
 from app.services.retrieval.live_research import get_live_research_service
 
@@ -61,7 +61,7 @@ def _build_draft_system_prompt(industry_slug: str, jurisdiction: Optional[str]) 
         f"not acceptable anywhere a concrete answer is knowable — decide on a reasonable specific value rather "
         f"than hedging.\n\n"
         f"Key regulations to consider for {cfg['name']} (apply only what's actually relevant to the requested policy):\n"
-        + "\n".join(f"  • {r}" for r in cfg.get("regulations", []))
+        + "\n".join(f"  • {r}" for r in get_regulations(industry_slug))
     )
 
     if jurisdiction:

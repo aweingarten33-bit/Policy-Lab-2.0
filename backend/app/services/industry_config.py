@@ -243,6 +243,28 @@ POLICY_TYPES: dict = {
 
 DEFAULT_INDUSTRY = "healthcare"
 
+# Baseline employment-law regulations every organization is subject to
+# regardless of its regulated sector. A hospital still has to comply with
+# FMLA and the ADA for an attendance policy -- without this, selecting
+# "Hospitals" pointed retrieval and prompting entirely at HIPAA/CMS content
+# and general HR-type requests got no real grounding at all.
+BASELINE_EMPLOYMENT_REGS = [
+    "Title VII of the Civil Rights Act (42 U.S.C. §2000e)",
+    "Americans with Disabilities Act (ADA) (42 U.S.C. §12101)",
+    "Family and Medical Leave Act (FMLA) (29 U.S.C. §2601)",
+    "Fair Labor Standards Act (FLSA) (29 U.S.C. §201)",
+]
+
+
+def get_regulations(slug: str) -> list:
+    """Industry-specific regulations plus the baseline employment regs,
+    deduplicated with industry-specific regulations listed first."""
+    regs = list(get_industry(slug).get("regulations", []))
+    for r in BASELINE_EMPLOYMENT_REGS:
+        if r not in regs:
+            regs.append(r)
+    return regs
+
 
 def get_policy_types(industry_slug: str) -> list:
     """Return the policy type menu for a given industry."""
