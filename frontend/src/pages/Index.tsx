@@ -862,10 +862,18 @@ export default function Index() {
             The Policy Lab
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {!backendOnline && (
             <span className="text-[9px] font-mono px-2 py-1 rounded-full bg-destructive/10 text-destructive border border-destructive/20">BACKEND OFFLINE</span>
           )}
+          <a
+            href="/guide"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] sm:text-[11px] font-mono font-medium text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline whitespace-nowrap"
+          >
+            How It Works
+          </a>
         </div>
       </header>
 
