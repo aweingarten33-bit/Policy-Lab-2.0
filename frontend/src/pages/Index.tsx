@@ -299,7 +299,7 @@ function SourceBadge({ attribution, urlMap }: { attribution?: SourceAttribution;
 const FALLBACK_INDUSTRIES: IndustryOption[] = [
   { slug: "healthcare", name: "Hospitals", icon: "🏥", description: "Acute care hospitals, hospital systems, hospital-based compliance and privacy programs" },
   { slug: "home_health", name: "Home Health", icon: "🏠", description: "Medicare-certified home health agencies, home care agencies" },
-  { slug: "other", name: "Other / General", icon: "📋", description: "Any organization — best practices and inferred regulations" },
+  { slug: "other", name: "Other / General", icon: "📋", description: "Best for general employment/HR and organizational policies. Highly specialized regulatory areas outside employment law get less grounding." },
 ];
 
 export default function Index() {
@@ -937,6 +937,11 @@ export default function Index() {
                   </select>
                   <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
+                {industries.find((ind) => ind.slug === industry)?.description && (
+                  <p className="text-[11px] text-muted-foreground/80 leading-relaxed px-0.5">
+                    {industries.find((ind) => ind.slug === industry)?.description}
+                  </p>
+                )}
                 <div className="relative">
                   <select
                     value={stateCode}

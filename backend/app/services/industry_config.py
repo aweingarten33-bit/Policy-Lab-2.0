@@ -155,7 +155,7 @@ INDUSTRIES: dict = {
     "other": {
         "name": "Other / General",
         "icon": "📋",
-        "description": "Any organization — general best practices and inferred regulations from your policy content",
+        "description": "Best for general employment/HR and organizational policies (whistleblower, remote work, code of conduct, vendor management). Highly specialized regulatory areas outside employment law get less grounding — describe your business specifically for best results.",
         "ecfr_targets": [
             (29, 1630, "29 CFR Part 1630 — ADA Employment Regulations", SourceCategory.federal_regulation),
             (29, 1604, "29 CFR Part 1604 — Sex Discrimination Guidelines", SourceCategory.federal_regulation),
