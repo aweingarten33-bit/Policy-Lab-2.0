@@ -865,7 +865,7 @@ export default function Index() {
             The Policy Lab
           </span>
           <p className="text-[9px] sm:text-[10px] text-muted-foreground/70 leading-tight -mt-0.5">
-            <span className="font-bold">Human in the loop:</span> the AI does part of the work — but you review, approve, correct, or make the final decision. AI can make mistakes, including wrong or fabricated citations, so check every finding, citation, and suggested change before adopting or submitting it. Final judgment and responsibility remain yours.
+            AI-assisted, not AI-decided — you're the final approver, so review every finding, citation, and suggested change before adopting or submitting it. Final judgment and responsibility remain yours.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
