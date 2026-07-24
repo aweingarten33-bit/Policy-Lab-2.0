@@ -6,6 +6,47 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
+// ── App password gate ──
+// Backend already gates every /api/* route behind an x-api-key header check
+// (see api_key_middleware in main.py) when the API_KEY env var is set -- it's
+// a no-op otherwise. This stores the password the user entered and attaches
+// it to every request below.
+const PASSWORD_STORAGE_KEY = "tpl_app_password";
+
+export function getStoredPassword(): string {
+  try { return localStorage.getItem(PASSWORD_STORAGE_KEY) || ""; } catch { return ""; }
+}
+
+export function setStoredPassword(password: string): void {
+  try { localStorage.setItem(PASSWORD_STORAGE_KEY, password); } catch { /* ignore */ }
+}
+
+export function clearStoredPassword(): void {
+  try { localStorage.removeItem(PASSWORD_STORAGE_KEY); } catch { /* ignore */ }
+}
+
+function authHeaders(password?: string): Record<string, string> {
+  const pw = password ?? getStoredPassword();
+  return pw ? { "x-api-key": pw } : {};
+}
+
+/**
+ * Check whether a password is accepted by the backend. Used both by the
+ * password gate (testing a candidate password before storing it) and could
+ * be reused to re-validate a stored one. Hits a cheap, side-effect-free
+ * GET endpoint since there's no dedicated auth-check route.
+ */
+export async function verifyPassword(password: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/api/industries`, {
+      headers: authHeaders(password),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Extract a readable message from a FastAPI error response. Our own route
  * handlers send `detail` as a plain string, but FastAPI's built-in Pydantic
@@ -261,7 +302,7 @@ export interface IndustryOption {
 
 export async function getIndustries(): Promise<IndustryOption[]> {
   try {
-    const response = await fetch(`${API_BASE}/api/industries`);
+    const response = await fetch(`${API_BASE}/api/industries`, { headers: authHeaders() });
     if (!response.ok) return [];
     const data = await response.json();
     return data.industries || [];
@@ -282,7 +323,7 @@ export async function fixAllGaps(
 ): Promise<RewrittenPolicy> {
   const response = await fetch(`${API_BASE}/api/action-package/rewrite`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       text,
       gap_analysis: gapAnalysis,
@@ -312,7 +353,7 @@ export async function exportUpdatedPolicy(
   }
   const response = await fetch(`${API_BASE}/api/export-updated-policy`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       rewritten_policy: pkg.rewritten_policy,
       source_file_name: pkg.source_file_name,
@@ -353,7 +394,7 @@ export async function exportGapAnalysis(
   }
   const response = await fetch(`${API_BASE}/api/export`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       result: pkg.gap_analysis,
       file_name: pkg.source_file_name,
@@ -459,7 +500,7 @@ export interface SourceSnippet {
 export async function exportDraftPolicy(policy: DraftedPolicy): Promise<void> {
   const response = await fetch(`${API_BASE}/api/export-draft`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ policy }),
   });
 
@@ -498,7 +539,7 @@ export async function startDraftJob(
 ): Promise<string> {
   const response = await fetch(`${API_BASE}/api/draft-policy/start`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       policy_description: policyDescription,
       industry: industry || "other",
@@ -527,7 +568,7 @@ export type DraftJobStatusResponse = {
  * One-shot snapshot of a draft job. Returns null on 404 (expired/missing).
  */
 export async function getDraftJobStatus(jobId: string): Promise<DraftJobStatusResponse | null> {
-  const response = await fetch(`${API_BASE}/api/draft-policy/status/${encodeURIComponent(jobId)}`);
+  const response = await fetch(`${API_BASE}/api/draft-policy/status/${encodeURIComponent(jobId)}`, { headers: authHeaders() });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Status check failed (${response.status})`);
   return (await response.json()) as DraftJobStatusResponse;
@@ -539,7 +580,7 @@ export async function getDraftJobStatus(jobId: string): Promise<DraftJobStatusRe
  */
 export async function cancelDraftJob(jobId: string): Promise<void> {
   try {
-    await fetch(`${API_BASE}/api/draft-policy/cancel/${encodeURIComponent(jobId)}`, { method: "POST" });
+    await fetch(`${API_BASE}/api/draft-policy/cancel/${encodeURIComponent(jobId)}`, { method: "POST", headers: authHeaders() });
   } catch {
     // best-effort
   }
@@ -555,7 +596,7 @@ export async function streamDraftJob(
   jobId: string,
   onDelta: (fullTextSoFar: string) => void,
 ): Promise<DraftedPolicy> {
-  const response = await fetch(`${API_BASE}/api/draft-policy/stream/${encodeURIComponent(jobId)}`);
+  const response = await fetch(`${API_BASE}/api/draft-policy/stream/${encodeURIComponent(jobId)}`, { headers: authHeaders() });
   if (response.status === 404) throw new Error("Job not found or expired");
   if (!response.ok) throw new Error(`Stream failed (${response.status})`);
 
@@ -611,7 +652,7 @@ export async function startActionPackageJob(
 ): Promise<string> {
   const response = await fetch(`${API_BASE}/api/action-package/start`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       text,
       file_name: fileName,
@@ -643,7 +684,7 @@ export type JobStatusResponse = {
  */
 export async function cancelActionPackageJob(jobId: string): Promise<void> {
   try {
-    await fetch(`${API_BASE}/api/action-package/cancel/${encodeURIComponent(jobId)}`, { method: "POST" });
+    await fetch(`${API_BASE}/api/action-package/cancel/${encodeURIComponent(jobId)}`, { method: "POST", headers: authHeaders() });
   } catch {
     // best-effort
   }
@@ -653,7 +694,7 @@ export async function cancelActionPackageJob(jobId: string): Promise<void> {
  * One-shot snapshot of an action-package job. Returns null on 404 (expired/missing).
  */
 export async function getActionPackageJobStatus(jobId: string): Promise<JobStatusResponse | null> {
-  const response = await fetch(`${API_BASE}/api/action-package/status/${encodeURIComponent(jobId)}`);
+  const response = await fetch(`${API_BASE}/api/action-package/status/${encodeURIComponent(jobId)}`, { headers: authHeaders() });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Status check failed (${response.status})`);
   return (await response.json()) as JobStatusResponse;
@@ -672,7 +713,7 @@ export async function streamActionPackageJob(
   jobId: string,
   onUpdate: (pkg: ComplianceActionPackage) => void,
 ): Promise<ComplianceActionPackage> {
-  const response = await fetch(`${API_BASE}/api/action-package/stream/${encodeURIComponent(jobId)}`);
+  const response = await fetch(`${API_BASE}/api/action-package/stream/${encodeURIComponent(jobId)}`, { headers: authHeaders() });
   if (response.status === 404) throw new Error("Job not found or expired");
   if (!response.ok) throw new Error(`Stream failed (${response.status})`);
 
@@ -740,7 +781,7 @@ export async function sendChatMessage(
 ): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       message,
       mode,
