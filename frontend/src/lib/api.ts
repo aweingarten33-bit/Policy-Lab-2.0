@@ -13,7 +13,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 // it to every request below. Expires after PASSWORD_TTL_MS so it's not
 // remembered forever on a shared/public machine.
 const PASSWORD_STORAGE_KEY = "tpl_app_password";
-const PASSWORD_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const PASSWORD_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export function getStoredPassword(): string {
   try {
