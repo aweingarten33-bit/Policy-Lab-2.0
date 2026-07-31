@@ -10,15 +10,30 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 // Backend already gates every /api/* route behind an x-api-key header check
 // (see api_key_middleware in main.py) when the API_KEY env var is set -- it's
 // a no-op otherwise. This stores the password the user entered and attaches
-// it to every request below.
+// it to every request below. Expires after PASSWORD_TTL_MS so it's not
+// remembered forever on a shared/public machine.
 const PASSWORD_STORAGE_KEY = "tpl_app_password";
+const PASSWORD_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export function getStoredPassword(): string {
-  try { return localStorage.getItem(PASSWORD_STORAGE_KEY) || ""; } catch { return ""; }
+  try {
+    const raw = localStorage.getItem(PASSWORD_STORAGE_KEY);
+    if (!raw) return "";
+    const { password, storedAt } = JSON.parse(raw) as { password: string; storedAt: number };
+    if (!password || typeof storedAt !== "number" || Date.now() - storedAt > PASSWORD_TTL_MS) {
+      localStorage.removeItem(PASSWORD_STORAGE_KEY);
+      return "";
+    }
+    return password;
+  } catch {
+    return "";
+  }
 }
 
 export function setStoredPassword(password: string): void {
-  try { localStorage.setItem(PASSWORD_STORAGE_KEY, password); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(PASSWORD_STORAGE_KEY, JSON.stringify({ password, storedAt: Date.now() }));
+  } catch { /* ignore */ }
 }
 
 export function clearStoredPassword(): void {
