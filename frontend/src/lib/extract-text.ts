@@ -30,7 +30,18 @@ async function loadPdfJs() {
 }
 
 async function extractPdfText(file: File): Promise<string> {
-  const pdfjsLib = await loadPdfJs();
+  let pdfjsLib;
+  try {
+    pdfjsLib = await loadPdfJs();
+  } catch (e) {
+    // Distinguish "the reader could not load" from "the file had no text".
+    // These used to surface identically, so a blocked or failed library looked
+    // like a bad document and sent everyone hunting the wrong problem.
+    throw new Error(
+      "The PDF reader could not load in this browser. Try a hard refresh " +
+        "(Ctrl+Shift+R, or Cmd+Shift+R on Mac), or paste the policy text instead.",
+    );
+  }
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const pages: string[] = [];

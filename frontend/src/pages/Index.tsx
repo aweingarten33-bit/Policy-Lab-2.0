@@ -704,8 +704,22 @@ export default function Index() {
       if (file.size > maxSize) throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max 10MB.`);
       setFileName(file.name);
       const extracted = await extractText(file);
-      if (!extracted) throw new Error("Could not extract readable text from this file.");
-      if (extracted.trim().length < 50) throw new Error(`This file only has ${extracted.trim().length} characters of readable text — need at least 50 to analyze.`);
+      const isPdf = file.name.toLowerCase().endsWith(".pdf");
+      const chars = extracted?.trim().length ?? 0;
+
+      // A scanned PDF is a picture of a document: there is no text to read,
+      // and the generic "could not extract readable text" gave no clue why or
+      // what to do about it. Naming the actual cause turns a dead end into a
+      // next step.
+      if (chars < 50) {
+        throw new Error(
+          isPdf
+            ? chars === 0
+              ? "This PDF has no selectable text — it's almost certainly a scan or an image. Try a PDF exported from Word, or paste the policy text into the box below."
+              : `This PDF only yielded ${chars} characters of selectable text, so it's likely a scan. Paste the policy text below instead.`
+            : `This file only has ${chars} characters of readable text — need at least 50 to analyze.`,
+        );
+      }
       setText(extracted);
       toast.success("File loaded", { description: `${file.name} — ${extracted.length.toLocaleString()} chars` });
     } catch (e: any) {
