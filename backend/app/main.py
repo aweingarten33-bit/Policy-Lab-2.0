@@ -231,18 +231,36 @@ def _is_admin_request(request: Request) -> bool:
     return request.method == "POST" and path.startswith(_ADMIN_PATH_PREFIXES)
 
 
+def _is_api_request(request: Request) -> bool:
+    """Whether this request targets the API rather than the frontend bundle.
+
+    The password guards the API. It cannot guard static files: a browser
+    loading the page issues its own requests for <script src>, stylesheets and
+    the favicon, and there is no way to attach a header to those. Allowlisting
+    only "/" meant the shell returned 200 while every asset it referenced
+    returned 401 -- so the served page was blank and the site looked completely
+    down. Anything outside /api/ is frontend content and must be reachable;
+    the PasswordGate in that bundle is what then gates access to the API.
+    """
+    return request.url.path.startswith("/api/")
+
+
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
     """Require the app password for API access, and a separate admin key for
     destructive knowledge-base operations.
 
-    Fails CLOSED in production: if API_KEY is unset there, every request is
+    Fails CLOSED in production: if API_KEY is unset there, every API request is
     refused rather than served openly. A missing env var on a redeploy used to
     silently turn the whole app public with no signal that it had happened --
     the safe direction for that failure is 'nobody gets in', not 'everybody
     does'.
     """
-    if request.url.path in _PUBLIC_PATHS or request.method == "OPTIONS":
+    if (
+        not _is_api_request(request)
+        or request.url.path in _PUBLIC_PATHS
+        or request.method == "OPTIONS"
+    ):
         return await call_next(request)
 
     if not settings.api_key:
