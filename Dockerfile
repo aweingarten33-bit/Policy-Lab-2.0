@@ -39,8 +39,18 @@ COPY --from=frontend-build /fe/dist /app/frontend/dist
 # regardless, so a capped run still yields real grounding. `timeout` covers a
 # hang the app's own budget cannot see, and `|| true` keeps any failure here
 # from blocking a deploy.
+#
+# KB_SEED_REQUIRED=true turns an empty corpus into a build failure, so a
+# production image cannot ship ungrounded without anyone noticing. It defaults
+# to false because a transient eCFR outage should not block a fix from
+# shipping, and the bundled OIG/HCCA guidance still loads from disk either
+# way -- but a release build should set it:
+#     docker build --build-arg KB_SEED_REQUIRED=true .
+ARG KB_SEED_REQUIRED=false
 ENV KB_SEED_TIMEOUT_SECONDS=360
-RUN timeout 600 python scripts/build_knowledge_base.py || true
+RUN timeout 600 python scripts/build_knowledge_base.py \
+      $( [ "$KB_SEED_REQUIRED" = "true" ] && echo --require-success ) \
+    || { [ "$KB_SEED_REQUIRED" = "true" ] && exit 1; true; }
 
 ENV ENVIRONMENT=production
 EXPOSE 8080

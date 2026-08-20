@@ -24,6 +24,7 @@ FIXES APPLIED:
   phased parallel execution and is unchanged.
 """
 
+import inspect
 import uuid
 import logging
 import asyncio
@@ -101,10 +102,18 @@ class PackageOrchestrator:
         self._status_callbacks.append(callback)
 
     async def _notify_status(self, package_id: str, status: str, output_name: str = ""):
-        """Notify all registered callbacks of a status change."""
+        """Notify all registered callbacks of a status change.
+
+        Awaits only what is actually awaitable. Registering an ordinary
+        function raised TypeError on the first status change, and because the
+        error was swallowed as a warning the caller simply stopped receiving
+        progress updates with no indication why.
+        """
         for cb in self._status_callbacks:
             try:
-                await cb(package_id, status, output_name)
+                result = cb(package_id, status, output_name)
+                if inspect.isawaitable(result):
+                    await result
             except Exception as e:
                 logger.warning(f"Status callback error: {e}")
 

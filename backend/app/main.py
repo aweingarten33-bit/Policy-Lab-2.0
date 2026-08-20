@@ -327,9 +327,24 @@ _rate_limit_lock = asyncio.Lock()
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Best available client address for rate limiting.
+
+    X-Forwarded-For is set by the platform's proxy, but it is also just a
+    request header: anyone can send one. Trusting it unconditionally meant a
+    caller could put a different value on every request and never hit a rate
+    limit at all -- so the control that exists to cap spend on a paid API was
+    bypassable by anyone who thought to try.
+
+    It is honoured only when the deployment says it sits behind a proxy that
+    rewrites the header (TRUST_PROXY, on by default because this runs behind
+    exactly such a platform). Set TRUST_PROXY=false when the app is exposed
+    directly.
+    """
+    if settings.trust_proxy:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            # Left-most entry is the original client; the proxy appends itself.
+            return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -370,7 +385,13 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
+        # No 'unsafe-inline' for scripts: the built page loads one module from
+        # our own origin and contains no inline script, so allowing inline
+        # execution bought nothing and removed the main protection CSP offers.
+        # Styles still need it -- Radix and the animation layer insert rules at
+        # runtime, and blocking that breaks the interface rather than hardening
+        # it.
+        "script-src 'self'; "
         # PDF text extraction runs in a web worker, and pdf.js instantiates it
         # from a blob. Without these two, uploading a PDF fails -- which is
         # exactly what happened when this header was first added and the

@@ -32,6 +32,15 @@ class Settings(BaseSettings):
         """
         return value.strip() if isinstance(value, str) else value
 
+    # Whether to believe X-Forwarded-For when identifying a caller.
+    #
+    # It is a plain request header, so anyone can send one. Trusting it when
+    # the app is directly exposed lets a caller vary it per request and never
+    # hit a rate limit -- defeating the control that caps spend on a paid API.
+    # True by default because this deploys behind a platform proxy that
+    # rewrites the header; set TRUST_PROXY=false if that ever stops being true.
+    trust_proxy: bool = True
+
     # Maximum characters accepted on any field that flows into a paid LLM
     # call. Without a cap, a single request can run up an unbounded bill.
     max_input_chars: int = 100_000
