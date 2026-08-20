@@ -171,6 +171,9 @@ GAP ANALYSIS FINDINGS (fix ALL of these):
         policy_title=data.get("policy_title", "Rewritten Policy"),
         effective_date=data.get("effective_date", "Upon adoption"),
         version_note=data.get("version_note", "Compliance rewrite based on gap analysis"),
+        # Set from the caller, never from the model: the export uses it to pick
+        # sector-appropriate closing disclaimers.
+        industry=industry,
         sections=sections,
         full_text=full_text,
         change_summary=data.get("change_summary", ""),

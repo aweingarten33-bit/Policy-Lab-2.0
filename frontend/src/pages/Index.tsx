@@ -381,6 +381,7 @@ const FALLBACK_INDUSTRIES: IndustryOption[] = [
   { slug: "home_health", name: "Home Health", icon: "🏠", description: "Medicare-certified home health agencies, home care agencies" },
   { slug: "child_family_services", name: "Child & Family Services", icon: "🧸", description: "Foster care and child welfare, Head Start and early childhood, youth programs, and multi-service nonprofits" },
   { slug: "pharmacy", name: "Pharmacy", icon: "💊", description: "Retail, hospital, long-term care, specialty, and compounding pharmacies" },
+  { slug: "manufacturing", name: "Manufacturing & General Industry", icon: "🏭", description: "Plants, warehouses, distribution centers, and other general-industry worksites governed by OSHA" },
   { slug: "other", name: "Other / General", icon: "📋", description: "Best for general employment/HR and organizational policies. Highly specialized regulatory areas outside employment law get less grounding." },
 ];
 

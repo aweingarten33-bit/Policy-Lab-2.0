@@ -26,6 +26,25 @@ from app.services.retrieval.sanitize import sanitize_source_text, wrap_untrusted
 logger = logging.getLogger(__name__)
 
 
+_STATE_NAMES = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
+    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE",
+    "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+    "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+    "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
+    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+    "vermont": "VT", "virginia": "VA", "washington": "WA",
+    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+    "district of columbia": "DC", "washington dc": "DC", "washington d.c.": "DC",
+}
+
+
 def _extract_state_code(jurisdiction: Optional[str]) -> Optional[str]:
     """Pull a 2-letter state code out of a jurisdiction string.
 
@@ -37,11 +56,20 @@ def _extract_state_code(jurisdiction: Optional[str]) -> Optional[str]:
     """
     if not jurisdiction:
         return None
-    match = re.search(r"\b([A-Za-z]{2})\s*$", jurisdiction.strip())
-    if not match:
-        return None
-    code = match.group(1).upper()
-    return code if code in Jurisdiction.__members__ else None
+
+    text = jurisdiction.strip()
+
+    match = re.search(r"\b([A-Za-z]{2})\s*$", text)
+    if match:
+        code = match.group(1).upper()
+        if code in Jurisdiction.__members__:
+            return code
+
+    # Also accept a spelled-out state name. The app's own UI sends a 2-letter
+    # code, but anything calling the API directly naturally writes "Tennessee",
+    # which resolved to nothing -- so state-law retrieval silently fell back to
+    # federal-only while the analysis still claimed to cover the state.
+    return _STATE_NAMES.get(text.split(",")[-1].strip().lower())
 
 # ── Query templates for each generation step ──
 # {industry_name} and {key_regulations} are filled from the selected industry's
@@ -139,10 +167,12 @@ class ComplianceRetriever:
         query = self._build_query(step_name, policy_text, policy_type, gap_findings, industry)
 
         # Determine which collections to search
-        target_collections = collections or self._get_relevant_collections(step_name, jurisdiction)
+        target_collections = collections or self._get_relevant_collections(
+            step_name, jurisdiction, industry
+        )
 
         # Build metadata filters
-        where_filter = self._build_metadata_filter(jurisdiction)
+        where_filter = self._build_metadata_filter(jurisdiction, industry)
 
         # Query each collection
         all_results = self.store.query_all_collections(
@@ -255,10 +285,17 @@ class ComplianceRetriever:
 
         return query
 
+    # OIG/HCCA compliance-program guidance is written for federal health care
+    # program participants. It has nothing to say about a factory's noise
+    # policy, and pulling it in produced exactly that: an OSHA analysis citing
+    # nursing-facility guidance.
+    _GUIDANCE_INDUSTRIES = frozenset({"healthcare", "home_health", "pharmacy"})
+
     def _get_relevant_collections(
         self,
         step_name: str,
         jurisdiction: Optional[str] = None,
+        industry: Optional[str] = None,
     ) -> List[str]:
         """Determine which collections are most relevant for a step."""
         # All steps benefit from federal regulations and agency guidance.
@@ -280,7 +317,12 @@ class ComplianceRetriever:
             "implementation_checklist": ["federal_guidance", "policy_template", "requirement_pack", "policy_clause_library"],
         }
 
-        collections = step_collections.get(step_name, base_collections)
+        collections = list(step_collections.get(step_name, base_collections))
+
+        # Healthcare compliance-program guidance only for the sectors it
+        # actually governs.
+        if industry is not None and industry not in self._GUIDANCE_INDUSTRIES:
+            collections = [c for c in collections if c != "federal_guidance"]
 
         # Add state law if a resolvable state code was specified
         if _extract_state_code(jurisdiction):
@@ -288,19 +330,67 @@ class ComplianceRetriever:
 
         return collections
 
-    def _build_metadata_filter(self, jurisdiction: Optional[str] = None) -> Optional[Dict]:
-        """Build a ChromaDB metadata filter based on jurisdiction."""
-        if not jurisdiction:
+    def _allowed_citations(self, industry: Optional[str]) -> Optional[List[str]]:
+        """The CFR parts an industry is actually governed by.
+
+        Every industry's regulations live in one `federal_regulation`
+        collection, and until now retrieval only ever filtered by
+        jurisdiction. The industry shaped the *wording* of the semantic query
+        and nothing more -- so nothing stopped a search from returning another
+        sector's law.
+
+        It reliably did. An OSHA industrial noise policy came back grounded in
+        45 CFR Part 164 (HIPAA) and OIG nursing-facility guidance, because
+        "employee training", "records retention" and "notification
+        requirements" read as similar text no matter which statute they sit
+        in. Semantic similarity cannot tell regulatory domains apart; only a
+        filter can.
+
+        Baseline employment law is always included: FMLA and the ADA apply to
+        a factory and a hospital alike.
+        """
+        from app.services.industry_config import INDUSTRIES, get_industry
+
+        if not industry or industry not in INDUSTRIES:
+            return None  # unknown industry -> no scoping, old behaviour
+
+        citations = {
+            f"{title} CFR Part {part}"
+            for title, part, _, _ in get_industry(industry).get("ecfr_targets", [])
+        }
+        # Employment law that binds every employer, whatever the sector.
+        for slug in ("other",):
+            for title, part, _, _ in INDUSTRIES[slug].get("ecfr_targets", []):
+                citations.add(f"{title} CFR Part {part}")
+
+        return sorted(citations)
+
+    def _build_metadata_filter(
+        self,
+        jurisdiction: Optional[str] = None,
+        industry: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """Build a ChromaDB metadata filter for jurisdiction and industry."""
+        clauses: List[Dict] = []
+
+        if jurisdiction:
+            state_code = _extract_state_code(jurisdiction)
+            if state_code:
+                clauses.append({"jurisdiction": {"$in": ["federal", state_code]}})
+            else:
+                # Specified but unresolvable -- federal only, rather than an
+                # unfiltered mix of every state.
+                clauses.append({"jurisdiction": "federal"})
+
+        allowed = self._allowed_citations(industry)
+        if allowed:
+            clauses.append({"citation": {"$in": allowed}})
+
+        if not clauses:
             return None
-
-        # Search for both federal and the specific jurisdiction
-        state_code = _extract_state_code(jurisdiction)
-        if state_code:
-            return {"jurisdiction": {"$in": ["federal", state_code]}}
-
-        # Jurisdiction was specified but not resolvable to a state code —
-        # fall back to federal-only rather than an unfiltered mix of every state.
-        return {"jurisdiction": "federal"}
+        if len(clauses) == 1:
+            return clauses[0]
+        return {"$and": clauses}
 
     def _parse_metadata(self, meta_dict: Dict[str, Any], collection_name: str) -> SourceMetadata:
         """Parse a metadata dict from ChromaDB into a SourceMetadata object."""

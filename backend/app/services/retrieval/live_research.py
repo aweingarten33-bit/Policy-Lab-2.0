@@ -81,6 +81,24 @@ CURATED_SOURCES = {
         "category": SourceCategory.ocr_guidance,
         "authority": "HHS",
     },
+    # Occupational safety. Absent until now, so a workplace-safety analysis had
+    # no authoritative live source of its own and fell back to whatever the
+    # selected vertical happened to configure -- which for a factory noise
+    # policy meant HHS, OCR and CMS.
+    "osha_standards": {
+        "name": "OSHA Standards & Interpretations",
+        "domain": "osha.gov",
+        "search_prefix": "site:osha.gov standard interpretation letter requirement",
+        "category": SourceCategory.federal_regulation,
+        "authority": "OSHA (US Department of Labor)",
+    },
+    "dol_guidance": {
+        "name": "US Department of Labor Guidance",
+        "domain": "dol.gov",
+        "search_prefix": "site:dol.gov regulation guidance employer requirement",
+        "category": SourceCategory.federal_regulation,
+        "authority": "US Department of Labor",
+    },
     "federal_register": {
         "name": "Federal Register",
         "domain": "federalregister.gov",

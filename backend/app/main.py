@@ -19,6 +19,7 @@ import secrets
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
@@ -446,13 +447,16 @@ async def draft_policy_endpoint(request: DraftPolicyRequest):
                          user_message="Policy drafting failed. Please try again.")
 
 
-def _build_policy_dict(data: dict) -> dict:
+def _build_policy_dict(data: dict, industry: Optional[str] = None) -> dict:
     sections = [
         {"title": s.get("title", ""), "content": s.get("content", "")}
         for s in data.get("sections", [])
     ]
     return {
         "policy_title": data.get("policy_title", "Drafted Policy"),
+        # Threaded through so the export can pick sector-appropriate
+        # disclaimers instead of defaulting to healthcare wording.
+        "industry": industry,
         "effective_date": data.get("effective_date"),
         "version": data.get("version", "1.0"),
         "scope": data.get("scope"),
@@ -497,7 +501,7 @@ async def draft_policy_stream_endpoint(request: DraftPolicyRequest):
             data = parse_draft_response(raw_text)
             if context_holder.get("ctx") is not None:
                 data = attach_attribution(data, context_holder["ctx"])
-            yield f"data: {_json.dumps({'done': True, 'policy': _build_policy_dict(data)})}\n\n"
+            yield f"data: {_json.dumps({'done': True, 'policy': _build_policy_dict(data, request.industry)})}\n\n"
         except Exception as e:
             logger.error(f"Draft stream error: {e}")
             yield f"data: {_json.dumps({'error': str(e)})}\n\n"
@@ -545,7 +549,7 @@ async def _run_draft_job(job_id: str, request: DraftPolicyRequest) -> None:
         data = parse_draft_response(raw_text)
         if context_holder.get("ctx") is not None:
             data = attach_attribution(data, context_holder["ctx"])
-        await store.mark_complete(job_id, _build_policy_dict(data))
+        await store.mark_complete(job_id, _build_policy_dict(data, request.industry))
     except Exception as e:
         logger.exception(f"Background draft job {job_id} failed")
         await store.mark_error(job_id, str(e))

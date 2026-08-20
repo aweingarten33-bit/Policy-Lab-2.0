@@ -390,6 +390,7 @@ class PackageOrchestrator:
             source_file_name=file_name,
             policy_type="",
             jurisdiction=jurisdiction,
+            industry=industry,
             gap_analysis=AnalysisResult(
                 policy_type="Pending",
                 audit_ready_summary="Analysis in progress...",
@@ -539,6 +540,7 @@ class PackageOrchestrator:
             source_file_name=file_name,
             policy_type="",
             jurisdiction=jurisdiction,
+            industry=industry,
             gap_analysis=AnalysisResult(
                 policy_type="Pending",
                 audit_ready_summary="Analysis in progress...",

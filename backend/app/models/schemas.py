@@ -299,6 +299,9 @@ class RewrittenPolicy(BaseModel):
     policy_title: str = Field(..., description="Title of the rewritten policy")
     effective_date: Optional[str] = Field(None, description="Suggested effective date")
     version_note: str = Field(..., description="Version/revision note explaining changes")
+    # Set server-side, not by the model, so the export's closing disclaimers
+    # match the sector this policy is actually for.
+    industry: Optional[str] = Field(None, description="Industry slug this rewrite was generated for")
     sections: List[RewrittenPolicySection] = Field(default_factory=list, description="Rewritten policy sections")
     full_text: str = Field(..., description="Complete rewritten policy as a single document")
     change_summary: str = Field(..., description="Overall summary of all changes made")
@@ -458,6 +461,11 @@ class ComplianceActionPackage(BaseModel):
     source_file_name: Optional[str] = Field(None, description="Original uploaded file name")
     policy_type: str = Field(..., description="Identified policy type")
     jurisdiction: Optional[str] = Field(None, description="Jurisdiction if specified")
+    # Carried through to the export so closing disclaimers match the sector.
+    # Without it the exporter defaulted to healthcare wording, and a factory
+    # noise policy was signed off with "consult qualified healthcare
+    # compliance counsel" and a statement about protected health information.
+    industry: Optional[str] = Field(None, description="Industry slug this package was generated for")
 
     # Output 1: Gap Analysis
     gap_analysis: AnalysisResult = Field(..., description="Structured gap analysis results")

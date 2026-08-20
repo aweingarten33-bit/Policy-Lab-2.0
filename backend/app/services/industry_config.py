@@ -313,6 +313,78 @@ INDUSTRIES: dict = {
         "audit_authority": "a DEA inspection, state Board of Pharmacy audit, or Part D plan audit",
     },
 
+    # Added because an industrial safety policy had nowhere to go. A factory's
+    # OSHA noise policy had to be filed under Hospitals or Other/General, and
+    # under Hospitals the analysis was grounded in HIPAA and OIG nursing-facility
+    # guidance and signed off with "consult qualified healthcare compliance
+    # counsel".
+    "manufacturing": {
+        "name": "Manufacturing & General Industry",
+        "icon": "🏭",
+        "description": "Plants, warehouses, distribution centers, and other general-industry worksites governed by OSHA",
+        "ecfr_targets": [
+            (29, 1910, "29 CFR Part 1910 — OSHA Occupational Safety & Health Standards (General Industry)", SourceCategory.federal_regulation),
+            # Injury and illness recordkeeping, including §1904.10 on recording
+            # occupational hearing loss.
+            (29, 1904, "29 CFR Part 1904 — Recording & Reporting Occupational Injuries and Illnesses", SourceCategory.federal_regulation),
+            (29, 1903, "29 CFR Part 1903 — OSHA Inspections, Citations & Penalties", SourceCategory.federal_regulation),
+            (29, 1926, "29 CFR Part 1926 — Safety & Health Regulations for Construction", SourceCategory.federal_regulation),
+            (40, 68,   "40 CFR Part 68 — EPA Risk Management Program (Chemical Accident Prevention)", SourceCategory.federal_regulation),
+        ],
+        "live_research_sources": ["osha_standards", "dol_guidance", "federal_register", "state_gov"],
+        "persona": (
+            "You are a senior occupational safety and health compliance expert advising "
+            "manufacturing plants, warehouses, and distribution centers in the United States. "
+            "You advise EHS managers, plant managers, and safety committees.\n\n"
+            "A user will provide a workplace safety or operational policy. Your job:\n\n"
+            "1. Read the policy carefully and identify the exact policy type and which OSHA "
+            "standard it maps to.\n"
+            "2. Identify EVERY applicable federal and state requirement. Key frameworks: "
+            "29 CFR Part 1910 (General Industry — including §1910.95 Occupational Noise Exposure, "
+            "§1910.132 PPE, §1910.147 Lockout/Tagout, §1910.1200 Hazard Communication, "
+            "§1910.134 Respiratory Protection), 29 CFR Part 1904 (injury and illness recordkeeping, "
+            "including §1904.10 occupational hearing loss), the General Duty Clause at "
+            "29 U.S.C. §654(a)(1), and applicable EPA requirements.\n"
+            "3. STATE PLAN STATES ARE MANDATORY TO CHECK. Roughly half the states run their own "
+            "OSHA-approved State Plan (including California/Cal-OSHA, Tennessee/TOSHA, "
+            "Michigan/MIOSHA, North Carolina, Kentucky, Washington, Oregon, and others). Where a "
+            "state operates a plan, that state's agency — not federal OSHA — is the enforcing "
+            "authority, and its standards must be at least as effective as the federal ones and "
+            "are sometimes stricter. If a jurisdiction is given, name the enforcing agency "
+            "explicitly rather than referring only to federal OSHA.\n"
+            "4. Distinguish what OSHA REQUIRES from what the employer has chosen to do. An "
+            "internal deadline, a stricter threshold, or a longer retention period is legitimate "
+            "company policy — but it must be described as company policy, never attributed to a "
+            "regulation that does not impose it.\n"
+            "5. Watch specifically for mandatory sub-requirements that policies routinely omit: "
+            "notifying employees of monitoring results, the right of employees to observe "
+            "monitoring, qualification requirements for personnel performing medical surveillance, "
+            "provision of PPE at no cost with a genuine choice of types and proper fitting, "
+            "prescribed training content, and posting requirements.\n"
+            "6. Voluntary certifications (LEED, ISO, consensus standards) are NOT regulatory "
+            "requirements. Never present a certification as imposing an ongoing legal obligation, "
+            "and never assume a facility carries a specific certification credit without evidence."
+        ),
+        "regulations": [
+            "29 CFR Part 1910 — OSHA General Industry Standards",
+            "29 CFR §1910.95 — Occupational Noise Exposure",
+            "29 CFR Part 1904 — Injury & Illness Recordkeeping",
+            "29 U.S.C. §654(a)(1) — General Duty Clause",
+            "State OSHA Plan requirements where applicable",
+            "40 CFR Part 68 — EPA Risk Management Program",
+        ],
+        "state_addendum": (
+            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". Determine whether "
+            "{jurisdiction} operates an OSHA-approved State Plan. If it does, name that state "
+            "agency as the enforcing authority (for example TOSHA in Tennessee, Cal/OSHA in "
+            "California) rather than referring only to federal OSHA, and check for state standards "
+            "stricter than the federal minimum. Also check {jurisdiction} workers' compensation "
+            "reporting duties and any applicable local ordinances. Where a local ordinance is "
+            "cited, confirm it actually applies to this facility type — many municipal noise and "
+            "nuisance ordinances expressly exempt permitted industrial operations. Cite state and "
+            "local law by code section."
+        ),
+    },
     "other": {
         "name": "Other / General",
         "icon": "📋",
@@ -394,6 +466,20 @@ POLICY_TYPES: dict = {
         {"slug": "recalls_returns",         "label": "Recalls, Returns & Disposal Policy",       "description": "Recall handling, reverse distribution, controlled substance destruction"},
         {"slug": "part_d_fwa",              "label": "Medicare Part D FWA Policy",               "description": "Fraud, waste and abuse program, exclusion screening, training"},
         {"slug": "patient_privacy_rx",      "label": "Patient Privacy Policy",                   "description": "HIPAA in the pharmacy setting, counseling privacy, PHI disposal"},
+    ],
+    "manufacturing": [
+        {"slug": "hearing_conservation",  "label": "Hearing Conservation / Noise Policy",   "description": "Noise monitoring, 85 dBA action level, audiometric testing, hearing protection (§1910.95)"},
+        {"slug": "hazcom",                "label": "Hazard Communication Policy",           "description": "Chemical inventory, SDS, labeling, employee training (§1910.1200)"},
+        {"slug": "lockout_tagout",        "label": "Lockout/Tagout (Energy Control) Policy","description": "Energy control procedures, periodic inspection, authorized employees (§1910.147)"},
+        {"slug": "ppe_program",           "label": "PPE Program Policy",                    "description": "Hazard assessment, selection, employer-paid PPE, training (§1910.132)"},
+        {"slug": "respiratory_protection","label": "Respiratory Protection Policy",         "description": "Medical evaluation, fit testing, cartridge change schedule (§1910.134)"},
+        {"slug": "machine_guarding",      "label": "Machine Guarding Policy",               "description": "Point-of-operation guarding, inspection, maintenance (§1910.212)"},
+        {"slug": "confined_space",        "label": "Confined Space Entry Policy",           "description": "Permit-required spaces, atmospheric testing, attendants, rescue (§1910.146)"},
+        {"slug": "injury_recordkeeping",  "label": "Injury & Illness Recordkeeping Policy", "description": "OSHA 300/300A/301, recordability decisions, hearing loss (29 CFR 1904)"},
+        {"slug": "emergency_action",      "label": "Emergency Action Plan",                 "description": "Evacuation routes, alarm systems, drills, accounting for employees (§1910.38)"},
+        {"slug": "contractor_safety",     "label": "Contractor & Multi-Employer Safety Policy","description": "Prequalification, site orientation, host/contractor responsibility allocation"},
+        {"slug": "ergonomics_program",    "label": "Ergonomics Program Policy",              "description": "Risk assessment, job design, early reporting of MSD symptoms"},
+        {"slug": "safety_committee",      "label": "Safety Committee & Anti-Retaliation Policy","description": "Committee structure, hazard reporting, §11(c) whistleblower protection"},
     ],
     "other": [
         {"slug": "code_of_conduct_gen",     "label": "Code of Conduct / Ethics Policy",      "description": "Organizational ethics, conflicts of interest, reporting obligations"},

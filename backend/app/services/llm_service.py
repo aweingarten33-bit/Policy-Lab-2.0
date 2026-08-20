@@ -118,6 +118,46 @@ STEP 5b — PROPOSED RULES ARE NOT REQUIREMENTS
   Never place it in a gap finding, never treat non-compliance with a proposal
   as a deficiency, and never assign it a deadline.
 
+STEP 5c — APPLICABILITY BEFORE GAP (run this before writing any finding)
+  Two questions, in order, for every candidate finding:
+
+  (1) Does this authority actually govern THIS organization, sector and
+      activity? An authority appearing in the policy's own reference list is
+      not evidence that it applies. If a policy cites a statute that has no
+      bearing on its subject, the correct finding is "remove the irrelevant
+      citation" — NOT "add a procedure to satisfy it". Never manufacture an
+      FMLA, ADEA or similar workflow inside an operational safety policy just
+      because the statute was listed. A good policy is site-specific and
+      covers what that site needs.
+
+  (2) Does the cited provision IMPOSE the duty you are about to describe?
+      Quote the operative verb to yourself. "Shall" and "must" create
+      obligations. "May", "as appropriate", and anything in a non-mandatory
+      appendix do not. Guidance documents, consensus standards and
+      certifications are not regulations.
+
+STEP 5d — REQUIRED vs OPTIONAL vs BEST PRACTICE
+  Classify every finding, and let the classification drive severity:
+
+    REQUIRED       — a regulation's mandatory text is unmet. This alone may be
+                     "missing" or "gap".
+    OPTIONAL       — the regulation expressly permits a method the policy has
+                     not adopted (e.g. a provision saying an allowance "may be
+                     made", or a non-mandatory appendix). At most "partial",
+                     and the finding must say the regulation permits rather
+                     than requires it.
+    BEST PRACTICE  — sensible, not legally compelled. At most "partial", and
+                     must be labelled as a recommendation.
+    ORG POLICY     — a stricter internal rule the organization is free to
+                     adopt. Never a deficiency.
+
+  Where an organization exceeds a regulatory minimum, say so in those terms:
+  "Company standard exceeds the regulatory minimum of X." Do not restate the
+  stricter number as though the regulation required it. A retention period,
+  deadline or threshold attributed to a regulation must match that
+  regulation's own text exactly — if the organization keeps records longer
+  than required, that is an internal standard, not a citation.
+
 STEP 6 — REMEDIATION CONCRETENESS
   Every suggested_language entry must be DROP-IN POLICY TEXT — fully drafted
   sentences with named roles, defined timeframes, measurable thresholds, and
@@ -165,7 +205,7 @@ AUDIT-GRADE (TARGET):
   via the OCR breach portal and prominent media notice within the same 60-day
   window (45 CFR §§164.408(b), 164.406)."
   citation: "45 CFR §§164.402–164.414 (HIPAA Breach Notification Rule,
-  current through 2024); HHS OCR breach reporting guidance (2024)."
+  current text as retrieved); HHS OCR breach reporting guidance."
 
 ═══════════════════════════════════════════════════════════════════════════════
 """
@@ -184,9 +224,9 @@ failed analysis.
 
   "scope": "2–3 sentences naming what was examined (the policy artifact and its stated coverage), the regulatory frameworks evaluated against it (federal, state, industry standard), and any explicit limits of this analysis (e.g., 'Did not evaluate operational implementation, only the written policy text').",
 
-  "regulations_applied": ["Every regulation/statute/guidance evaluated — fully cited with title + part + year (e.g., '45 CFR Part 164 Subpart D — HIPAA Breach Notification (current through 2024)'). 6-10 entries."],
+  "regulations_applied": ["Every regulation/statute/guidance evaluated — fully cited with title + part + year (e.g., '45 CFR Part 164 Subpart D — HIPAA Breach Notification (state the year only when the retrieved source states it — never invent or copy a year from these instructions)'). 6-10 entries."],
 
-  "last_updated_note": "Identify any 2024–2026 regulatory developments materially affecting this policy area: new rule, enforcement trend, settlement pattern, guidance update, or NPRM. Cite the source. Omit only if genuinely no recent activity applies.",
+  "last_updated_note": "Identify any recent regulatory developments (roughly the last two years) materially affecting this policy area: new rule, enforcement trend, settlement pattern, guidance update, or NPRM. Cite the source. Omit only if genuinely no recent activity applies.",
 
   "priority_findings": [
     "One sentence, hard cap: the gap, its citation, and the exposure, packed into one sentence. Example: 'Policy lacks the four-factor breach risk assessment required by 45 CFR §164.402(2), so every undocumented incident becomes a presumptive violation on OCR audit.' Up to 4 entries, ordered by enforcement risk — fewer is fine.",
