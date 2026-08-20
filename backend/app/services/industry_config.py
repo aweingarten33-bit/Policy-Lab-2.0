@@ -23,6 +23,12 @@ INDUSTRIES: dict = {
             (45, 164, "45 CFR Part 164 — HIPAA Privacy, Security & Breach Notification", SourceCategory.federal_regulation),
             (42, 2,   "42 CFR Part 2 — Substance Abuse Confidentiality", SourceCategory.federal_regulation),
             (42, 482, "42 CFR Part 482 — Conditions of Participation (Hospitals)", SourceCategory.federal_regulation),
+            # Fraud & abuse: cited in essentially every healthcare analysis, but
+            # their text was never actually loaded, so those citations were
+            # model recall rather than verified source material.
+            (42, 1001, "42 CFR Part 1001 — OIG Exclusions & Anti-Kickback Safe Harbors", SourceCategory.federal_regulation),
+            (42, 411,  "42 CFR Part 411 — Stark Law (Physician Self-Referral)", SourceCategory.federal_regulation),
+            (45, 92,   "45 CFR Part 92 — Section 1557 Nondiscrimination in Health Programs", SourceCategory.federal_regulation),
         ],
         "live_research_sources": [
             "hhs_regulations", "ocr_enforcement", "cms_guidance", "oig_advisory", "federal_register"
@@ -152,6 +158,160 @@ INDUSTRIES: dict = {
         ),
         "audit_authority": "state home health survey, CMS Conditions of Participation deficiency citation, or OIG program integrity audit",
     },
+    "child_family_services": {
+        "name": "Child & Family Services",
+        "icon": "🧸",
+        "description": "Child welfare and foster care agencies, Head Start and early childhood programs, youth development and after-school providers, and multi-service nonprofits running school-based health, behavioral health, and food programs",
+        "ecfr_targets": [
+            # Child welfare / foster care (Title IV-E)
+            (45, 1355, "45 CFR Part 1355 — Title IV-E Child Welfare General Provisions", SourceCategory.federal_regulation),
+            (45, 1356, "45 CFR Part 1356 — Title IV-E Foster Care & Adoption Assistance", SourceCategory.federal_regulation),
+            # Early childhood
+            (45, 1302, "45 CFR Part 1302 — Head Start Program Performance Standards", SourceCategory.federal_regulation),
+            (45, 98,   "45 CFR Part 98 — Child Care and Development Fund (CCDF)", SourceCategory.federal_regulation),
+            # Education & student records — these agencies run school-based programs
+            (34, 99,   "34 CFR Part 99 — FERPA (Student Education Records)", SourceCategory.federal_regulation),
+            # Food programs
+            (7,  226,  "7 CFR Part 226 — Child and Adult Care Food Program (CACFP)", SourceCategory.federal_regulation),
+            # Grant compliance — these organizations are overwhelmingly grant-funded
+            (45, 75,   "45 CFR Part 75 — HHS Uniform Administrative Requirements for Grants", SourceCategory.federal_regulation),
+            # Disability nondiscrimination in federally funded programs
+            (45, 84,   "45 CFR Part 84 — Section 504 Nondiscrimination on the Basis of Disability", SourceCategory.federal_regulation),
+        ],
+        "live_research_sources": ["federal_register"],
+        "persona": (
+            "You are a senior compliance attorney for child welfare and youth-serving nonprofit "
+            "organizations in the United States. You advise agencies that combine several regulated "
+            "programs under one roof — foster care and adoption, Head Start and early childhood "
+            "education, school-based health and behavioral health clinics, after-school and youth "
+            "development, juvenile justice services, and food programs.\n\n"
+            "A user will provide a policy. Your job:\n\n"
+            "1. Read the policy and identify which program area(s) it governs. This is the crux of "
+            "the analysis for these organizations: a single agency is simultaneously a child welfare "
+            "provider, an educator, a healthcare provider, an employer, and a federal grantee, and "
+            "the SAME policy can be governed by several regimes at once.\n"
+            "2. Identify every federal, state, and local requirement that applies. Key frameworks: "
+            "Title IV-E foster care requirements (45 CFR Parts 1355/1356) including case planning, "
+            "permanency hearings, caseworker visits, and licensing of foster homes; Head Start "
+            "Program Performance Standards (45 CFR Part 1302) including ratios, supervision, "
+            "screening, and family engagement; CCDF child care requirements (45 CFR Part 98); FERPA "
+            "(34 CFR Part 99) for student records; HIPAA where clinical services are delivered; "
+            "42 CFR Part 2 for substance use records; CACFP (7 CFR Part 226) for meal service and "
+            "recordkeeping; 45 CFR Part 75 for grant financial management, procurement, and "
+            "subrecipient monitoring; Section 504 (45 CFR Part 84) and the ADA; mandated-reporter "
+            "obligations; and state child care/foster care licensing.\n"
+            "3. Pay explicit attention to CONFIDENTIALITY LAYERING. A single youth's record can be "
+            "governed by FERPA, HIPAA, 42 CFR Part 2, and state child welfare confidentiality law "
+            "simultaneously, with different consent and disclosure rules under each. Policies that "
+            "cite only one are a common and serious gap — flag it whenever a policy addresses "
+            "records or information sharing without resolving which regime controls.\n"
+            "4. Check background-check, supervision, ratio, training, and mandated-reporting "
+            "requirements wherever the policy touches direct contact with children.\n"
+            "5. Identify every gap, missing element, vague language, and non-compliant clause.\n"
+            "6. For every gap, write the exact policy language that should replace or be added.\n\n"
+            "Be concrete. These organizations are audited by multiple funders and licensing bodies "
+            "at once, and a policy that satisfies one regime while violating another is the most "
+            "common real-world failure."
+        ),
+        "regulations": [
+            "45 CFR Part 1355 — Title IV-E Child Welfare General Provisions",
+            "45 CFR Part 1356 — Title IV-E Foster Care & Adoption Assistance",
+            "45 CFR Part 1302 — Head Start Program Performance Standards",
+            "45 CFR Part 98 — Child Care and Development Fund (CCDF)",
+            "34 CFR Part 99 — FERPA (Student Education Records)",
+            "HIPAA Privacy, Security & Breach Notification (45 CFR Parts 160, 164)",
+            "42 CFR Part 2 — Confidentiality of Substance Use Disorder Records",
+            "7 CFR Part 226 — Child and Adult Care Food Program (CACFP)",
+            "45 CFR Part 75 — HHS Uniform Grant Administrative Requirements",
+            "45 CFR Part 84 — Section 504 (Disability Nondiscrimination)",
+            "Child Abuse Prevention and Treatment Act (CAPTA) mandated reporting",
+            "State child welfare, foster care, and child care licensing requirements",
+        ],
+        "state_addendum": (
+            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST also check "
+            "all applicable {jurisdiction} requirements: state child welfare and foster care "
+            "licensing regulations, child care licensing standards, mandated-reporter statutes, "
+            "state student-records and minor-consent laws (which frequently differ from federal "
+            "defaults on who may consent to behavioral health treatment), and state background-check "
+            "requirements for staff and volunteers with child contact. Cite state law by code section."
+        ),
+        "audit_authority": "a funder audit, state licensing review, or federal grant monitoring visit",
+    },
+
+    "pharmacy": {
+        "name": "Pharmacy",
+        "icon": "💊",
+        "description": "Retail, hospital, long-term care, specialty, and compounding pharmacies — dispensing, controlled substances, and pharmacy benefit compliance",
+        "ecfr_targets": [
+            # DEA controlled substances — the core of pharmacy compliance
+            (21, 1301, "21 CFR Part 1301 — DEA Registration of Manufacturers, Distributors & Dispensers", SourceCategory.federal_regulation),
+            (21, 1304, "21 CFR Part 1304 — DEA Records and Reports of Registrants", SourceCategory.federal_regulation),
+            (21, 1306, "21 CFR Part 1306 — DEA Prescription Requirements", SourceCategory.federal_regulation),
+            (21, 1300, "21 CFR Part 1300 — DEA Definitions", SourceCategory.federal_regulation),
+            # Drug distribution and compounding
+            (21, 205, "21 CFR Part 205 — Guidelines for State Licensing of Wholesale Distributors", SourceCategory.federal_regulation),
+            (21, 211, "21 CFR Part 211 — Current Good Manufacturing Practice for Finished Pharmaceuticals", SourceCategory.federal_regulation),
+            # Pharmacy benefit / payer
+            (42, 423, "42 CFR Part 423 — Medicare Part D Prescription Drug Benefit", SourceCategory.federal_regulation),
+        ],
+        "live_research_sources": ["hhs_regulations", "cms_guidance", "oig_advisory", "federal_register"],
+        "persona": (
+            "You are the most senior pharmacy compliance attorney and regulatory expert in the "
+            "United States. You advise pharmacists-in-charge, pharmacy compliance officers, and "
+            "DEA registrants across retail, hospital, long-term care, specialty, and compounding "
+            "pharmacy settings.\n\n"
+            "A user will provide a pharmacy policy. Your job:\n\n"
+            "1. Read the policy and identify the exact policy type and pharmacy setting.\n"
+            "2. Identify EVERY federal and state requirement that applies. Key frameworks: the "
+            "Controlled Substances Act and DEA regulations (21 CFR Parts 1300-1306) covering "
+            "registration, biennial inventory, recordkeeping, prescription requirements, partial "
+            "fills, transfers, and DEA Form 222/CSOS ordering; theft and significant loss reporting "
+            "on DEA Form 106; corresponding responsibility for the validity of prescriptions; "
+            "USP <795>/<797>/<800> standards for non-sterile, sterile, and hazardous drug "
+            "compounding; FDCA sections 503A/503B where compounding occurs; the Drug Supply Chain "
+            "Security Act (DSCSA) for tracing, verification, and suspect-product handling; HIPAA "
+            "for patient information; Medicare Part D requirements (42 CFR Part 423) including "
+            "fraud, waste and abuse program obligations; and state board of pharmacy regulations.\n"
+            "3. Give particular scrutiny to controlled-substance security, perpetual inventory, "
+            "diversion detection, and recordkeeping retention periods, and to whether the policy "
+            "assigns a specific accountable role (pharmacist-in-charge vs. 'pharmacy staff').\n"
+            "4. Check each requirement against the actual policy text.\n"
+            "5. Identify every gap, missing element, vague language, and non-compliant clause.\n"
+            "6. For every gap, write the exact policy language that should replace or be added.\n\n"
+            "Be exact about numbers. Pharmacy compliance is unusually driven by specific retention "
+            "periods, inventory intervals, and reporting deadlines, and a wrong figure stated as a "
+            "legal requirement is worse than no figure at all. Where the source material does not "
+            "state the number, say so rather than supplying one from memory.\n\n"
+            "Note that state board of pharmacy rules are frequently STRICTER than federal minimums "
+            "(for example on record retention and refill limits); where the policy relies on a "
+            "federal minimum, flag that the state requirement must be checked and may control."
+        ),
+        "regulations": [
+            "21 CFR Part 1301 — DEA Registration",
+            "21 CFR Part 1304 — DEA Records and Reports (inventory, retention)",
+            "21 CFR Part 1306 — DEA Prescription Requirements",
+            "Controlled Substances Act (21 U.S.C. §801 et seq.)",
+            "USP <795> Non-Sterile Compounding",
+            "USP <797> Sterile Compounding",
+            "USP <800> Hazardous Drugs Handling",
+            "FDCA §503A / §503B — Compounding",
+            "Drug Supply Chain Security Act (DSCSA)",
+            "42 CFR Part 423 — Medicare Part D (including FWA program requirements)",
+            "HIPAA Privacy & Security Rules (45 CFR Parts 160, 164)",
+            "State Board of Pharmacy regulations (vary by state, often stricter than federal)",
+        ],
+        "state_addendum": (
+            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST also check "
+            "all applicable {jurisdiction} Board of Pharmacy regulations, state controlled-substance "
+            "scheduling (which can differ from federal schedules), the state Prescription Drug "
+            "Monitoring Program (PDMP) query and reporting mandates, state record-retention periods, "
+            "pharmacist-to-technician ratio limits, and state compounding rules. State requirements "
+            "are frequently stricter than the federal floor — where they conflict, the stricter "
+            "controls. Cite state law by code section."
+        ),
+        "audit_authority": "a DEA inspection, state Board of Pharmacy audit, or Part D plan audit",
+    },
+
     "other": {
         "name": "Other / General",
         "icon": "📋",
@@ -160,6 +320,13 @@ INDUSTRIES: dict = {
             (29, 1630, "29 CFR Part 1630 — ADA Employment Regulations", SourceCategory.federal_regulation),
             (29, 1604, "29 CFR Part 1604 — Sex Discrimination Guidelines", SourceCategory.federal_regulation),
             (29, 825,  "29 CFR Part 825 — FMLA Regulations", SourceCategory.federal_regulation),
+            # These were named in the prompts' "key regulations" lists but their
+            # text was never loaded, so the model was asserting OSHA / Title VII
+            # / FLSA requirements with nothing to verify against.
+            (29, 1910, "29 CFR Part 1910 — OSHA Occupational Safety & Health Standards", SourceCategory.federal_regulation),
+            (29, 1601, "29 CFR Part 1601 — EEOC Procedural Regulations (Title VII)", SourceCategory.federal_regulation),
+            (29, 541,  "29 CFR Part 541 — FLSA White-Collar Exemptions", SourceCategory.federal_regulation),
+            (29, 1635, "29 CFR Part 1635 — GINA (Genetic Information Nondiscrimination)", SourceCategory.federal_regulation),
         ],
         "live_research_sources": ["federal_register"],
         "persona": (
@@ -199,6 +366,34 @@ INDUSTRIES: dict = {
 # Each entry: { slug, label, description }
 
 POLICY_TYPES: dict = {
+    "child_family_services": [
+        {"slug": "mandated_reporting",      "label": "Mandated Reporting Policy",              "description": "Recognizing and reporting suspected abuse or neglect, timelines, documentation"},
+        {"slug": "background_checks_cfs",   "label": "Background Check & Screening Policy",     "description": "Staff, volunteer, and foster parent clearances before child contact"},
+        {"slug": "child_supervision",       "label": "Child Supervision & Ratios Policy",       "description": "Staff-to-child ratios, sight/sound supervision, transitions, headcounts"},
+        {"slug": "confidentiality_layered", "label": "Records & Confidentiality Policy",        "description": "FERPA, HIPAA, 42 CFR Part 2, and child welfare confidentiality in one record"},
+        {"slug": "foster_case_planning",    "label": "Foster Care Case Planning Policy",        "description": "Case plans, caseworker visits, permanency, Title IV-E documentation"},
+        {"slug": "behavior_management",     "label": "Behavior Management & Restraint Policy",  "description": "Positive behavior support, prohibited practices, restraint limits, reporting"},
+        {"slug": "head_start_standards",    "label": "Head Start Program Standards Policy",     "description": "Performance standards, screenings, family engagement, school readiness"},
+        {"slug": "food_program_cacfp",      "label": "Food Program (CACFP) Policy",             "description": "Meal patterns, point-of-service counts, recordkeeping, civil rights"},
+        {"slug": "grant_compliance",        "label": "Grant & Subrecipient Compliance Policy",  "description": "Allowable costs, procurement, time-and-effort, subrecipient monitoring"},
+        {"slug": "transportation_youth",    "label": "Youth Transportation Policy",             "description": "Driver screening, vehicle safety, supervision during transport"},
+        {"slug": "incident_reporting_cfs",  "label": "Incident Reporting Policy",               "description": "Serious incidents, notification chains, licensing and funder reporting"},
+        {"slug": "code_of_conduct_cfs",     "label": "Staff Code of Conduct Policy",            "description": "Boundaries with youth, social media, gifts, dual relationships"},
+    ],
+    "pharmacy": [
+        {"slug": "controlled_substances",   "label": "Controlled Substances Policy",            "description": "Ordering, storage, access, perpetual inventory, DEA recordkeeping"},
+        {"slug": "diversion_prevention",    "label": "Drug Diversion Prevention Policy",        "description": "Detection, monitoring, investigation, DEA Form 106 loss reporting"},
+        {"slug": "dispensing_verification", "label": "Dispensing & Verification Policy",         "description": "Prescription validity, corresponding responsibility, final check"},
+        {"slug": "sterile_compounding",     "label": "Sterile Compounding Policy (USP 797)",     "description": "Cleanroom, garbing, beyond-use dating, environmental monitoring"},
+        {"slug": "nonsterile_compounding",  "label": "Non-Sterile Compounding Policy (USP 795)", "description": "Formulation records, ingredients, beyond-use dating"},
+        {"slug": "hazardous_drugs",         "label": "Hazardous Drug Handling Policy (USP 800)", "description": "Receipt, storage, PPE, spill response, staff exposure"},
+        {"slug": "dscsa_traceability",      "label": "Drug Supply Chain (DSCSA) Policy",         "description": "Transaction records, verification, suspect and illegitimate product"},
+        {"slug": "pdmp_policy",             "label": "PDMP Query Policy",                        "description": "When to query, documentation, red-flag resolution"},
+        {"slug": "medication_errors",       "label": "Medication Error & Near-Miss Policy",      "description": "Reporting, root cause analysis, corrective action, patient notification"},
+        {"slug": "recalls_returns",         "label": "Recalls, Returns & Disposal Policy",       "description": "Recall handling, reverse distribution, controlled substance destruction"},
+        {"slug": "part_d_fwa",              "label": "Medicare Part D FWA Policy",               "description": "Fraud, waste and abuse program, exclusion screening, training"},
+        {"slug": "patient_privacy_rx",      "label": "Patient Privacy Policy",                   "description": "HIPAA in the pharmacy setting, counseling privacy, PHI disposal"},
+    ],
     "other": [
         {"slug": "code_of_conduct_gen",     "label": "Code of Conduct / Ethics Policy",      "description": "Organizational ethics, conflicts of interest, reporting obligations"},
         {"slug": "data_privacy_gen",        "label": "Data Privacy & Security Policy",        "description": "Data collection, storage, access, retention, and breach response"},

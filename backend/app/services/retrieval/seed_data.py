@@ -76,14 +76,35 @@ async def _async_seed() -> Dict[str, int]:
     from app.services.retrieval.store import get_store
     from app.services.retrieval.ecfr_client import parts_to_source_chunks
 
+    import time
+
     store = get_store()
     client = get_ecfr_client()
     results: Dict[str, int] = {}
     today = date.today().isoformat()
 
-    logger.info(f"Seeding knowledge base from eCFR (as of {today})...")
+    # Preflight: confirm eCFR is reachable ONCE before attempting every target.
+    # Each part retries across several snapshot dates in two formats, so with
+    # ~30 targets an unreachable eCFR would otherwise grind through hundreds of
+    # timeouts -- long enough to hang a Docker build for over an hour. One cheap
+    # check up front turns that into an immediate, clear failure.
+    probe_title = ECFR_TARGETS[0][0] if ECFR_TARGETS else 45
+    if await client.get_title_as_of(probe_title) is None:
+        raise SeedingFailedError(
+            "eCFR is unreachable (titles.json returned no usable data), so no regulatory "
+            "text can be downloaded. Skipping all targets rather than retrying each one."
+        )
+
+    deadline = time.monotonic() + settings.kb_seed_timeout_seconds
+    logger.info(f"Seeding knowledge base from eCFR ({len(ECFR_TARGETS)} targets, as of {today})...")
 
     for title, part, label, category in ECFR_TARGETS:
+        if time.monotonic() > deadline:
+            logger.error(
+                f"Seeding budget of {settings.kb_seed_timeout_seconds}s exhausted — "
+                f"stopping with {sum(results.values())} chunks loaded. Remaining targets skipped."
+            )
+            break
         try:
             part_data = await client.fetch_part(title, part)
 
