@@ -580,6 +580,7 @@ class HealthResponse(BaseModel):
     kb_enabled: bool = True
     kb_chunks: int = 0
     kb_grounded: bool = False
+    kb_unreadable: bool = False
 
 
 # ── Knowledge Base Management Models ──

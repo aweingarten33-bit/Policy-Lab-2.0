@@ -72,25 +72,45 @@ async def lifespan(app: FastAPI):
             stats = store.get_all_stats()
             total_chunks = sum(stats.values())
 
+            if store.has_unreadable_collections():
+                logger.critical(
+                    "One or more knowledge-base collections are UNREADABLE (not merely "
+                    "empty). The store may be corrupted or the persist directory "
+                    "inaccessible. Grounding cannot be trusted until this is resolved."
+                )
+
             if total_chunks == 0:
                 logger.info(
                     "Knowledge base is empty — seeding with foundational regulatory content..."
                 )
                 results = seed_knowledge_base()
                 total = sum(results.values())
-                logger.info(
-                    f"Knowledge base seeded: {total} chunks across {len(results)} sources"
-                )
+                if total == 0:
+                    # Zero chunks after a seed attempt is a grounding outage, not
+                    # a routine status line. Log it at a level that pages someone.
+                    logger.critical(
+                        "GROUNDING FAILURE: seeding completed but produced 0 chunks across "
+                        f"{len(results)} sources. Source-verified output is NOT available; "
+                        "analyses will fall back to model-only reasoning. Check eCFR "
+                        "reachability and the parser, then POST /api/kb/seed to retry."
+                    )
+                else:
+                    logger.info(
+                        f"Knowledge base seeded: {total} chunks across {len(results)} sources"
+                    )
             else:
                 logger.info(
                     f"Knowledge base already contains {total_chunks} chunks — skipping seed"
                 )
         except Exception as e:
-            logger.warning(
-                f"Knowledge base auto-seed failed: {e}. Continuing without KB."
-            )
-            logger.warning(
-                "The system will operate in model-only mode until the knowledge base is populated."
+            # Still non-fatal by choice -- refusing to boot would take the whole
+            # service down over a third-party outage. But this is a grounding
+            # outage, so it is logged as one rather than as a warning, and
+            # /api/health reports kb_grounded=false for monitoring.
+            logger.critical(
+                f"GROUNDING FAILURE: knowledge base could not be seeded ({e}). "
+                "The service will start, but source-verified output is NOT available "
+                "until the knowledge base is populated."
             )
 
     # ── FIX: Warm up the embedding model at startup ──────────────────────────

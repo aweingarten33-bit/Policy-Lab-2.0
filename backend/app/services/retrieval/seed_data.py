@@ -22,6 +22,11 @@ from app.services.retrieval.ingestion import ingest_source_document
 logger = logging.getLogger(__name__)
 
 
+class SeedingFailedError(RuntimeError):
+    """Knowledge-base seeding failed outright (as opposed to seeding zero
+    chunks because eCFR legitimately had nothing new)."""
+
+
 def seed_knowledge_base() -> Dict[str, int]:
     """
     Populate the knowledge base from live eCFR content.
@@ -41,8 +46,13 @@ def seed_knowledge_base() -> Dict[str, int]:
         else:
             return loop.run_until_complete(_async_seed())
     except Exception as e:
+        # Re-raise rather than returning {}. Collapsing a hard failure into an
+        # empty dict let the caller log "seeded 0 chunks" as if that were a
+        # normal outcome, so a total grounding failure looked identical to
+        # "nothing to do" -- which is how the production KB stayed empty
+        # without anyone noticing. The caller decides whether to continue.
         logger.error(f"KB seed failed: {e}", exc_info=True)
-        return {}
+        raise SeedingFailedError(f"Knowledge base seeding failed: {e}") from e
 
 
 async def _async_seed() -> Dict[str, int]:

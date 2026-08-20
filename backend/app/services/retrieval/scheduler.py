@@ -61,9 +61,13 @@ async def refresh_ecfr_knowledge_base():
                 # Use the collection matching the category
                 collection_name = category.value
                 try:
-                    store.delete_by_prefix(collection_name, f"ecfr_{title}_{part}_")
-                except Exception:
-                    pass  # delete_by_prefix may not exist yet — handled below
+                    removed = store.delete_by_prefix(collection_name, f"ecfr_{title}_{part}_")
+                    if removed:
+                        logger.info(f"Refresh: cleared {removed} superseded chunk(s) for {label}")
+                except Exception as e:
+                    # Log it. Swallowing this silently meant stale, superseded
+                    # regulatory text stayed retrievable alongside the fresh copy.
+                    logger.error(f"Refresh: could not clear old chunks for {label}: {e}", exc_info=True)
 
                 # Ingest fresh content
                 fetched_date = part_data.get("fetched_date", datetime.utcnow().date().isoformat())

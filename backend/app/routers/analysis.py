@@ -29,15 +29,25 @@ async def health_check():
     """
     kb_chunks = 0
     kb_enabled = settings.kb_enabled
+    kb_unreadable = False
 
     if kb_enabled:
         try:
             from app.services.retrieval.store import get_store
-            kb_chunks = sum(get_store().get_all_stats().values())
+            stats = get_store().get_all_stats()
+            # -1 marks a collection that could not be read at all. Summing it in
+            # would understate the count; treating it as 0 would hide a corrupt
+            # store behind a normal-looking "empty" reading.
+            kb_unreadable = any(v < 0 for v in stats.values())
+            kb_chunks = sum(v for v in stats.values() if v > 0)
         except Exception as e:
             # Health must never fail because the KB is unreachable -- report
             # ungrounded rather than returning an error.
             logger.warning(f"Health check could not read KB stats: {e}")
+            kb_unreadable = True
+
+    if kb_unreadable:
+        logger.error("Health: one or more KB collections are unreadable — grounding is unreliable.")
 
     if kb_enabled and kb_chunks == 0:
         logger.warning(
@@ -50,5 +60,6 @@ async def health_check():
         version="3.0.0",
         kb_enabled=kb_enabled,
         kb_chunks=kb_chunks,
-        kb_grounded=kb_enabled and kb_chunks > 0,
+        kb_grounded=kb_enabled and kb_chunks > 0 and not kb_unreadable,
+        kb_unreadable=kb_unreadable,
     )

@@ -254,14 +254,54 @@ class ChromaStore:
         return collection.count()
 
     def get_all_stats(self) -> Dict[str, int]:
-        """Get chunk counts for all collections."""
+        """Get chunk counts for all collections.
+
+        An unreadable collection reports -1, not 0. Collapsing errors to zero
+        made a corrupted or inaccessible collection indistinguishable from a
+        genuinely empty one -- which matters because the grounding checks and
+        the health endpoint both key off these counts, and "broken" needs a
+        different response than "not seeded yet".
+        """
         stats = {}
         for name in self.COLLECTION_NAMES:
             try:
                 stats[name] = self.get_collection_count(name)
-            except Exception:
-                stats[name] = 0
+            except Exception as e:
+                logger.error(f"Collection {name} is unreadable: {e}")
+                stats[name] = -1
         return stats
+
+    def has_unreadable_collections(self) -> bool:
+        """True if any collection failed to report a count."""
+        return any(v < 0 for v in self.get_all_stats().values())
+
+    def delete_by_prefix(self, collection_name: str, id_prefix: str) -> int:
+        """Delete every chunk whose id starts with `id_prefix`. Returns the count.
+
+        The nightly refresh calls this to clear a CFR part's previous version
+        before ingesting the new one. It was never implemented -- the caller
+        swallowed the AttributeError -- so refreshed content accumulated
+        alongside the old instead of replacing it. Chunk ids embed the fetch
+        date, so a re-fetch on a different date never overwrites by id, meaning
+        superseded regulatory text would stay retrievable indefinitely. That is
+        a correctness problem for a tool whose whole claim is current, verified
+        source material.
+        """
+        collection = self.get_collection(collection_name)
+
+        try:
+            existing = collection.get(include=[])
+        except Exception as e:
+            logger.warning(f"delete_by_prefix could not enumerate {collection_name}: {e}")
+            return 0
+
+        ids = [cid for cid in (existing.get("ids") or []) if cid.startswith(id_prefix)]
+        if not ids:
+            return 0
+
+        collection.delete(ids=ids)
+        logger.info(f"Deleted {len(ids)} stale chunks matching '{id_prefix}' from {collection_name}")
+        return len(ids)
 
     def delete_chunks(self, collection_name: str, ids: List[str]):
         """Delete specific chunks from a collection."""
