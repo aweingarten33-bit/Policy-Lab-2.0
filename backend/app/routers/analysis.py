@@ -7,6 +7,7 @@ were removed as dead code: the product exclusively uses the job-based
 so nothing calls this router's old endpoints anymore.
 """
 
+import os
 import logging
 from fastapi import APIRouter
 
@@ -67,9 +68,13 @@ async def health_check():
             # Never let an age lookup break the health check itself.
             logger.warning(f"Health check could not determine corpus age: {e}")
 
+    # Render exposes the deployed commit; other platforms can set GIT_COMMIT.
+    commit = (os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_COMMIT") or "")[:7] or None
+
     return HealthResponse(
         status="ok",
         version="3.0.0",
+        build_commit=commit,
         kb_enabled=kb_enabled,
         kb_chunks=kb_chunks,
         kb_grounded=kb_enabled and kb_chunks > 0 and not kb_unreadable,

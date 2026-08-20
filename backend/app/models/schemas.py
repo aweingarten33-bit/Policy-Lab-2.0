@@ -683,6 +683,10 @@ class HealthResponse(BaseModel):
     # count alone cannot distinguish a fresh corpus from a years-old one.
     kb_corpus_date: Optional[str] = None
     kb_corpus_age_days: Optional[int] = None
+    # Which commit is actually running. Without this there is no way to tell a
+    # fix that has not deployed yet from a fix that did not work -- and the
+    # two need completely different responses.
+    build_commit: Optional[str] = None
 
 
 # ── Knowledge Base Management Models ──
