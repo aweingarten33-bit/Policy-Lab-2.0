@@ -155,8 +155,17 @@ async def kb_diagnose():
     """
     from app.services.retrieval.ecfr_client import get_ecfr_client, ECFR_BASE, ECFR_TARGETS
 
+    from app.services.retrieval import seed_state
+
     steps = []
     client = get_ecfr_client()
+
+    seeding = seed_state.get_state()
+    steps.append({
+        "step": "Background seeding",
+        "ok": seeding["status"] in ("succeeded", "running"),
+        "detail": seed_state.describe(),
+    })
 
     def step(name, ok, detail):
         steps.append({"step": name, "ok": ok, "detail": detail})
@@ -182,14 +191,14 @@ async def kb_diagnose():
         step("Reach eCFR (titles.json)", False,
              f"Request failed: {type(e).__name__}: {e}. The server likely has no outbound "
              f"internet access to ecfr.gov.")
-        return {"summary": _summarize(steps), "steps": steps}
+        return {"summary": _summarize(steps), "seeding": seeding, "steps": steps}
 
     # 2. Does eCFR report a usable date for Title 45?
     as_of = await client.get_title_as_of(45)
     if not step("Get current date for Title 45", bool(as_of),
                 f"eCFR reports Title 45 current as of {as_of}" if as_of
                 else "titles.json did not contain a usable date for title 45"):
-        return {"summary": _summarize(steps), "steps": steps}
+        return {"summary": _summarize(steps), "seeding": seeding, "steps": steps}
 
     # 3. Fetch + parse one real part end to end
     try:
@@ -209,12 +218,19 @@ async def kb_diagnose():
     return {
         "summary": _summarize(steps),
         "targets_configured": len(ECFR_TARGETS),
+        "seeding": seeding,
         "steps": steps,
     }
 
 
 def _summarize(steps) -> str:
     failed = [s for s in steps if not s["ok"]]
+    # Seeding still in flight is the expected state right after a deploy, not
+    # a fault -- say so instead of reporting the empty store as a failure.
+    from app.services.retrieval import seed_state
+    if seed_state.get_state()["status"] == "running":
+        return ("Seeding is still running in the background. Wait a minute or two and "
+                "reload this page; chunk counts should start climbing.")
     if not failed:
         return ("Everything checks out. eCFR is reachable and parsing works. If the knowledge "
                 "base is still empty, trigger a re-seed (POST /api/kb/seed with the admin key) "

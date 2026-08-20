@@ -61,16 +61,25 @@ async def lifespan(app: FastAPI):
         f"Knowledge base: {'enabled' if settings.kb_enabled else 'disabled'} at {settings.kb_persist_dir}"
     )
 
-    # Auto-seed the knowledge base if enabled
-    if settings.kb_auto_seed and settings.kb_enabled:
-        try:
-            from app.services.retrieval.seed_data import seed_knowledge_base_async
-            from app.services.retrieval.store import get_store
+    # ── Knowledge base bootstrap (background) ──
+    # Seeding used to run inline here, before `yield`, so the app accepted no
+    # traffic until every CFR part had been downloaded and embedded. On a cold
+    # container that can take minutes -- long enough for the platform health
+    # check to fail and restart the container, which starts the whole thing
+    # over. The knowledge base could therefore never finish seeding, which is
+    # exactly the "always 0 chunks" symptom seen in production.
+    #
+    # It now runs as a background task: the app is ready immediately and the
+    # knowledge base fills in behind it. Progress is recorded in seed_state and
+    # reported by /api/kb/diagnose, since a background job is otherwise silent.
+    async def _bootstrap_knowledge_base():
+        from app.services.retrieval.seed_data import seed_knowledge_base_async
+        from app.services.retrieval.store import get_store
+        from app.services.retrieval import seed_state
 
-            # Initialize the store first
+        try:
             store = get_store()
             stats = store.get_all_stats()
-            total_chunks = sum(stats.values())
 
             if store.has_unreadable_collections():
                 logger.critical(
@@ -79,60 +88,60 @@ async def lifespan(app: FastAPI):
                     "inaccessible. Grounding cannot be trusted until this is resolved."
                 )
 
-            if total_chunks == 0:
-                logger.info(
-                    "Knowledge base is empty — seeding with foundational regulatory content..."
+            existing = sum(v for v in stats.values() if v > 0)
+            if existing > 0:
+                logger.info(f"Knowledge base already contains {existing} chunks — skipping seed")
+                return
+
+            logger.info("Knowledge base is empty — seeding from eCFR in the background...")
+            seed_state.mark_started()
+            results = await seed_knowledge_base_async()
+            seed_state.mark_finished(results)
+
+            total = sum(results.values())
+            if total == 0:
+                logger.critical(
+                    "GROUNDING FAILURE: seeding completed but produced 0 chunks across "
+                    f"{len(results)} sources. Source-verified output is NOT available. "
+                    "See /api/kb/diagnose."
                 )
-                # Awaited in the startup loop rather than run in a throwaway
-                # one, so shared HTTP clients stay bound to a live loop.
-                results = await seed_knowledge_base_async()
-                total = sum(results.values())
-                if total == 0:
-                    # Zero chunks after a seed attempt is a grounding outage, not
-                    # a routine status line. Log it at a level that pages someone.
-                    logger.critical(
-                        "GROUNDING FAILURE: seeding completed but produced 0 chunks across "
-                        f"{len(results)} sources. Source-verified output is NOT available; "
-                        "analyses will fall back to model-only reasoning. Check eCFR "
-                        "reachability and the parser, then POST /api/kb/seed to retry."
-                    )
-                else:
-                    logger.info(
-                        f"Knowledge base seeded: {total} chunks across {len(results)} sources"
-                    )
             else:
-                logger.info(
-                    f"Knowledge base already contains {total_chunks} chunks — skipping seed"
-                )
+                logger.info(f"Knowledge base seeded: {total} chunks across {len(results)} sources")
         except Exception as e:
-            # Still non-fatal by choice -- refusing to boot would take the whole
-            # service down over a third-party outage. But this is a grounding
-            # outage, so it is logged as one rather than as a warning, and
-            # /api/health reports kb_grounded=false for monitoring.
+            from app.services.retrieval import seed_state as _st
+            _st.mark_failed(f"{type(e).__name__}: {e}")
             logger.critical(
                 f"GROUNDING FAILURE: knowledge base could not be seeded ({e}). "
-                "The service will start, but source-verified output is NOT available "
-                "until the knowledge base is populated."
+                "The service is running, but source-verified output is NOT available."
             )
+
+    seed_task = None
+    if settings.kb_auto_seed and settings.kb_enabled:
+        seed_task = asyncio.create_task(_bootstrap_knowledge_base())
 
     # ── FIX: Warm up the embedding model at startup ──────────────────────────
     # sentence-transformers loads the model on first use, adding 10-30s latency
     # to the very first request. Warming up here means every request is fast.
     if settings.kb_enabled:
-        try:
-            logger.info("Warming up embedding model (sentence-transformers)...")
-            loop = asyncio.get_running_loop()
+        logger.info("Warming up embedding model (sentence-transformers)...")
+        loop = asyncio.get_running_loop()
 
-            def _warmup():
-                from app.services.retrieval.store import _get_embedding_function
-                ef = _get_embedding_function()
-                # Run a dummy embed to force model download + load
-                ef(["warmup"])
+        def _warmup():
+            from app.services.retrieval.store import _get_embedding_function
+            ef = _get_embedding_function()
+            # Run a dummy embed to force model download + load
+            ef(["warmup"])
 
-            await loop.run_in_executor(None, _warmup)
-            logger.info("Embedding model warmed up — first request will be fast")
-        except Exception as e:
-            logger.warning(f"Embedding warmup failed (non-fatal): {e}")
+        # Also backgrounded: this downloads a model on a cold container,
+        # which is another multi-minute way to miss the health check.
+        async def _warm():
+            try:
+                await loop.run_in_executor(None, _warmup)
+                logger.info("Embedding model warmed up — first request will be fast")
+            except Exception as e:
+                logger.warning(f"Embedding warmup failed (non-fatal): {e}")
+
+        asyncio.create_task(_warm())
     # ─────────────────────────────────────────────────────────────────────────
 
     # ── Start the nightly regulatory refresh ──
