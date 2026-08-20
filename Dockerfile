@@ -25,4 +25,9 @@ COPY --from=frontend-build /fe/dist /app/frontend/dist
 
 ENV ENVIRONMENT=production
 EXPOSE 8080
+# Binds 0.0.0.0 deliberately. Security guidance to default to 127.0.0.1 targets
+# servers run directly on a host; inside a container the platform's proxy
+# reaches the app over the container network, so binding to localhost would
+# make it unreachable rather than safer. Exposure is controlled by the platform
+# edge plus the app's own auth middleware, which fails closed in production.
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

@@ -21,6 +21,7 @@ from app.services.retrieval.models import (
     RetrievalResult, RetrievalContext,
 )
 from app.services.retrieval.store import get_store
+from app.services.retrieval.sanitize import sanitize_source_text, wrap_untrusted_sources
 
 logger = logging.getLogger(__name__)
 
@@ -342,8 +343,7 @@ class ComplianceRetriever:
             return "No relevant source material found in the knowledge base."
 
         lines = [
-            "═══ RETRIEVED SOURCE MATERIAL ═══",
-            "The following source material was retrieved from the curated compliance knowledge base.",
+            "The following was retrieved from the curated compliance knowledge base.",
             "You MUST cite these sources when they support your findings.",
             "You MUST NOT invent citations that are not present below.",
             "",
@@ -367,10 +367,13 @@ class ComplianceRetriever:
                 lines.append(f"URL: {meta.url}")
             lines.append(f"Collection: {meta.category.value}")
             lines.append("")
-            lines.append(chunk.text)
+            # Defanged before it reaches the prompt: a document reaching this
+            # point may be attacker-controlled (KB ingest, or a spoofed page
+            # pulled by live research), and raw injection into model context is
+            # the classic indirect prompt-injection path.
+            lines.append(sanitize_source_text(chunk.text))
             lines.append("")
 
-        lines.append("═══ END RETRIEVED SOURCE MATERIAL ═══")
         lines.append("")
         lines.append("IMPORTANT INSTRUCTIONS FOR CITATION:")
         lines.append("- When a finding is supported by the retrieved source material above, cite it using the exact citation provided.")
@@ -378,7 +381,7 @@ class ComplianceRetriever:
         lines.append("- Do NOT fabricate section numbers, citations, or regulatory text that does not appear in the source material above.")
         lines.append("- If you are unsure whether a regulation exists, say 'Requires independent review' rather than guessing.")
 
-        return "\n".join(lines)
+        return wrap_untrusted_sources("\n".join(lines))
 
 
 # Singleton

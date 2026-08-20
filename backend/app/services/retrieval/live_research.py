@@ -37,6 +37,8 @@ from app.services.retrieval.models import (
     RetrievalResult, RetrievalContext,
 )
 
+from app.services.retrieval.sanitize import sanitize_source_text, wrap_untrusted_sources
+
 logger = logging.getLogger(__name__)
 
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "").strip()
@@ -611,7 +613,9 @@ class LiveResearchService:
                     parts.append(f"Date: {meta.effective_date}")
                 parts.append(f"Authority: {meta.authority}")
                 parts.append("")
-                parts.append(chunk.text)
+                # Fetched from a remote page -- the most plausibly
+                # attacker-controlled text in the whole pipeline.
+                parts.append(sanitize_source_text(chunk.text))
                 parts.append("")
 
             parts.append("═══ END LIVE RESEARCH RESULTS ═══")
@@ -619,7 +623,13 @@ class LiveResearchService:
         if not parts:
             return "No relevant source material found in the knowledge base or live research."
 
-        return "\n".join(parts)
+        # The KB block already carries its own untrusted-data boundary from the
+        # retriever. Wrap again only when live results were appended, so remote
+        # content is never the last thing in context without a closing reminder.
+        joined = "\n".join(parts)
+        if context.live_research_results:
+            joined = wrap_untrusted_sources(joined)
+        return joined
 
     async def close(self):
         """Close the HTTP client."""
