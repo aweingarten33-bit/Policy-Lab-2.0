@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     # store is the answer if this ever needs to scale horizontally.
     kb_persist_dir: str = "./knowledge_base"
     kb_auto_seed: bool = True
+    # Total wall-clock budget for seeding every CFR target. Generous on
+    # purpose: exceeding it leaves the knowledge base empty, which is the
+    # single worst outcome for this product.
+    kb_seed_timeout_seconds: int = 600
     kb_enabled: bool = True
 
     # ── Live Research Settings ──

@@ -17,6 +17,7 @@ from datetime import date
 from typing import Dict
 
 from app.services.retrieval.ecfr_client import get_ecfr_client, ECFR_TARGETS
+from app.config import settings
 from app.services.retrieval.ingestion import ingest_source_document
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,10 @@ def seed_knowledge_base() -> Dict[str, int]:
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(asyncio.run, _async_seed())
-                return future.result(timeout=120)
+                # Budget covers every CFR target plus retries. The old 120s could be
+                # consumed by the first few parts alone, timing out the whole seed
+                # and leaving the knowledge base empty.
+                return future.result(timeout=settings.kb_seed_timeout_seconds)
         else:
             return loop.run_until_complete(_async_seed())
     except Exception as e:

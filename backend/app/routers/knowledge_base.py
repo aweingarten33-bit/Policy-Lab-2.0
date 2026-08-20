@@ -139,3 +139,91 @@ async def reset_collection(collection_name: str):
     except Exception as e:
         logger.error(f"Reset collection error: {e}")
         raise HTTPException(status_code=500, detail="Knowledge base operation failed.") from None
+
+
+@router.get("/diagnose")
+async def kb_diagnose():
+    """Plain-English diagnosis of why the knowledge base is or isn't populated.
+
+    Exists because "kb_grounded: false" says something is wrong but not what,
+    and the answer lives in whether eCFR is reachable from THIS host — which
+    can't be determined from source code or a developer's machine. Runs the
+    real seeding steps one at a time against one small CFR part and reports
+    where the chain breaks.
+
+    Read-only: fetches from a fixed government API and writes nothing.
+    """
+    from app.services.retrieval.ecfr_client import get_ecfr_client, ECFR_BASE, ECFR_TARGETS
+
+    steps = []
+    client = get_ecfr_client()
+
+    def step(name, ok, detail):
+        steps.append({"step": name, "ok": ok, "detail": detail})
+        return ok
+
+    # 0. What's in the store right now
+    try:
+        stats = get_store().get_all_stats()
+        total = sum(v for v in stats.values() if v > 0)
+        step("Knowledge base contents", total > 0,
+             f"{total} chunks stored. Per collection: {stats}")
+    except Exception as e:
+        step("Knowledge base contents", False, f"Could not read the store: {e}")
+
+    # 1. Can this server reach eCFR at all?
+    try:
+        resp = await client.client.get(f"{ECFR_BASE}/titles.json")
+        reachable = resp.status_code == 200
+        step("Reach eCFR (titles.json)", reachable,
+             f"HTTP {resp.status_code}" + ("" if reachable else
+             " — the server cannot reach ecfr.gov. Outbound internet may be blocked."))
+    except Exception as e:
+        step("Reach eCFR (titles.json)", False,
+             f"Request failed: {type(e).__name__}: {e}. The server likely has no outbound "
+             f"internet access to ecfr.gov.")
+        return {"summary": _summarize(steps), "steps": steps}
+
+    # 2. Does eCFR report a usable date for Title 45?
+    as_of = await client.get_title_as_of(45)
+    if not step("Get current date for Title 45", bool(as_of),
+                f"eCFR reports Title 45 current as of {as_of}" if as_of
+                else "titles.json did not contain a usable date for title 45"):
+        return {"summary": _summarize(steps), "steps": steps}
+
+    # 3. Fetch + parse one real part end to end
+    try:
+        data = await client.fetch_part(45, 164)
+        n = len(data.get("sections", [])) if data else 0
+        step("Fetch and parse 45 CFR Part 164", n > 0,
+             f"Parsed {n} sections." if n > 0 else
+             "Downloaded but parsed 0 sections — the document structure may have changed.")
+        if n:
+            first = data["sections"][0]
+            step("Sample parsed section", True,
+                 f"{first.get('citation')} — {first.get('heading')} "
+                 f"({len(first.get('text',''))} chars)")
+    except Exception as e:
+        step("Fetch and parse 45 CFR Part 164", False, f"{type(e).__name__}: {e}")
+
+    return {
+        "summary": _summarize(steps),
+        "targets_configured": len(ECFR_TARGETS),
+        "steps": steps,
+    }
+
+
+def _summarize(steps) -> str:
+    failed = [s for s in steps if not s["ok"]]
+    if not failed:
+        return ("Everything checks out. eCFR is reachable and parsing works. If the knowledge "
+                "base is still empty, trigger a re-seed (POST /api/kb/seed with the admin key) "
+                "and check again.")
+    first = failed[0]
+    if "Reach eCFR" in first["step"]:
+        return ("This server cannot reach ecfr.gov, so there is no regulatory text to load. "
+                "This is a network/hosting issue, not an application bug.")
+    if "Fetch and parse" in first["step"]:
+        return ("eCFR is reachable but the regulation text could not be parsed into sections. "
+                "The eCFR document format likely changed and the parser needs updating.")
+    return f"First failure: {first['step']} — {first['detail']}"

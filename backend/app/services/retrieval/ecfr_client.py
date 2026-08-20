@@ -69,7 +69,10 @@ class ECFRClient:
     def client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                timeout=60.0,
+                # Short per-request timeout: fetch_part may try several
+                # snapshot dates, and a 60s hang on each would blow the whole
+                # seeding budget before the second CFR part was reached.
+                timeout=20.0,
                 follow_redirects=True,
                 headers={
                     "Accept": "application/json, text/xml",

@@ -173,7 +173,12 @@ app = FastAPI(
 # ── API Key Middleware ──
 # Endpoints reachable without a key: health, docs, and the SPA shell itself
 # (the frontend has to load before it can prompt for a password).
-_PUBLIC_PATHS = frozenset(["/api/health", "/docs", "/redoc", "/", "/openapi.json"])
+_PUBLIC_PATHS = frozenset([
+    "/api/health", "/docs", "/redoc", "/", "/openapi.json",
+    # Diagnostics: reachable without the app password specifically so it can be
+    # opened in a browser when the app is misbehaving. Reveals no secrets.
+    "/api/kb/diagnose",
+])
 
 # Destructive / knowledge-base-mutating routes. These change what every future
 # generation is grounded in, so they require a separate admin credential rather
@@ -272,7 +277,11 @@ def _client_ip(request: Request) -> str:
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    if request.method == "POST" and any(request.url.path.startswith(p) for p in _RATE_LIMITED_PREFIXES):
+    _limited = (
+        request.method == "POST"
+        and any(request.url.path.startswith(p) for p in _RATE_LIMITED_PREFIXES)
+    ) or request.url.path == "/api/kb/diagnose"  # public + makes outbound calls
+    if _limited:
         ip = _client_ip(request)
         now = time.monotonic()
         async with _rate_limit_lock:
