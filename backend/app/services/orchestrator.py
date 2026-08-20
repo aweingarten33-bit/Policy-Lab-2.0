@@ -182,6 +182,81 @@ class PackageOrchestrator:
             "against authoritative regulatory sources. Please try again shortly."
         )
 
+    async def _build_evidence(
+        self,
+        gap_result: AnalysisResult,
+        retrieval_ctx: RetrievalContext,
+    ) -> None:
+        """Attach an auditable evidence record to every finding.
+
+        Two passes. First the deterministic checks (does the cited section
+        exist in retrieved material, do stated timeframes match, which exact
+        passage bears on the claim). Then one batched semantic check asking
+        whether each excerpt actually supports its claim.
+
+        The split matters: nothing reaches `verified` on retrieval similarity
+        alone. A citation being real is necessary but not sufficient, which is
+        exactly the false-positive this replaces.
+        """
+        from app.services.claim_support import classify_claim_support
+        from app.models.schemas import ClaimSupport
+
+        pending = []
+        for idx, row in enumerate(gap_result.gap_table):
+            claim = " ".join(filter(None, [row.finding, row.suggested_language])).strip()
+            evidence = self.verification.build_claim_evidence(
+                claim_id=f"finding-{idx + 1}",
+                claim_text=claim,
+                citation=row.citation or (row.regulations[0] if row.regulations else ""),
+                retrieval_context=retrieval_ctx,
+            )
+            row.evidence = evidence
+
+            # Only worth classifying if there is an excerpt to judge against and
+            # the record hasn't already failed the harder, deterministic
+            # specifics check -- a contradicted timeframe is settled, and a
+            # semantic pass must not paper over it.
+            if (
+                evidence.checks.citation_exists
+                and evidence.source.excerpt
+                and evidence.checks.specifics_supported is not False
+            ):
+                pending.append({
+                    "id": evidence.claim_id,
+                    "claim": claim[:1200],
+                    "citation": evidence.citation or "",
+                    "excerpt": evidence.source.excerpt or "",
+                })
+
+        if not pending:
+            return
+
+        results = await classify_claim_support(pending)
+        if not results:
+            return
+
+        for row in gap_result.gap_table:
+            ev = row.evidence
+            if not ev or ev.claim_id not in results:
+                continue
+            outcome = results[ev.claim_id]
+            try:
+                support = ClaimSupport(outcome["label"])
+            except ValueError:
+                continue
+            if support is ClaimSupport.not_checked:
+                continue
+            self.verification.apply_claim_support(ev, support, outcome.get("note", ""))
+
+        verified = sum(
+            1 for r in gap_result.gap_table
+            if r.evidence and r.evidence.status == VerificationStatus.verified
+        )
+        logger.info(
+            f"Evidence: {verified}/{len(gap_result.gap_table)} findings fully verified "
+            f"(citation exists + specifics match + excerpt supports claim)"
+        )
+
     def _flag_unsupported_specifics(
         self,
         gap_result: AnalysisResult,
@@ -368,6 +443,7 @@ class PackageOrchestrator:
                 gap_result.live_research_used = live_used
                 gap_result.verification_summary = ver_summary
                 self._flag_unsupported_specifics(gap_result, retrieval_ctx)
+                await self._build_evidence(gap_result, retrieval_ctx)
 
                 all_kb_sources.extend(s for s in sources if s not in all_kb_sources)
                 all_kb_source_urls.update(retrieval_ctx.get_source_url_map())

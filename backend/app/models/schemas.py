@@ -133,6 +133,60 @@ class ExportRequest(BaseModel):
     verification_overall: Optional[str] = Field(None, description="Verification summary sentence")
 
 
+class ClaimSupport(str, Enum):
+    """Result of testing whether an authoritative excerpt actually supports a claim."""
+    supported = "SUPPORTED"
+    partially_supported = "PARTIALLY_SUPPORTED"
+    not_supported = "NOT_SUPPORTED"
+    contradicted = "CONTRADICTED"
+    not_checked = "NOT_CHECKED"
+
+
+class EvidenceSource(BaseModel):
+    """The exact authoritative passage a claim was checked against."""
+    name: Optional[str] = None
+    url: Optional[str] = None
+    version_date: Optional[str] = Field(
+        None, description="Date the source text was published/retrieved — what version was checked"
+    )
+    excerpt: Optional[str] = Field(
+        None, description="The exact passage. This is the source of truth for the check."
+    )
+
+
+class EvidenceChecks(BaseModel):
+    """The independent checks behind a verification status.
+
+    Kept separate so a status is auditable rather than a bare label: a reader
+    can see which checks ran, which passed, and which were not applicable.
+    """
+    citation_exists: bool = Field(
+        False, description="The cited section was found in retrieved authoritative material"
+    )
+    specifics_supported: Optional[bool] = Field(
+        None, description="Concrete durations in the claim appear in the source (None = none stated)"
+    )
+    claim_support: ClaimSupport = Field(
+        ClaimSupport.not_checked, description="Whether the excerpt entails the claim"
+    )
+
+
+class VerificationEvidence(BaseModel):
+    """A durable, auditable record of how one claim was verified.
+
+    Replaces treating 'the cited regulation exists' as proof the claim is true.
+    A real citation attached to an unsupported statement is the failure mode
+    this exists to catch.
+    """
+    claim_id: str
+    claim_text: str
+    status: VerificationStatus = VerificationStatus.unverified
+    citation: Optional[str] = None
+    source: EvidenceSource = Field(default_factory=EvidenceSource)
+    checks: EvidenceChecks = Field(default_factory=EvidenceChecks)
+    reason: str = ""
+
+
 class GapRow(BaseModel):
     """A single gap finding row."""
     clause: str = Field(..., description="Policy section or topic area")
@@ -161,6 +215,10 @@ class GapRow(BaseModel):
             "appear in the retrieved source material -- i.e. a real citation carrying a number "
             "the sources don't support. Surfaced inline on the finding itself."
         )
+    )
+    evidence: Optional[VerificationEvidence] = Field(
+        None,
+        description="Auditable record of how this finding's citation and claim were checked"
     )
     # ── Source Attribution (Phase 3) ──
     source_attribution: Optional[SourceAttribution] = Field(

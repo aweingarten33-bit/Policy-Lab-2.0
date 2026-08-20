@@ -14,7 +14,7 @@ import {
   type ComplianceActionPackage, type AnalysisResult, type GapRow,
   type SourceAttribution, type SourceType, type VerificationStatus, type IndustryOption,
   type DraftedPolicy, type ChatMessage, type RewrittenPolicy, type RewrittenPolicySection,
-  type SourceSnippet,
+  type SourceSnippet, type VerificationEvidence,
   STATUS_LABELS,
   getSourceTypeLabel, getSourceTypeColor, getSourceTypeBg, getVerificationIcon,
 } from "@/lib/api";
@@ -260,6 +260,7 @@ function GapRowItem({ row, urlMap, snippets }: { row: GapRow; urlMap?: Record<st
               </p>
             </div>
           )}
+          {row.evidence && <EvidencePanel evidence={row.evidence} />}
           {row.source_attribution && <SourceBadge attribution={row.source_attribution} urlMap={urlMap} />}
         </div>
       )}
@@ -268,6 +269,72 @@ function GapRowItem({ row, urlMap, snippets }: { row: GapRow; urlMap?: Record<st
 }
 
 // ── Source Attribution Badge Component ──
+
+// ── Evidence panel ──
+// The receipts for one finding. "Verified" here is earned, not decorative: it
+// requires the cited section to exist in retrieved material, any stated
+// timeframe to match it, and the quoted passage to actually support the claim.
+// Anything short of all three says so plainly, and the excerpt is shown either
+// way so a reader can judge it themselves rather than trusting the label.
+const EVIDENCE_STYLE: Record<string, { label: string; color: string; bg: string }> = {
+  verified:           { label: "Verified against source", color: "hsl(160 60% 30%)", bg: "hsl(160 60% 42% / 0.12)" },
+  partially_verified: { label: "Partially verified",      color: "hsl(38 85% 38%)",  bg: "hsl(38 85% 52% / 0.12)" },
+  unverified:         { label: "Not verified",            color: "hsl(25 90% 40%)",  bg: "hsl(25 90% 50% / 0.12)" },
+  contradicted:       { label: "Source disagrees",        color: "hsl(0 72% 45%)",   bg: "hsl(0 72% 51% / 0.12)" },
+};
+
+function EvidencePanel({ evidence }: { evidence: VerificationEvidence }) {
+  const [open, setOpen] = useState(false);
+  const style = EVIDENCE_STYLE[evidence.status] ?? EVIDENCE_STYLE.unverified;
+  const excerpt = evidence.source?.excerpt;
+
+  return (
+    <div className="rounded-lg p-3" style={{ background: style.bg }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wide" style={{ color: style.color }}>
+          {style.label}
+        </span>
+        {evidence.source?.version_date && (
+          <span className="text-[9px] font-mono text-muted-foreground">
+            source as of {evidence.source.version_date}
+          </span>
+        )}
+      </div>
+
+      <p className="text-[11px] leading-relaxed text-foreground/75 mt-1">{evidence.reason}</p>
+
+      {excerpt && (
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="mt-2 text-[10px] font-mono underline decoration-dotted underline-offset-2 hover:no-underline"
+            style={{ color: style.color }}
+          >
+            {open ? "Hide source text" : "Show the source text this was checked against"}
+          </button>
+          {open && (
+            <div className="mt-2 rounded-lg neu-inset p-3">
+              <p className="text-[11px] leading-relaxed text-foreground/85 whitespace-pre-wrap">
+                &ldquo;{excerpt}&rdquo;
+              </p>
+              {evidence.source?.url && (
+                <a
+                  href={evidence.source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block text-[10px] font-mono text-primary hover:underline"
+                >
+                  Open the full regulation ↗
+                </a>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 function SourceBadge({ attribution, urlMap }: { attribution?: SourceAttribution; urlMap?: Record<string, string> }) {
   if (!attribution) return null;

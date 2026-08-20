@@ -108,7 +108,30 @@ export interface GapRow {
   remediation_priority: string;
   oig_element?: string;
   verification_warning?: string;
+  evidence?: VerificationEvidence;
   source_attribution?: SourceAttribution;
+}
+
+export type ClaimSupport =
+  | "SUPPORTED" | "PARTIALLY_SUPPORTED" | "NOT_SUPPORTED" | "CONTRADICTED" | "NOT_CHECKED";
+
+export interface VerificationEvidence {
+  claim_id: string;
+  claim_text: string;
+  status: VerificationStatus;
+  citation?: string | null;
+  source: {
+    name?: string | null;
+    url?: string | null;
+    version_date?: string | null;
+    excerpt?: string | null;
+  };
+  checks: {
+    citation_exists: boolean;
+    specifics_supported?: boolean | null;
+    claim_support: ClaimSupport;
+  };
+  reason: string;
 }
 
 export interface AnalysisResult {

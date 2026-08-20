@@ -376,6 +376,186 @@ class VerificationService:
             warning=warning,
         )
 
+    # ── Evidence-based verification ──
+    # Guiding rule: semantic similarity is RETRIEVAL evidence, not VERIFICATION
+    # evidence. A vector-store distance can tell you which passage to inspect;
+    # it cannot establish that a claim is true. Everything below reasons about
+    # the exact retrieved passage instead.
+
+    def _find_source_for_citation(
+        self, citation: str, retrieval_context: RetrievalContext
+    ):
+        """Return the retrieved result whose citation matches, else None."""
+        if not citation:
+            return None
+        for result in retrieval_context.get_all_sources():
+            meta = result.chunk.metadata
+            if meta.citation and self._citations_match(citation, meta.citation):
+                return result
+        return None
+
+    def _select_excerpt(self, claim: str, source_text: str, max_chars: int = 600) -> str:
+        """Pick the passage from the source that best bears on the claim.
+
+        Chooses by term overlap rather than position so the excerpt shown as
+        evidence is the part a reader would actually need to judge the claim.
+        """
+        sentences = [s.strip() for s in _SENTENCE_SPLIT.split(source_text) if s.strip()]
+        if not sentences:
+            return source_text[:max_chars]
+
+        claim_terms = self._content_terms(claim)
+        if not claim_terms:
+            return " ".join(sentences)[:max_chars]
+
+        scored = []
+        for i, sent in enumerate(sentences):
+            overlap = len(claim_terms & self._content_terms(sent))
+            scored.append((overlap, i, sent))
+        scored.sort(key=lambda t: (-t[0], t[1]))
+
+        # Keep the best sentence plus its neighbours, in original order.
+        best_idx = scored[0][1]
+        window = sentences[max(0, best_idx - 1): best_idx + 2]
+        excerpt = " ".join(window).strip()
+        return excerpt[:max_chars]
+
+    @staticmethod
+    def _content_terms(text: str) -> set:
+        """Lowercased content words, minus regulatory boilerplate."""
+        stop = {
+            "the", "and", "for", "that", "this", "with", "from", "must", "shall",
+            "any", "all", "such", "under", "section", "part", "cfr", "usc", "may",
+            "not", "are", "was", "were", "been", "have", "has", "will", "which",
+            "its", "their", "them", "they", "policy", "policies", "required",
+            "requirement", "requirements", "including", "include", "includes",
+        }
+        words = re.findall(r"[a-z]{4,}", text.lower())
+        return {w for w in words if w not in stop}
+
+    def build_claim_evidence(
+        self,
+        claim_id: str,
+        claim_text: str,
+        citation: str,
+        retrieval_context: Optional[RetrievalContext] = None,
+    ):
+        """Build an auditable evidence record for a single claim.
+
+        Runs the deterministic checks:
+          1. Does the cited section exist in retrieved authoritative material?
+          2. Are concrete durations stated with it actually in that material?
+          3. Which exact passage bears on this claim?
+
+        The semantic claim-support check (does the excerpt actually entail the
+        claim?) is deliberately left as NOT_CHECKED here and filled in
+        separately, so a status is never upgraded to "verified" by a similarity
+        score alone.
+        """
+        from app.models.schemas import (
+            VerificationEvidence, EvidenceSource, EvidenceChecks, ClaimSupport,
+        )
+
+        evidence = VerificationEvidence(
+            claim_id=claim_id,
+            claim_text=claim_text,
+            citation=citation or None,
+            status=VerificationStatus.unverified,
+            source=EvidenceSource(),
+            checks=EvidenceChecks(),
+            reason="",
+        )
+
+        if not retrieval_context or not retrieval_context.get_all_sources():
+            evidence.reason = (
+                "No authoritative source material was retrieved for this request, so "
+                "this claim could not be checked against anything."
+            )
+            return evidence
+
+        match = self._find_source_for_citation(citation, retrieval_context)
+        if match is None:
+            evidence.reason = (
+                f"The cited authority ({citation or 'none given'}) was not among the "
+                f"authoritative sources retrieved for this request, so the citation "
+                f"itself could not be confirmed."
+            )
+            return evidence
+
+        meta = match.chunk.metadata
+        evidence.checks.citation_exists = True
+        evidence.source = EvidenceSource(
+            name=meta.source_name,
+            url=meta.url,
+            version_date=meta.effective_date,
+            excerpt=self._select_excerpt(claim_text, match.chunk.text),
+        )
+
+        # Concrete durations are checked against ALL retrieved text, not just
+        # this chunk, to avoid false alarms when a figure is stated in a
+        # neighbouring section of the same regulation.
+        all_text = " ".join(r.chunk.text for r in retrieval_context.get_all_sources())
+        specifics = self._extract_specifics(claim_text)
+        if specifics:
+            unsupported = [s for s in specifics if not self._specific_supported(s, all_text)]
+            evidence.checks.specifics_supported = not unsupported
+            if unsupported:
+                evidence.status = VerificationStatus.partially_verified
+                evidence.reason = (
+                    f"The cited authority was found, but the timeframe(s) stated with it "
+                    f"({', '.join(unsupported)}) do not appear in the source text. Confirm "
+                    f"the actual figure in the regulation before relying on it."
+                )
+                return evidence
+
+        # Citation confirmed and no contradicted specifics, but the substantive
+        # claim has not been tested against the excerpt yet.
+        evidence.status = VerificationStatus.partially_verified
+        evidence.checks.claim_support = ClaimSupport.not_checked
+        evidence.reason = (
+            "The cited authority was located in retrieved source material and any stated "
+            "timeframes match it. Whether the excerpt fully supports the substantive claim "
+            "has not been independently confirmed."
+        )
+        return evidence
+
+    def apply_claim_support(self, evidence, support, note: str = ""):
+        """Fold a claim-support result into an evidence record.
+
+        This is the only path to a `verified` status: the citation must exist,
+        stated specifics must hold, and the excerpt must be judged to support
+        the claim. Nothing else may promote a record to verified.
+        """
+        from app.models.schemas import ClaimSupport
+
+        evidence.checks.claim_support = support
+
+        if support == ClaimSupport.contradicted:
+            evidence.status = VerificationStatus.contradicted
+            evidence.reason = note or (
+                "The authoritative excerpt appears to contradict this claim. Do not rely "
+                "on it without checking the regulation directly."
+            )
+        elif support == ClaimSupport.supported and evidence.checks.citation_exists:
+            evidence.status = VerificationStatus.verified
+            evidence.reason = note or (
+                "Citation located in authoritative source material, stated timeframes "
+                "match, and the cited passage supports this claim."
+            )
+        elif support == ClaimSupport.not_supported:
+            evidence.status = VerificationStatus.unverified
+            evidence.reason = note or (
+                "The cited authority exists, but the passage does not appear to support "
+                "this claim. Treat the claim as unverified."
+            )
+        else:
+            evidence.status = VerificationStatus.partially_verified
+            evidence.reason = note or (
+                "The cited authority exists and partially bears on this claim, but does "
+                "not fully establish it."
+            )
+        return evidence
+
     def check_unsupported_specifics(
         self,
         text: str,
