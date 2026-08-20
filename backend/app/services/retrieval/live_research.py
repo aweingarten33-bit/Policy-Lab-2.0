@@ -23,9 +23,11 @@ Curated search sources:
   - OIG advisory opinions and work plans (oig.hhs.gov)
 """
 
+import asyncio
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -43,6 +45,15 @@ logger = logging.getLogger(__name__)
 
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "").strip()
 TAVILY_URL = "https://api.tavily.com/search"
+
+# A web search either answers quickly or is not going to. The old 30s ceiling
+# was long enough that a search engine quietly refusing to respond -- which is
+# what DuckDuckGo does to cloud IPs -- looked exactly like the app being slow.
+LIVE_RESEARCH_REQUEST_TIMEOUT = 10.0
+
+# Ceiling for a whole round of live research, across every source. Live
+# research improves an answer; it must never be the reason someone waits.
+LIVE_RESEARCH_TOTAL_BUDGET = 20.0
 
 
 def _is_gov_url(url: str) -> bool:
@@ -206,7 +217,7 @@ class LiveResearchService:
     def client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                timeout=30.0,
+                timeout=LIVE_RESEARCH_REQUEST_TIMEOUT,
                 follow_redirects=True,
                 headers={
                     "User-Agent": "CompliancePolicyAnalyzer/3.0 (Healthcare compliance research tool)",
@@ -247,19 +258,48 @@ class LiveResearchService:
         # Determine which curated sources to search
         target_sources = self._select_sources(policy_type, jurisdiction, needs_freshness, industry)
 
-        all_results: List[LiveResearchResult] = []
-
-        for source_key in target_sources:
+        # Searched concurrently, and this matters a lot. Run one after another,
+        # five curated sources against a 30-second timeout could spend 150
+        # seconds before a single word was generated -- and that cost was paid
+        # again at every generation step. Waiting on five independent HTTP
+        # requests in sequence buys nothing: the whole batch now takes about as
+        # long as its slowest member.
+        async def _search_one(source_key: str) -> List[LiveResearchResult]:
             source_config = CURATED_SOURCES[source_key]
             # state_gov has no fixed domain to scope the search, so the state
             # itself has to be in the query text or every result is a coin flip.
-            source_query = f"{jurisdiction} {safe_query}" if source_key == "state_gov" and jurisdiction else safe_query
+            source_query = (
+                f"{jurisdiction} {safe_query}"
+                if source_key == "state_gov" and jurisdiction
+                else safe_query
+            )
             try:
                 results = await self._search_source(source_key, source_config, source_query)
-                all_results.extend(results[:max_results])
+                return results[:max_results]
             except Exception as e:
                 logger.warning(f"Live research failed for {source_key}: {e}")
-                continue
+                return []
+
+        started = time.monotonic()
+        try:
+            # A hard ceiling on top of the per-request timeouts. Live research
+            # is an enhancement; it must never be the reason a user waits.
+            gathered = await asyncio.wait_for(
+                asyncio.gather(*(_search_one(k) for k in target_sources)),
+                timeout=LIVE_RESEARCH_TOTAL_BUDGET,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Live research exceeded its {LIVE_RESEARCH_TOTAL_BUDGET}s budget — "
+                f"continuing with knowledge-base grounding only."
+            )
+            gathered = []
+
+        all_results: List[LiveResearchResult] = [r for batch in gathered for r in batch]
+        logger.info(
+            f"Live research: {len(target_sources)} sources searched concurrently in "
+            f"{time.monotonic() - started:.1f}s"
+        )
 
         # Deduplicate by URL
         seen_urls = set()
