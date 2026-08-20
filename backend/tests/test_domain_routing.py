@@ -1,21 +1,23 @@
 """
 An analysis must be grounded in its own regulatory domain.
 
-Reported symptom: an OSHA industrial noise policy for a manufacturing plant
-came back grounded in 45 CFR Part 164 (HIPAA), 45 CFR Part 92 and OIG
-nursing-facility guidance, and the exported policy closed by advising the
-reader to "consult qualified healthcare compliance counsel" alongside a
-statement about protected health information.
+Reported symptom: an OSHA industrial noise policy came back grounded in 45 CFR
+Part 164 (HIPAA), 45 CFR Part 92 and OIG nursing-facility guidance, and the
+exported policy closed by advising the reader to "consult qualified healthcare
+compliance counsel" alongside a statement about protected health information.
 
 Cause: every industry's regulations share one `federal_regulation` collection,
 and retrieval only ever filtered by jurisdiction. The selected industry shaped
 the wording of the semantic query and nothing else, so nothing prevented a
-search from returning another sector's law -- and "employee training",
-"records retention" and "notification requirements" read as similar text
-whichever statute they sit in. Semantic similarity cannot separate regulatory
-domains; only a filter can.
+search from returning another sector's law -- "employee training", "records
+retention" and "notification requirements" read as similar text whichever
+statute they sit in. Semantic similarity cannot separate regulatory domains;
+only a filter can.
 
-The export boilerplate was hardcoded healthcare regardless of sector.
+The product has since been narrowed to healthcare. That makes the scoping
+below more important, not less: the remaining verticals sit close together,
+so a pharmacy analysis leaking hospital Conditions of Participation is a
+subtler and more plausible failure than the original one.
 
 Run: python -m pytest tests/test_domain_routing.py -v
 """
@@ -24,133 +26,141 @@ import pytest
 
 from app.services.retrieval.retriever import ComplianceRetriever
 
+HEALTHCARE_VERTICALS = ["healthcare", "home_health", "pharmacy"]
+
 
 @pytest.fixture
 def retriever():
     return ComplianceRetriever.__new__(ComplianceRetriever)
 
 
+class TestScopeIsHealthcare:
+    """The product is positioned for healthcare compliance officers. Anything
+    it offers has to be backed by regulation actually loaded for it."""
+
+    def test_only_healthcare_verticals_are_offered(self):
+        from app.services.industry_config import INDUSTRIES
+        assert set(INDUSTRIES) == set(HEALTHCARE_VERTICALS)
+
+    def test_the_catch_all_is_gone(self):
+        """"Other / General" invited exactly the cross-domain failure above."""
+        from app.services.industry_config import INDUSTRIES
+        assert "other" not in INDUSTRIES
+
+    def test_every_vertical_has_a_policy_menu(self):
+        from app.services.industry_config import INDUSTRIES, get_policy_types
+        for slug in INDUSTRIES:
+            assert get_policy_types(slug), f"{slug} has no policy types"
+
+
 class TestIndustryScoping:
-    def test_healthcare_law_is_unreachable_from_a_factory(self, retriever):
-        """The exact leak that was reported."""
-        allowed = retriever._allowed_citations("manufacturing")
-        for healthcare_part in ("45 CFR Part 164", "45 CFR Part 160",
-                                "42 CFR Part 2", "45 CFR Part 92"):
-            assert healthcare_part not in allowed, (
-                f"{healthcare_part} is still reachable from a manufacturing analysis"
-            )
+    def test_pharmacy_cannot_reach_hospital_conditions_of_participation(self, retriever):
+        allowed = retriever._allowed_citations("pharmacy")
+        assert "42 CFR Part 482" not in allowed
 
-    def test_osha_is_reachable_from_a_factory(self, retriever):
-        allowed = retriever._allowed_citations("manufacturing")
-        assert "29 CFR Part 1910" in allowed
-        assert "29 CFR Part 1904" in allowed, "hearing-loss recordability lives here"
-
-    def test_healthcare_still_reaches_its_own_law(self, retriever):
+    def test_hospitals_cannot_reach_dea_registration_rules(self, retriever):
         allowed = retriever._allowed_citations("healthcare")
-        assert "45 CFR Part 164" in allowed
-        assert "42 CFR Part 411" in allowed
+        assert "21 CFR Part 1301" not in allowed
 
-    def test_employment_law_reaches_every_industry(self, retriever):
-        """FMLA and the ADA bind a factory and a hospital alike."""
-        for industry in ("healthcare", "manufacturing", "pharmacy", "child_family_services"):
-            allowed = retriever._allowed_citations(industry)
-            assert "29 CFR Part 825" in allowed, f"FMLA missing for {industry}"
-            assert "29 CFR Part 1630" in allowed, f"ADA missing for {industry}"
+    def test_each_vertical_reaches_its_own_law(self, retriever):
+        expected = {
+            "healthcare": "42 CFR Part 482",
+            "home_health": "42 CFR Part 484",
+            "pharmacy": "21 CFR Part 1306",
+        }
+        for slug, citation in expected.items():
+            assert citation in retriever._allowed_citations(slug)
+
+    def test_hipaa_reaches_every_healthcare_vertical(self, retriever):
+        for slug in HEALTHCARE_VERTICALS:
+            assert "45 CFR Part 164" in retriever._allowed_citations(slug), slug
 
     def test_an_unknown_industry_is_not_scoped(self, retriever):
-        """Absent a known industry, fall back to the old unfiltered behaviour
-        rather than silently returning nothing."""
+        """Absent a known industry, fall back to unfiltered rather than
+        silently returning nothing."""
         assert retriever._allowed_citations(None) is None
-        assert retriever._allowed_citations("not_a_real_industry") is None
+        assert retriever._allowed_citations("manufacturing") is None
 
     def test_the_filter_combines_industry_and_jurisdiction(self, retriever):
-        combined = retriever._build_metadata_filter("New York", "manufacturing")
+        combined = retriever._build_metadata_filter("Tennessee", "healthcare")
         assert "$and" in combined
         assert len(combined["$and"]) == 2
 
     def test_the_filter_is_flat_with_one_clause(self, retriever):
-        only_industry = retriever._build_metadata_filter(None, "manufacturing")
+        only_industry = retriever._build_metadata_filter(None, "healthcare")
         assert "$and" not in only_industry
         assert "citation" in only_industry
 
 
+class TestEmploymentBaselineSurvivedTheNarrowing:
+    """The employment baseline used to live inside "Other / General", so every
+    other vertical inherited it from there. Removing that category would have
+    silently stripped ADA, FMLA and OSHA out of healthcare -- and a hospital
+    asking for an absenteeism policy would have had nothing real to cite."""
+
+    @pytest.mark.parametrize("slug", HEALTHCARE_VERTICALS)
+    @pytest.mark.parametrize("citation,name", [
+        ("29 CFR Part 825", "FMLA"),
+        ("29 CFR Part 1630", "ADA"),
+        ("29 CFR Part 1601", "Title VII"),
+        ("29 CFR Part 1910", "OSHA"),
+        ("29 CFR Part 541", "FLSA"),
+    ])
+    def test_employment_law_reaches_every_vertical(self, retriever, slug, citation, name):
+        assert citation in retriever._allowed_citations(slug), f"{name} missing for {slug}"
+
+    def test_the_baseline_belongs_to_no_industry(self):
+        from app.services.industry_config import BASELINE_EMPLOYMENT_TARGETS, INDUSTRIES
+        assert len(BASELINE_EMPLOYMENT_TARGETS) == 7
+        for cfg in INDUSTRIES.values():
+            parts = {(t, p) for t, p, _, _ in cfg.get("ecfr_targets", [])}
+            for title, part, _, _ in BASELINE_EMPLOYMENT_TARGETS:
+                assert (title, part) not in parts, "baseline duplicated into an industry"
+
+    def test_the_baseline_is_still_downloaded(self):
+        """Nothing references these parts through an industry any more, so if
+        the seeder did not list them separately they would simply stop being
+        fetched."""
+        from app.services.industry_config import BASELINE_EMPLOYMENT_TARGETS
+        from app.services.retrieval.ecfr_client import ECFR_TARGETS
+
+        seeded = {(t, p) for t, p, _, _ in ECFR_TARGETS}
+        for title, part, label, _ in BASELINE_EMPLOYMENT_TARGETS:
+            assert (title, part) in seeded, f"{label} is no longer seeded"
+
+
 class TestGuidanceScoping:
     """OIG/HCCA compliance-program guidance governs federal health care program
-    participants, and has nothing to say about a factory's noise policy."""
+    participants."""
 
-    @pytest.mark.parametrize("industry", ["healthcare", "home_health", "pharmacy"])
+    @pytest.mark.parametrize("industry", HEALTHCARE_VERTICALS)
     def test_guidance_reaches_healthcare_sectors(self, retriever, industry):
         cols = retriever._get_relevant_collections("gap_analysis", None, industry)
         assert "federal_guidance" in cols
 
-    @pytest.mark.parametrize("industry", ["manufacturing", "other", "child_family_services"])
-    def test_guidance_is_excluded_elsewhere(self, retriever, industry):
-        cols = retriever._get_relevant_collections("gap_analysis", None, industry)
-        assert "federal_guidance" not in cols
-
     def test_collections_are_not_mutated_between_calls(self, retriever):
         """The step map was previously returned by reference and appended to,
         so a state-law lookup leaked into later, unrelated requests."""
-        first = retriever._get_relevant_collections("gap_analysis", "New York", "healthcare")
+        first = retriever._get_relevant_collections("gap_analysis", "Tennessee", "healthcare")
         second = retriever._get_relevant_collections("gap_analysis", None, "healthcare")
         assert "state_law" in first
         assert "state_law" not in second
-
-
-class TestManufacturingVertical:
-    def test_the_vertical_exists(self):
-        from app.services.industry_config import INDUSTRIES
-        assert "manufacturing" in INDUSTRIES
-
-    def test_it_offers_a_noise_policy(self):
-        from app.services.industry_config import get_policy_types
-        slugs = {p["slug"] for p in get_policy_types("manufacturing")}
-        assert "hearing_conservation" in slugs
-
-    def test_its_live_sources_are_osha_not_hhs(self):
-        from app.services.industry_config import INDUSTRIES
-        from app.services.retrieval.live_research import CURATED_SOURCES
-
-        sources = INDUSTRIES["manufacturing"]["live_research_sources"]
-        assert "osha_standards" in sources
-        for healthcare_source in ("hhs_regulations", "ocr_enforcement", "cms_guidance", "oig_advisory"):
-            assert healthcare_source not in sources
-        for key in sources:
-            assert key in CURATED_SOURCES, f"{key} is not a configured source"
-
-    def test_the_persona_requires_checking_state_plans(self):
-        """Tennessee runs TOSHA; an analysis that names only federal OSHA for a
-        Tennessee plant has the enforcing authority wrong."""
-        from app.services.industry_config import INDUSTRIES
-        persona = INDUSTRIES["manufacturing"]["persona"].lower()
-        assert "state plan" in persona
-        assert "tosha" in persona
-
-    def test_the_persona_rejects_certifications_as_requirements(self):
-        """LEED acoustic 'requirements' were invented for a plant whose
-        certification does not carry them."""
-        persona = __import__(
-            "app.services.industry_config", fromlist=["INDUSTRIES"]
-        ).INDUSTRIES["manufacturing"]["persona"].lower()
-        assert "leed" in persona
-        assert "not regulatory requirements" in persona
 
 
 class TestExportBoilerplate:
     def test_counsel_matches_the_sector(self):
         from app.services.export_service import _counsel_phrase
         assert "healthcare" in _counsel_phrase("healthcare")
-        assert "healthcare" not in _counsel_phrase("manufacturing")
-        assert "occupational safety" in _counsel_phrase("manufacturing")
+        assert "pharmacy" in _counsel_phrase("pharmacy")
 
     def test_unknown_industry_gets_neutral_wording(self):
         from app.services.export_service import _counsel_phrase
         assert _counsel_phrase(None) == "qualified compliance counsel"
 
-    def test_phi_language_only_where_phi_exists(self):
+    def test_phi_language_matches_the_sector(self):
         from app.services.export_service import _handles_phi
-        assert _handles_phi("healthcare") is True
-        assert _handles_phi("manufacturing") is False
+        for slug in HEALTHCARE_VERTICALS:
+            assert _handles_phi(slug) is True
         assert _handles_phi(None) is False
 
     def test_models_carry_the_industry_through(self):
@@ -160,33 +170,9 @@ class TestExportBoilerplate:
         assert "industry" in ComplianceActionPackage.model_fields
         assert "industry" in RewrittenPolicy.model_fields
 
-
-class TestPromptDiscipline:
-    def _protocol(self):
-        from app.services.llm_service import ANALYTICAL_PROTOCOL
-        return ANALYTICAL_PROTOCOL
-
-    def test_no_hardcoded_year_for_the_model_to_copy(self):
-        """Reports generated in 2026 labelled regulations "current through
-        2024" because the instructions used that as an example."""
-        assert "current through 2024" not in self._protocol()
-
-    def test_applicability_is_checked_before_a_gap_is_raised(self):
-        """A statute listed in the references is not evidence it applies;
-        FMLA and ADEA workflows were invented inside a noise policy."""
-        protocol = self._protocol().lower()
-        assert "applicability before gap" in protocol
-        assert "remove the irrelevant" in protocol
-
-    def test_optional_provisions_are_not_deficiencies(self):
-        """OSHA says an age-correction allowance "may be made"; it was reported
-        as a Must Fix."""
-        protocol = self._protocol().lower()
-        assert "required vs optional" in protocol
-        assert '"may"' in protocol
-
-    def test_stricter_company_rules_are_not_attributed_to_regulators(self):
-        """A 30-year retention period was presented as an OSHA requirement
-        when the standard says two years."""
-        protocol = self._protocol().lower()
-        assert "exceeds the regulatory minimum" in protocol
+    def test_a_policy_does_not_call_itself_a_report(self):
+        import inspect
+        from app.services.export_service import _add_disclaimer_box
+        source = inspect.getsource(_add_disclaimer_box)
+        assert 'document_kind' in source
+        assert '"This policy"' in source

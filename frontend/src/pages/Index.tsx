@@ -379,10 +379,7 @@ function SourceBadge({ attribution, urlMap }: { attribution?: SourceAttribution;
 const FALLBACK_INDUSTRIES: IndustryOption[] = [
   { slug: "healthcare", name: "Hospitals", icon: "🏥", description: "Acute care hospitals, hospital systems, hospital-based compliance and privacy programs" },
   { slug: "home_health", name: "Home Health", icon: "🏠", description: "Medicare-certified home health agencies, home care agencies" },
-  { slug: "child_family_services", name: "Child & Family Services", icon: "🧸", description: "Foster care and child welfare, Head Start and early childhood, youth programs, and multi-service nonprofits" },
   { slug: "pharmacy", name: "Pharmacy", icon: "💊", description: "Retail, hospital, long-term care, specialty, and compounding pharmacies" },
-  { slug: "manufacturing", name: "Manufacturing & General Industry", icon: "🏭", description: "Plants, warehouses, distribution centers, and other general-industry worksites governed by OSHA" },
-  { slug: "other", name: "Other / General", icon: "📋", description: "Best for general employment/HR and organizational policies. Highly specialized regulatory areas outside employment law get less grounding." },
 ];
 
 export default function Index() {
@@ -1081,11 +1078,6 @@ export default function Index() {
                     </button>
                     <span className="text-[12px] font-mono text-muted-foreground/70">{draftDesc.length} / 2000</span>
                   </div>
-                  {industry === "other" && (
-                    <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
-                      Mention the type of business or operation in your description for best results.
-                    </p>
-                  )}
                 </>
               )}
 

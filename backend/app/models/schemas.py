@@ -523,7 +523,7 @@ class ActionPackageRequest(BaseModel):
     file_name: Optional[str] = Field(None, description="Original file name, if uploaded")
     industry: Optional[str] = Field(
         "healthcare",
-        description="Industry vertical: 'healthcare', 'home_health', 'other'. Determines which regulations are applied."
+        description="Industry vertical: 'healthcare', 'home_health', or 'pharmacy'. Determines which regulations are applied."
     )
     jurisdiction: Optional[str] = Field(None, description="State/jurisdiction code")
     outputs: Optional[List[str]] = Field(
@@ -540,7 +540,7 @@ class RewritePolicyRequest(BaseModel):
     """Request body for the 'Fix All Gaps' action — rewrite the policy to resolve every finding from an existing gap analysis."""
     text: str = Field(..., min_length=50, max_length=MAX_INPUT_CHARS, description="The original policy text that was analyzed")
     gap_analysis: AnalysisResult = Field(..., description="The gap analysis results to fix")
-    industry: Optional[str] = Field("healthcare", description="Industry vertical: 'healthcare', 'home_health', 'other'")
+    industry: Optional[str] = Field("healthcare", description="Industry vertical: 'healthcare', 'home_health', or 'pharmacy'")
     jurisdiction: Optional[str] = Field(None, description="State/jurisdiction code")
 
 
@@ -558,7 +558,7 @@ class PackageExportRequest(BaseModel):
 class DraftPolicyRequest(BaseModel):
     """Request body for drafting a new policy from scratch."""
     policy_description: str = Field(..., min_length=5, max_length=MAX_INPUT_CHARS, description="Plain-English description of the policy needed")
-    industry: Optional[str] = Field("healthcare", description="Industry vertical: 'healthcare', 'home_health', 'other'")
+    industry: Optional[str] = Field("healthcare", description="Industry vertical: 'healthcare', 'home_health', or 'pharmacy'")
     jurisdiction: Optional[str] = Field(None, description="State/jurisdiction code (e.g., 'NY')")
 
 

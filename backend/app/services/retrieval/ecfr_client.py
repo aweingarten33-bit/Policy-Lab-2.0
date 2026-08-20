@@ -36,12 +36,19 @@ ECFR_BASE = "https://www.ecfr.gov/api/versioner/v1"
 
 
 def _build_ecfr_targets() -> List[tuple]:
-    """Union of every industry's ecfr_targets, deduplicated by (title, part)."""
-    from app.services.industry_config import INDUSTRIES
+    """Every industry's ecfr_targets plus the employment baseline, deduped.
+
+    The baseline is listed separately because it belongs to no industry. It
+    used to be carried by the "Other / General" vertical, so when that was
+    removed nothing referenced ADA, FMLA, OSHA or Title VII any more -- and
+    they would simply have stopped being downloaded, silently removing the
+    grounding behind every HR and workplace-safety policy.
+    """
+    from app.services.industry_config import BASELINE_EMPLOYMENT_TARGETS, INDUSTRIES
 
     seen = set()
     targets: List[tuple] = []
-    for cfg in INDUSTRIES.values():
+    for cfg in list(INDUSTRIES.values()) + [{"ecfr_targets": BASELINE_EMPLOYMENT_TARGETS}]:
         for title, part, label, category in cfg.get("ecfr_targets", []):
             key = (title, part)
             if key in seen:

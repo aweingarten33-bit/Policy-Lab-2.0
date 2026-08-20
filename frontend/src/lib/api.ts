@@ -614,7 +614,7 @@ export async function startDraftJob(
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       policy_description: policyDescription,
-      industry: industry || "other",
+      industry: industry || "healthcare",
       jurisdiction: jurisdiction || undefined,
     }),
   });

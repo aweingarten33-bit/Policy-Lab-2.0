@@ -163,8 +163,6 @@ def _counsel_phrase(industry: Optional[str]) -> str:
         "healthcare": "qualified healthcare compliance counsel",
         "home_health": "qualified healthcare compliance counsel",
         "pharmacy": "qualified pharmacy regulatory counsel",
-        "child_family_services": "qualified child welfare and nonprofit counsel",
-        "manufacturing": "qualified occupational safety and employment counsel",
     }.get(industry or "", "qualified compliance counsel")
 
 

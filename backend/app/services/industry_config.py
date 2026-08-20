@@ -159,85 +159,6 @@ INDUSTRIES: dict = {
         ),
         "audit_authority": "state home health survey, CMS Conditions of Participation deficiency citation, or OIG program integrity audit",
     },
-    "child_family_services": {
-        "name": "Child & Family Services",
-        "icon": "🧸",
-        "description": "Child welfare and foster care agencies, Head Start and early childhood programs, youth development and after-school providers, and multi-service nonprofits running school-based health, behavioral health, and food programs",
-        "ecfr_targets": [
-            # Child welfare / foster care (Title IV-E)
-            (45, 1355, "45 CFR Part 1355 — Title IV-E Child Welfare General Provisions", SourceCategory.federal_regulation),
-            (45, 1356, "45 CFR Part 1356 — Title IV-E Foster Care & Adoption Assistance", SourceCategory.federal_regulation),
-            # Early childhood
-            (45, 1302, "45 CFR Part 1302 — Head Start Program Performance Standards", SourceCategory.federal_regulation),
-            (45, 98,   "45 CFR Part 98 — Child Care and Development Fund (CCDF)", SourceCategory.federal_regulation),
-            # Education & student records — these agencies run school-based programs
-            (34, 99,   "34 CFR Part 99 — FERPA (Student Education Records)", SourceCategory.federal_regulation),
-            # Food programs
-            (7,  226,  "7 CFR Part 226 — Child and Adult Care Food Program (CACFP)", SourceCategory.federal_regulation),
-            # Grant compliance — these organizations are overwhelmingly grant-funded
-            (45, 75,   "45 CFR Part 75 — HHS Uniform Administrative Requirements for Grants", SourceCategory.federal_regulation),
-            # Disability nondiscrimination in federally funded programs
-            (45, 84,   "45 CFR Part 84 — Section 504 Nondiscrimination on the Basis of Disability", SourceCategory.federal_regulation),
-        ],
-        "live_research_sources": ["federal_register"],
-        "persona": (
-            "You are a senior compliance attorney for child welfare and youth-serving nonprofit "
-            "organizations in the United States. You advise agencies that combine several regulated "
-            "programs under one roof — foster care and adoption, Head Start and early childhood "
-            "education, school-based health and behavioral health clinics, after-school and youth "
-            "development, juvenile justice services, and food programs.\n\n"
-            "A user will provide a policy. Your job:\n\n"
-            "1. Read the policy and identify which program area(s) it governs. This is the crux of "
-            "the analysis for these organizations: a single agency is simultaneously a child welfare "
-            "provider, an educator, a healthcare provider, an employer, and a federal grantee, and "
-            "the SAME policy can be governed by several regimes at once.\n"
-            "2. Identify every federal, state, and local requirement that applies. Key frameworks: "
-            "Title IV-E foster care requirements (45 CFR Parts 1355/1356) including case planning, "
-            "permanency hearings, caseworker visits, and licensing of foster homes; Head Start "
-            "Program Performance Standards (45 CFR Part 1302) including ratios, supervision, "
-            "screening, and family engagement; CCDF child care requirements (45 CFR Part 98); FERPA "
-            "(34 CFR Part 99) for student records; HIPAA where clinical services are delivered; "
-            "42 CFR Part 2 for substance use records; CACFP (7 CFR Part 226) for meal service and "
-            "recordkeeping; 45 CFR Part 75 for grant financial management, procurement, and "
-            "subrecipient monitoring; Section 504 (45 CFR Part 84) and the ADA; mandated-reporter "
-            "obligations; and state child care/foster care licensing.\n"
-            "3. Pay explicit attention to CONFIDENTIALITY LAYERING. A single youth's record can be "
-            "governed by FERPA, HIPAA, 42 CFR Part 2, and state child welfare confidentiality law "
-            "simultaneously, with different consent and disclosure rules under each. Policies that "
-            "cite only one are a common and serious gap — flag it whenever a policy addresses "
-            "records or information sharing without resolving which regime controls.\n"
-            "4. Check background-check, supervision, ratio, training, and mandated-reporting "
-            "requirements wherever the policy touches direct contact with children.\n"
-            "5. Identify every gap, missing element, vague language, and non-compliant clause.\n"
-            "6. For every gap, write the exact policy language that should replace or be added.\n\n"
-            "Be concrete. These organizations are audited by multiple funders and licensing bodies "
-            "at once, and a policy that satisfies one regime while violating another is the most "
-            "common real-world failure."
-        ),
-        "regulations": [
-            "45 CFR Part 1355 — Title IV-E Child Welfare General Provisions",
-            "45 CFR Part 1356 — Title IV-E Foster Care & Adoption Assistance",
-            "45 CFR Part 1302 — Head Start Program Performance Standards",
-            "45 CFR Part 98 — Child Care and Development Fund (CCDF)",
-            "34 CFR Part 99 — FERPA (Student Education Records)",
-            "HIPAA Privacy, Security & Breach Notification (45 CFR Parts 160, 164)",
-            "42 CFR Part 2 — Confidentiality of Substance Use Disorder Records",
-            "7 CFR Part 226 — Child and Adult Care Food Program (CACFP)",
-            "45 CFR Part 75 — HHS Uniform Grant Administrative Requirements",
-            "45 CFR Part 84 — Section 504 (Disability Nondiscrimination)",
-            "Child Abuse Prevention and Treatment Act (CAPTA) mandated reporting",
-            "State child welfare, foster care, and child care licensing requirements",
-        ],
-        "state_addendum": (
-            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST also check "
-            "all applicable {jurisdiction} requirements: state child welfare and foster care "
-            "licensing regulations, child care licensing standards, mandated-reporter statutes, "
-            "state student-records and minor-consent laws (which frequently differ from federal "
-            "defaults on who may consent to behavioral health treatment), and state background-check "
-            "requirements for staff and volunteers with child contact. Cite state law by code section."
-        ),
-        "audit_authority": "a funder audit, state licensing review, or federal grant monitoring visit",
-    },
 
     "pharmacy": {
         "name": "Pharmacy",
@@ -254,6 +175,12 @@ INDUSTRIES: dict = {
             (21, 211, "21 CFR Part 211 — Current Good Manufacturing Practice for Finished Pharmaceuticals", SourceCategory.federal_regulation),
             # Pharmacy benefit / payer
             (42, 423, "42 CFR Part 423 — Medicare Part D Prescription Drug Benefit", SourceCategory.federal_regulation),
+            # A pharmacy is a HIPAA covered entity, and the menu offers a
+            # "Patient Privacy Policy — HIPAA in the pharmacy setting". Without
+            # these the one policy type that is entirely about HIPAA had no
+            # HIPAA text to be checked against.
+            (45, 160, "45 CFR Part 160 — General HIPAA Provisions", SourceCategory.federal_regulation),
+            (45, 164, "45 CFR Part 164 — HIPAA Privacy, Security & Breach Notification", SourceCategory.federal_regulation),
         ],
         "live_research_sources": ["hhs_regulations", "cms_guidance", "oig_advisory", "federal_register"],
         "persona": (
@@ -318,141 +245,12 @@ INDUSTRIES: dict = {
     # under Hospitals the analysis was grounded in HIPAA and OIG nursing-facility
     # guidance and signed off with "consult qualified healthcare compliance
     # counsel".
-    "manufacturing": {
-        "name": "Manufacturing & General Industry",
-        "icon": "🏭",
-        "description": "Plants, warehouses, distribution centers, and other general-industry worksites governed by OSHA",
-        "ecfr_targets": [
-            (29, 1910, "29 CFR Part 1910 — OSHA Occupational Safety & Health Standards (General Industry)", SourceCategory.federal_regulation),
-            # Injury and illness recordkeeping, including §1904.10 on recording
-            # occupational hearing loss.
-            (29, 1904, "29 CFR Part 1904 — Recording & Reporting Occupational Injuries and Illnesses", SourceCategory.federal_regulation),
-            (29, 1903, "29 CFR Part 1903 — OSHA Inspections, Citations & Penalties", SourceCategory.federal_regulation),
-            (29, 1926, "29 CFR Part 1926 — Safety & Health Regulations for Construction", SourceCategory.federal_regulation),
-            (40, 68,   "40 CFR Part 68 — EPA Risk Management Program (Chemical Accident Prevention)", SourceCategory.federal_regulation),
-        ],
-        "live_research_sources": ["osha_standards", "dol_guidance", "federal_register", "state_gov"],
-        "persona": (
-            "You are a senior occupational safety and health compliance expert advising "
-            "manufacturing plants, warehouses, and distribution centers in the United States. "
-            "You advise EHS managers, plant managers, and safety committees.\n\n"
-            "A user will provide a workplace safety or operational policy. Your job:\n\n"
-            "1. Read the policy carefully and identify the exact policy type and which OSHA "
-            "standard it maps to.\n"
-            "2. Identify EVERY applicable federal and state requirement. Key frameworks: "
-            "29 CFR Part 1910 (General Industry — including §1910.95 Occupational Noise Exposure, "
-            "§1910.132 PPE, §1910.147 Lockout/Tagout, §1910.1200 Hazard Communication, "
-            "§1910.134 Respiratory Protection), 29 CFR Part 1904 (injury and illness recordkeeping, "
-            "including §1904.10 occupational hearing loss), the General Duty Clause at "
-            "29 U.S.C. §654(a)(1), and applicable EPA requirements.\n"
-            "3. STATE PLAN STATES ARE MANDATORY TO CHECK. Roughly half the states run their own "
-            "OSHA-approved State Plan (including California/Cal-OSHA, Tennessee/TOSHA, "
-            "Michigan/MIOSHA, North Carolina, Kentucky, Washington, Oregon, and others). Where a "
-            "state operates a plan, that state's agency — not federal OSHA — is the enforcing "
-            "authority, and its standards must be at least as effective as the federal ones and "
-            "are sometimes stricter. If a jurisdiction is given, name the enforcing agency "
-            "explicitly rather than referring only to federal OSHA.\n"
-            "4. Distinguish what OSHA REQUIRES from what the employer has chosen to do. An "
-            "internal deadline, a stricter threshold, or a longer retention period is legitimate "
-            "company policy — but it must be described as company policy, never attributed to a "
-            "regulation that does not impose it.\n"
-            "5. Watch specifically for mandatory sub-requirements that policies routinely omit: "
-            "notifying employees of monitoring results, the right of employees to observe "
-            "monitoring, qualification requirements for personnel performing medical surveillance, "
-            "provision of PPE at no cost with a genuine choice of types and proper fitting, "
-            "prescribed training content, and posting requirements.\n"
-            "6. Voluntary certifications (LEED, ISO, consensus standards) are NOT regulatory "
-            "requirements. Never present a certification as imposing an ongoing legal obligation, "
-            "and never assume a facility carries a specific certification credit without evidence."
-        ),
-        "regulations": [
-            "29 CFR Part 1910 — OSHA General Industry Standards",
-            "29 CFR §1910.95 — Occupational Noise Exposure",
-            "29 CFR Part 1904 — Injury & Illness Recordkeeping",
-            "29 U.S.C. §654(a)(1) — General Duty Clause",
-            "State OSHA Plan requirements where applicable",
-            "40 CFR Part 68 — EPA Risk Management Program",
-        ],
-        "state_addendum": (
-            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". Determine whether "
-            "{jurisdiction} operates an OSHA-approved State Plan. If it does, name that state "
-            "agency as the enforcing authority (for example TOSHA in Tennessee, Cal/OSHA in "
-            "California) rather than referring only to federal OSHA, and check for state standards "
-            "stricter than the federal minimum. Also check {jurisdiction} workers' compensation "
-            "reporting duties and any applicable local ordinances. Where a local ordinance is "
-            "cited, confirm it actually applies to this facility type — many municipal noise and "
-            "nuisance ordinances expressly exempt permitted industrial operations. Cite state and "
-            "local law by code section."
-        ),
-    },
-    "other": {
-        "name": "Other / General",
-        "icon": "📋",
-        "description": "Best for general employment/HR and organizational policies (whistleblower, remote work, code of conduct, vendor management). Highly specialized regulatory areas outside employment law get less grounding — describe your business specifically for best results.",
-        "ecfr_targets": [
-            (29, 1630, "29 CFR Part 1630 — ADA Employment Regulations", SourceCategory.federal_regulation),
-            (29, 1604, "29 CFR Part 1604 — Sex Discrimination Guidelines", SourceCategory.federal_regulation),
-            (29, 825,  "29 CFR Part 825 — FMLA Regulations", SourceCategory.federal_regulation),
-            # These were named in the prompts' "key regulations" lists but their
-            # text was never loaded, so the model was asserting OSHA / Title VII
-            # / FLSA requirements with nothing to verify against.
-            (29, 1910, "29 CFR Part 1910 — OSHA Occupational Safety & Health Standards", SourceCategory.federal_regulation),
-            (29, 1601, "29 CFR Part 1601 — EEOC Procedural Regulations (Title VII)", SourceCategory.federal_regulation),
-            (29, 541,  "29 CFR Part 541 — FLSA White-Collar Exemptions", SourceCategory.federal_regulation),
-            (29, 1635, "29 CFR Part 1635 — GINA (Genetic Information Nondiscrimination)", SourceCategory.federal_regulation),
-        ],
-        "live_research_sources": ["federal_register"],
-        "persona": (
-            "You are a senior generalist compliance attorney and policy expert in the United States. "
-            "You analyze compliance policies for any type of organization.\n\n"
-            "A user will provide a policy. Your job:\n\n"
-            "1. Read the policy carefully and identify the exact policy type and what kind of organization it applies to.\n"
-            "2. Based solely on the policy content, automatically infer and identify EVERY federal and state regulation, "
-            "statute, and guidance that could apply — employment law, privacy law, safety law, consumer protection, "
-            "anti-discrimination law, and any sector-specific rules implied by the content.\n"
-            "3. Check each inferred regulation against the actual policy text.\n"
-            "4. Identify every gap, missing element, vague language, and non-compliant clause.\n"
-            "5. For every gap, write the exact policy language that should replace or be added.\n\n"
-            "Be transparent when noting that industry-specific legal review by a specialist attorney is recommended "
-            "for regulations you cannot fully evaluate without knowing the specific sector."
-        ),
-        "regulations": [
-            "Title VII of the Civil Rights Act (42 U.S.C. §2000e)",
-            "Americans with Disabilities Act (ADA) (42 U.S.C. §12101)",
-            "Age Discrimination in Employment Act (ADEA) (29 U.S.C. §621)",
-            "Family and Medical Leave Act (FMLA) (29 U.S.C. §2601)",
-            "Fair Labor Standards Act (FLSA) (29 U.S.C. §201)",
-            "National Labor Relations Act (NLRA) (29 U.S.C. §151)",
-            "OSHA General Duty Clause (29 U.S.C. §654)",
-            "Federal Trade Commission Act §5 (15 U.S.C. §45)",
-            "State-specific employment and privacy law (varies by jurisdiction)",
-            "Additional sector-specific regulations inferred from policy content",
-        ],
-        "state_addendum": (
-            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST also check all applicable "
-            "{jurisdiction} state-specific employment, privacy, and business regulations. Cite state law by code section."
-        ),
-    },
 }
 
 # ── Policy type menus per industry ──
 # Each entry: { slug, label, description }
 
 POLICY_TYPES: dict = {
-    "child_family_services": [
-        {"slug": "mandated_reporting",      "label": "Mandated Reporting Policy",              "description": "Recognizing and reporting suspected abuse or neglect, timelines, documentation"},
-        {"slug": "background_checks_cfs",   "label": "Background Check & Screening Policy",     "description": "Staff, volunteer, and foster parent clearances before child contact"},
-        {"slug": "child_supervision",       "label": "Child Supervision & Ratios Policy",       "description": "Staff-to-child ratios, sight/sound supervision, transitions, headcounts"},
-        {"slug": "confidentiality_layered", "label": "Records & Confidentiality Policy",        "description": "FERPA, HIPAA, 42 CFR Part 2, and child welfare confidentiality in one record"},
-        {"slug": "foster_case_planning",    "label": "Foster Care Case Planning Policy",        "description": "Case plans, caseworker visits, permanency, Title IV-E documentation"},
-        {"slug": "behavior_management",     "label": "Behavior Management & Restraint Policy",  "description": "Positive behavior support, prohibited practices, restraint limits, reporting"},
-        {"slug": "head_start_standards",    "label": "Head Start Program Standards Policy",     "description": "Performance standards, screenings, family engagement, school readiness"},
-        {"slug": "food_program_cacfp",      "label": "Food Program (CACFP) Policy",             "description": "Meal patterns, point-of-service counts, recordkeeping, civil rights"},
-        {"slug": "grant_compliance",        "label": "Grant & Subrecipient Compliance Policy",  "description": "Allowable costs, procurement, time-and-effort, subrecipient monitoring"},
-        {"slug": "transportation_youth",    "label": "Youth Transportation Policy",             "description": "Driver screening, vehicle safety, supervision during transport"},
-        {"slug": "incident_reporting_cfs",  "label": "Incident Reporting Policy",               "description": "Serious incidents, notification chains, licensing and funder reporting"},
-        {"slug": "code_of_conduct_cfs",     "label": "Staff Code of Conduct Policy",            "description": "Boundaries with youth, social media, gifts, dual relationships"},
-    ],
     "pharmacy": [
         {"slug": "controlled_substances",   "label": "Controlled Substances Policy",            "description": "Ordering, storage, access, perpetual inventory, DEA recordkeeping"},
         {"slug": "diversion_prevention",    "label": "Drug Diversion Prevention Policy",        "description": "Detection, monitoring, investigation, DEA Form 106 loss reporting"},
@@ -466,32 +264,6 @@ POLICY_TYPES: dict = {
         {"slug": "recalls_returns",         "label": "Recalls, Returns & Disposal Policy",       "description": "Recall handling, reverse distribution, controlled substance destruction"},
         {"slug": "part_d_fwa",              "label": "Medicare Part D FWA Policy",               "description": "Fraud, waste and abuse program, exclusion screening, training"},
         {"slug": "patient_privacy_rx",      "label": "Patient Privacy Policy",                   "description": "HIPAA in the pharmacy setting, counseling privacy, PHI disposal"},
-    ],
-    "manufacturing": [
-        {"slug": "hearing_conservation",  "label": "Hearing Conservation / Noise Policy",   "description": "Noise monitoring, 85 dBA action level, audiometric testing, hearing protection (§1910.95)"},
-        {"slug": "hazcom",                "label": "Hazard Communication Policy",           "description": "Chemical inventory, SDS, labeling, employee training (§1910.1200)"},
-        {"slug": "lockout_tagout",        "label": "Lockout/Tagout (Energy Control) Policy","description": "Energy control procedures, periodic inspection, authorized employees (§1910.147)"},
-        {"slug": "ppe_program",           "label": "PPE Program Policy",                    "description": "Hazard assessment, selection, employer-paid PPE, training (§1910.132)"},
-        {"slug": "respiratory_protection","label": "Respiratory Protection Policy",         "description": "Medical evaluation, fit testing, cartridge change schedule (§1910.134)"},
-        {"slug": "machine_guarding",      "label": "Machine Guarding Policy",               "description": "Point-of-operation guarding, inspection, maintenance (§1910.212)"},
-        {"slug": "confined_space",        "label": "Confined Space Entry Policy",           "description": "Permit-required spaces, atmospheric testing, attendants, rescue (§1910.146)"},
-        {"slug": "injury_recordkeeping",  "label": "Injury & Illness Recordkeeping Policy", "description": "OSHA 300/300A/301, recordability decisions, hearing loss (29 CFR 1904)"},
-        {"slug": "emergency_action",      "label": "Emergency Action Plan",                 "description": "Evacuation routes, alarm systems, drills, accounting for employees (§1910.38)"},
-        {"slug": "contractor_safety",     "label": "Contractor & Multi-Employer Safety Policy","description": "Prequalification, site orientation, host/contractor responsibility allocation"},
-        {"slug": "ergonomics_program",    "label": "Ergonomics Program Policy",              "description": "Risk assessment, job design, early reporting of MSD symptoms"},
-        {"slug": "safety_committee",      "label": "Safety Committee & Anti-Retaliation Policy","description": "Committee structure, hazard reporting, §11(c) whistleblower protection"},
-    ],
-    "other": [
-        {"slug": "code_of_conduct_gen",     "label": "Code of Conduct / Ethics Policy",      "description": "Organizational ethics, conflicts of interest, reporting obligations"},
-        {"slug": "data_privacy_gen",        "label": "Data Privacy & Security Policy",        "description": "Data collection, storage, access, retention, and breach response"},
-        {"slug": "hr_policy_gen",           "label": "HR / Employment Policy",               "description": "Hiring, termination, anti-discrimination, leave, compensation"},
-        {"slug": "workplace_safety_gen",    "label": "Workplace Safety Policy",              "description": "OSHA compliance, incident reporting, safety training"},
-        {"slug": "whistleblower_gen",       "label": "Whistleblower / Non-Retaliation Policy","description": "Reporting mechanisms, protections, investigation procedures"},
-        {"slug": "social_media_gen",        "label": "Social Media & Communications Policy", "description": "Employee use, brand representation, confidentiality"},
-        {"slug": "vendor_contractor_gen",   "label": "Vendor & Contractor Policy",           "description": "Screening, contracts, oversight, data sharing requirements"},
-        {"slug": "conflict_interest_gen",   "label": "Conflict of Interest Policy",          "description": "Disclosure, recusal, gift policies"},
-        {"slug": "records_retention_gen",   "label": "Records Retention & Destruction Policy","description": "Retention schedules, legal holds, secure disposal"},
-        {"slug": "remote_work_gen",         "label": "Remote Work Policy",                   "description": "Eligibility, equipment, security, performance expectations"},
     ],
     "healthcare": [
         {"slug": "hipaa_privacy_policy",        "label": "HIPAA Privacy Policy",               "description": "Notice of Privacy Practices + internal privacy policy"},
@@ -537,6 +309,27 @@ POLICY_TYPES: dict = {
 }
 
 DEFAULT_INDUSTRY = "healthcare"
+
+# The CFR parts every employer is subject to, whatever it does. A hospital
+# writing an attendance policy needs FMLA and the ADA; one writing a workplace
+# violence policy needs OSHA.
+#
+# These used to live inside the "Other / General" industry, and every other
+# vertical inherited them from there. That made a catch-all category
+# load-bearing: removing it would silently have stripped ADA, FMLA and OSHA
+# grounding out of the healthcare verticals, and a hospital asking for an
+# absenteeism policy would have had nothing real to cite. They belong to no
+# single industry, so they are their own list.
+BASELINE_EMPLOYMENT_TARGETS = [
+    (29, 1630, "29 CFR Part 1630 — ADA Employment Regulations", SourceCategory.federal_regulation),
+    (29, 1604, "29 CFR Part 1604 — Sex Discrimination Guidelines", SourceCategory.federal_regulation),
+    (29, 825,  "29 CFR Part 825 — FMLA Regulations", SourceCategory.federal_regulation),
+    (29, 1910, "29 CFR Part 1910 — OSHA Occupational Safety & Health Standards", SourceCategory.federal_regulation),
+    (29, 1601, "29 CFR Part 1601 — EEOC Procedural Regulations (Title VII)", SourceCategory.federal_regulation),
+    (29, 541,  "29 CFR Part 541 — FLSA White-Collar Exemptions", SourceCategory.federal_regulation),
+    (29, 1635, "29 CFR Part 1635 — GINA (Genetic Information Nondiscrimination)", SourceCategory.federal_regulation),
+]
+
 
 # Baseline employment-law regulations every organization is subject to
 # regardless of its regulated sector. A hospital still has to comply with

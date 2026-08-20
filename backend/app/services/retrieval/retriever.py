@@ -349,7 +349,9 @@ class ComplianceRetriever:
         Baseline employment law is always included: FMLA and the ADA apply to
         a factory and a hospital alike.
         """
-        from app.services.industry_config import INDUSTRIES, get_industry
+        from app.services.industry_config import (
+            BASELINE_EMPLOYMENT_TARGETS, INDUSTRIES, get_industry,
+        )
 
         if not industry or industry not in INDUSTRIES:
             return None  # unknown industry -> no scoping, old behaviour
@@ -358,10 +360,10 @@ class ComplianceRetriever:
             f"{title} CFR Part {part}"
             for title, part, _, _ in get_industry(industry).get("ecfr_targets", [])
         }
-        # Employment law that binds every employer, whatever the sector.
-        for slug in ("other",):
-            for title, part, _, _ in INDUSTRIES[slug].get("ecfr_targets", []):
-                citations.add(f"{title} CFR Part {part}")
+        # Employment law binds every employer, whatever the sector: a hospital
+        # writing an attendance policy needs FMLA and the ADA.
+        for title, part, _, _ in BASELINE_EMPLOYMENT_TARGETS:
+            citations.add(f"{title} CFR Part {part}")
 
         return sorted(citations)
 
