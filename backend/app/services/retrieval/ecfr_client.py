@@ -19,6 +19,7 @@ Each pull is timestamped so outputs clearly show when the regulation was retriev
 
 import logging
 import re
+import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 
@@ -61,6 +62,8 @@ class ECFRClient:
 
     def __init__(self):
         self._client = None
+        # title -> up_to_date_as_of, cached per run so titles.json is fetched once.
+        self._title_dates: Dict[int, str] = {}
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -86,13 +89,20 @@ class ECFRClient:
 
         Returns a dict with 'sections': list of {section, heading, text} dicts.
         """
+        # Prefer the date eCFR itself reports for this title over date.today().
+        if as_of is None:
+            reported = await self.get_title_as_of(title)
+            if reported:
+                try:
+                    as_of = datetime.strptime(reported, "%Y-%m-%d").date()
+                except ValueError:
+                    logger.warning(f"eCFR returned an unparseable date for title {title}: {reported!r}")
+
         base_date = as_of or date.today()
 
-        # eCFR publishes point-in-time snapshots with a lag, so a request for
-        # *today* can legitimately have no published version yet -- which took
-        # down seeding entirely rather than degrading. Regulation text rarely
-        # changes day to day, so stepping back to a recent snapshot is both
-        # safe and far more robust than depending on today existing.
+        # Even with the reported date, step back through recent snapshots if a
+        # given day has no published version. Regulation text rarely changes day
+        # to day, so an older snapshot is far better than no grounding at all.
         for days_back in (0, 1, 3, 7, 30):
             attempt_date = (base_date - timedelta(days=days_back)).isoformat()
             result = await self._fetch_part_for_date(title, part, attempt_date)
@@ -110,33 +120,66 @@ class ECFRClient:
         )
         return None
 
+    async def get_title_as_of(self, title: int) -> Optional[str]:
+        """Ask eCFR what date it considers this title current as of.
+
+        eCFR publishes each title's own `up_to_date_as_of` in titles.json.
+        Using it beats guessing with date.today(), which can 404 whenever eCFR
+        lags the calendar -- a request for a date eCFR hasn't published yet
+        fails even though the regulation plainly exists.
+        """
+        if title in self._title_dates:
+            return self._title_dates[title]
+
+        try:
+            response = await self.client.get(f"{ECFR_BASE}/titles.json")
+            if response.status_code != 200:
+                logger.warning(f"eCFR titles.json returned {response.status_code}")
+                return None
+            for entry in response.json().get("titles", []):
+                if entry.get("number") == title:
+                    as_of = entry.get("up_to_date_as_of") or entry.get("latest_issue_date")
+                    if as_of:
+                        self._title_dates[title] = as_of
+                        logger.info(f"eCFR title {title} is current as of {as_of}")
+                    return as_of
+            logger.warning(f"eCFR titles.json has no entry for title {title}")
+            return None
+        except Exception as e:
+            logger.warning(f"eCFR titles.json lookup failed: {e}")
+            return None
+
     async def _fetch_part_for_date(
         self, title: int, part: int, today: str
     ) -> Optional[Dict[str, Any]]:
-        """Fetch one CFR part for one specific published date."""
+        """Fetch one CFR part for one specific published date.
+
+        XML first: it is eCFR's documented full-content format, and the JSON
+        structure this client originally assumed does not reliably carry
+        section text for part-level requests.
+        """
+        logger.info(f"Fetching eCFR: {title} CFR Part {part} as of {today}")
+
+        result = await self._fetch_part_xml(title, part, today)
+        if result and result.get("sections"):
+            return result
+
+        # JSON fallback — kept so a change to the XML endpoint doesn't take
+        # grounding down entirely.
         url = f"{ECFR_BASE}/full/{today}/title-{title}.json"
-        params = {"part": str(part)}
-
         try:
-            logger.info(f"Fetching eCFR: {title} CFR Part {part} as of {today}")
-            response = await self.client.get(url, params=params)
-
-            if response.status_code == 404:
-                logger.warning(f"eCFR returned 404 for title-{title} part {part} — trying XML")
-                return await self._fetch_part_xml(title, part, today)
-
+            response = await self.client.get(url, params={"part": str(part)})
             if response.status_code != 200:
-                logger.warning(f"eCFR returned {response.status_code} for title-{title} part {part}")
+                logger.warning(
+                    f"eCFR JSON fallback returned {response.status_code} for title-{title} part {part}"
+                )
                 return None
-
-            data = response.json()
-            return self._parse_ecfr_json(data, title, part, today)
-
+            return self._parse_ecfr_json(response.json(), title, part, today)
         except httpx.TimeoutException:
             logger.warning(f"eCFR timeout for title-{title} part {part}")
             return None
         except Exception as e:
-            logger.warning(f"eCFR fetch failed for title-{title} part {part}: {e}")
+            logger.warning(f"eCFR JSON fallback failed for title-{title} part {part}: {e}")
             return None
 
     async def _fetch_part_xml(self, title: int, part: int, today: str) -> Optional[Dict[str, Any]]:
@@ -215,36 +258,64 @@ class ECFRClient:
                 self._extract_text(item, accumulator)
 
     def _parse_ecfr_xml(self, xml_text: str, title: int, part: int, fetched_date: str) -> Dict:
-        """Parse eCFR XML into sections using regex (no lxml dependency)."""
-        sections = []
+        """Parse eCFR part-level XML into sections.
 
-        # Extract section blocks: <SECTION>...<SECTNO>164.XXX</SECTNO>...<SUBJECT>...</SUBJECT>...<P>...</P></SECTION>
-        section_pattern = re.compile(
-            r'<SECTION>(.*?)</SECTION>',
-            re.DOTALL,
-        )
+        This previously regexed for literal <SECTION>...</SECTION> blocks, which
+        do not exist in eCFR part-level XML. The real structure nests sections as
+        DIV8 elements carrying a TYPE attribute:
 
-        for match in section_pattern.finditer(xml_text):
-            block = match.group(1)
+            <DIV5 TYPE="PART"><DIV6 TYPE="SUBPART"><DIV8 TYPE="SECTION" N="164.530">
 
-            sectno_m = re.search(r'<SECTNO[^>]*>(.*?)</SECTNO>', block, re.DOTALL)
-            subject_m = re.search(r'<SUBJECT[^>]*>(.*?)</SUBJECT>', block, re.DOTALL)
-            paras = re.findall(r'<P>(.*?)</P>', block, re.DOTALL)
+        So the regex matched nothing and every fetch produced sections=[] -- the
+        seeder recorded 0 chunks, the knowledge base stayed empty, and the app
+        silently fell back to model-only output while still looking grounded.
+        That was the root cause of the empty production knowledge base.
 
-            sectno = re.sub(r'<[^>]+>', '', sectno_m.group(1)).strip() if sectno_m else ""
-            subject = re.sub(r'<[^>]+>', '', subject_m.group(1)).strip() if subject_m else ""
-            text = " ".join(
-                re.sub(r'<[^>]+>', '', p).strip()
-                for p in paras
-            ).strip()
+        Parsed with ElementTree rather than regex so nested markup inside
+        paragraphs (<I>, <E>, cross-references) is flattened correctly instead
+        of being stripped by a blunt tag-removal pass.
+        """
+        sections: List[Dict[str, str]] = []
 
-            if text and len(text) > 50:
-                sections.append({
-                    "section": sectno,
-                    "heading": subject,
-                    "text": text[:3000],
-                    "citation": f"{title} CFR § {sectno}" if sectno else f"{title} CFR Part {part}",
-                })
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError as e:
+            logger.warning(f"eCFR XML parse error for title-{title} part {part}: {e}")
+            return {"title": title, "part": part, "fetched_date": fetched_date, "sections": []}
+
+        for node in root.iter():
+            # DIV8 is the usual section container, but match on TYPE rather than
+            # tag name so a structural change (DIV7/DIV9) doesn't silently
+            # reintroduce the zero-sections failure.
+            if (node.attrib.get("TYPE") or "").upper() != "SECTION":
+                continue
+
+            sectno = (node.findtext("SECTNO") or node.attrib.get("N") or "").strip()
+            subject = (node.findtext("SUBJECT") or node.findtext("HEAD") or "").strip()
+
+            paragraphs = []
+            for p in node.findall(".//P"):
+                text = " ".join("".join(p.itertext()).split())
+                if text:
+                    paragraphs.append(text)
+            full_text = " ".join(paragraphs).strip()
+
+            if not full_text or len(full_text) <= 50:
+                continue
+
+            clean_section = sectno.replace("§", "").strip()
+            sections.append({
+                "section": clean_section,
+                "heading": subject,
+                "text": full_text[:3000],
+                "citation": f"{title} CFR § {clean_section}" if clean_section else f"{title} CFR Part {part}",
+            })
+
+        if not sections:
+            logger.warning(
+                f"eCFR XML for title-{title} part {part} parsed but yielded no sections — "
+                f"the document structure may have changed."
+            )
 
         return {
             "title": title,

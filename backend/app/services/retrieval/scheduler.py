@@ -125,8 +125,20 @@ def start_scheduler():
 
 
 def stop_scheduler():
-    """Stop the scheduler gracefully."""
+    """Stop the scheduler gracefully.
+
+    Clears the module global as well: shutdown(wait=False) does not reliably
+    flip `.running` straight away, so leaving the dead instance in place made
+    start_scheduler() report "already running" and silently refuse to start a
+    fresh one on restart.
+    """
     global _scheduler
-    if _scheduler and _scheduler.running:
-        _scheduler.shutdown(wait=False)
-        logger.info("Scheduler stopped")
+    if _scheduler is not None:
+        try:
+            if _scheduler.running:
+                _scheduler.shutdown(wait=False)
+                logger.info("Scheduler stopped")
+        except Exception as e:
+            logger.warning(f"Scheduler shutdown raised: {e}")
+        finally:
+            _scheduler = None

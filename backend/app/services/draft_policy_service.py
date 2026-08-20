@@ -12,6 +12,7 @@ import json
 from typing import Optional
 
 from app.config import settings
+from app.services.orchestrator import GroundingUnavailableError
 from app.services.provider import get_provider
 from app.services.industry_config import get_industry, get_regulations
 from app.services.retrieval.retriever import get_retriever
@@ -173,6 +174,16 @@ async def _prepare_draft(
     )
     if ctx.live_research_used:
         logger.info(f"Draft live research: {len(ctx.live_research_results)} results injected")
+
+    # Same grounding gate as gap analysis: a drafted policy full of
+    # confident citations, produced with zero retrieved sources, is exactly
+    # the output a compliance officer would most wrongly trust.
+    if settings.require_grounding and not ctx.get_all_sources():
+        logger.error("Draft BLOCKED: zero sources retrieved — refusing ungrounded output.")
+        raise GroundingUnavailableError(
+            "Regulatory source verification is temporarily unavailable, so this "
+            "draft was not generated. Please try again shortly."
+        )
 
     if ctx.total_sources_found > 0:
         user_message += (

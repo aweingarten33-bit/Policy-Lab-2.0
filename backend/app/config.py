@@ -22,6 +22,25 @@ class Settings(BaseSettings):
     # call. Without a cap, a single request can run up an unbounded bill.
     max_input_chars: int = 100_000
 
+    # Refuse to generate when NEITHER the knowledge base nor live research
+    # returned a single source. The product's claim is that output is checked
+    # against authoritative regulatory text; producing a normal-looking,
+    # citation-formatted analysis with nothing behind it is the most damaging
+    # failure mode available to it.
+    #
+    # DEFAULT IS OFF, deliberately, and this should be turned on:
+    #   Set REQUIRE_GROUNDING=true once GET /api/health reports
+    #   "kb_grounded": true on the live deployment.
+    #
+    # Why not on by default: grounding needs either a populated knowledge base
+    # or working live research (which needs TAVILY_API_KEY). If both are
+    # unavailable in a given deployment, enabling this turns every request into
+    # a 503 and the app stops working entirely. Shipping that as the default,
+    # while the production knowledge base is known to be empty, would trade a
+    # silent-correctness problem for a total outage. Fix the grounding first,
+    # confirm it, then enforce it.
+    require_grounding: bool = False
+
     # ── Provider API Keys (set whichever you have — cascade uses all available) ──
     groq_api_key: str = ""           # console.groq.com — free, fast, high limits
     gemini_api_key: str = ""         # aistudio.google.com — free tier
@@ -46,6 +65,15 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     # ── Knowledge Base Settings ──
+    # NOTE ON PERSISTENCE: this default writes inside the container, and Render's
+    # filesystem is ephemeral — anything here is lost on every deploy and
+    # restart, so the knowledge base has to re-seed from eCFR each time and is
+    # empty until that succeeds. To make it survive, attach a Render persistent
+    # disk (mount path e.g. /var/data) and set:
+    #     KB_PERSIST_DIR=/var/data/policy-lab-kb
+    # Only paths under the mounted disk persist. A local disk also pins the
+    # service to a single instance, which is fine at this stage; a hosted vector
+    # store is the answer if this ever needs to scale horizontally.
     kb_persist_dir: str = "./knowledge_base"
     kb_auto_seed: bool = True
     kb_enabled: bool = True

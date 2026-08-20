@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from typing import Optional, List
 
+from app.services.orchestrator import GroundingUnavailableError
 from app.models.schemas import (
     ActionPackageRequest, ComplianceActionPackage, PackageStatus,
     RewritePolicyRequest, RewrittenPolicy,
@@ -91,6 +92,8 @@ async def generate_action_package(request: ActionPackageRequest):
             enable_live_research=request.enable_live_research,
         )
         return package
+    except GroundingUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except ValueError as e:
         logger.error(f"Action package error: {e}")
         raise HTTPException(status_code=422, detail=str(e))
@@ -137,6 +140,8 @@ async def fix_all_gaps(request: RewritePolicyRequest):
             industry=request.industry,
             retrieval_context=retrieval_context,
         )
+    except GroundingUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except ValueError as e:
         logger.error(f"Rewrite error: {e}")
         raise HTTPException(status_code=422, detail=str(e))
@@ -234,6 +239,8 @@ async def generate_action_package_from_file(
             enable_live_research=live_research,
         )
         return package
+    except GroundingUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:

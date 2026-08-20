@@ -27,6 +27,7 @@ from starlette.requests import Request
 
 from app.config import settings
 from app.error_utils import http_error
+from app.services.orchestrator import GroundingUnavailableError
 from app.routers import analysis, export, action_package, knowledge_base
 from app.models.schemas import (
     DraftPolicyRequest,
@@ -112,9 +113,29 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Embedding warmup failed (non-fatal): {e}")
     # ─────────────────────────────────────────────────────────────────────────
 
+    # ── Start the nightly regulatory refresh ──
+    # start_scheduler() existed but was never called, so the "if startup seeding
+    # fails, the nightly job will fix it" fallback described elsewhere in the
+    # code was never actually running. An empty knowledge base therefore stayed
+    # empty until the next deploy.
+    scheduler_started = False
+    if settings.kb_enabled:
+        try:
+            from app.services.retrieval.scheduler import start_scheduler
+            start_scheduler()
+            scheduler_started = True
+        except Exception as e:
+            logger.warning(f"Could not start regulatory refresh scheduler: {e}")
+
     yield
 
     # Shutdown
+    if scheduler_started:
+        try:
+            from app.services.retrieval.scheduler import stop_scheduler
+            stop_scheduler()
+        except Exception as e:
+            logger.warning(f"Scheduler shutdown failed: {e}")
     logger.info("Policy Gap Analyzer API shutting down")
 
 
@@ -333,6 +354,8 @@ async def draft_policy_endpoint(request: DraftPolicyRequest):
             verification_overall=data.get("verification_overall"),
             unverified_claim_count=data.get("unverified_claim_count"),
         )
+    except GroundingUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         raise http_error(e, context="Policy drafting",
                          user_message="Policy drafting failed. Please try again.")

@@ -46,6 +46,14 @@ from app.services.retrieval.models import RetrievalContext
 logger = logging.getLogger(__name__)
 
 
+class GroundingUnavailableError(RuntimeError):
+    """Raised when no authoritative source could be retrieved for a request.
+
+    Surfaced to the caller as 503 rather than 500: this is a temporary
+    inability to verify, not a bug in the request.
+    """
+
+
 class PackageOrchestrator:
     """
     Orchestrates the generation of all 7 Compliance Action Package outputs
@@ -143,7 +151,36 @@ class PackageOrchestrator:
             if context.live_research_used:
                 logger.info(f"[{step_name}] Augmented with live research: {len(context.live_research_results)} results")
 
+        self._assert_grounded(step_name, context)
         return context
+
+    def _assert_grounded(self, step_name: str, context: RetrievalContext) -> None:
+        """Refuse to generate with zero authoritative sources.
+
+        The product's core claim is that output is checked against real
+        regulatory text rather than model memory. When the knowledge base is
+        empty AND live research returned nothing, that claim is false for this
+        request -- but the output would still render with the same UI and the
+        same citation formatting, giving a compliance officer no signal that
+        nothing was actually verified. Failing loudly is strictly better than
+        producing a confident, unverifiable document.
+        """
+        if not settings.require_grounding:
+            return
+
+        total = len(context.get_all_sources())
+        if total > 0:
+            return
+
+        logger.error(
+            f"[{step_name}] BLOCKED: zero sources retrieved (knowledge base empty and "
+            f"live research returned nothing). Refusing to generate ungrounded output."
+        )
+        raise GroundingUnavailableError(
+            "Regulatory source verification is temporarily unavailable, so this "
+            "request was not run. Output is only produced when it can be checked "
+            "against authoritative regulatory sources. Please try again shortly."
+        )
 
     def _flag_unsupported_specifics(
         self,
