@@ -11,6 +11,13 @@ from typing import List, Optional, Dict
 from enum import Enum
 from datetime import datetime
 
+# ── Input size caps ──
+# Every field below flows into a paid LLM call. Without an upper bound a single
+# request can run up an unbounded bill, which matters most if authentication is
+# ever left unconfigured. Generous enough for a long real policy document.
+MAX_INPUT_CHARS = 100_000   # ~25k tokens / roughly a 40-page policy
+MAX_CHAT_CHARS = 10_000     # a follow-up question, not a document
+
 
 # ── Enums ──
 
@@ -446,7 +453,7 @@ class ComplianceActionPackage(BaseModel):
 
 class ActionPackageRequest(BaseModel):
     """Request body for generating the complete action package."""
-    text: str = Field(..., min_length=50, description="The policy text to analyze")
+    text: str = Field(..., min_length=50, max_length=MAX_INPUT_CHARS, description="The policy text to analyze")
     file_name: Optional[str] = Field(None, description="Original file name, if uploaded")
     industry: Optional[str] = Field(
         "healthcare",
@@ -465,7 +472,7 @@ class ActionPackageRequest(BaseModel):
 
 class RewritePolicyRequest(BaseModel):
     """Request body for the 'Fix All Gaps' action — rewrite the policy to resolve every finding from an existing gap analysis."""
-    text: str = Field(..., min_length=50, description="The original policy text that was analyzed")
+    text: str = Field(..., min_length=50, max_length=MAX_INPUT_CHARS, description="The original policy text that was analyzed")
     gap_analysis: AnalysisResult = Field(..., description="The gap analysis results to fix")
     industry: Optional[str] = Field("healthcare", description="Industry vertical: 'healthcare', 'home_health', 'other'")
     jurisdiction: Optional[str] = Field(None, description="State/jurisdiction code")
@@ -484,7 +491,7 @@ class PackageExportRequest(BaseModel):
 
 class DraftPolicyRequest(BaseModel):
     """Request body for drafting a new policy from scratch."""
-    policy_description: str = Field(..., min_length=5, description="Plain-English description of the policy needed")
+    policy_description: str = Field(..., min_length=5, max_length=MAX_INPUT_CHARS, description="Plain-English description of the policy needed")
     industry: Optional[str] = Field("healthcare", description="Industry vertical: 'healthcare', 'home_health', 'other'")
     jurisdiction: Optional[str] = Field(None, description="State/jurisdiction code (e.g., 'NY')")
 
@@ -543,7 +550,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     """Request body for chatting with analysis results or a drafted policy."""
-    message: str = Field(..., min_length=1, description="The user's question or message")
+    message: str = Field(..., min_length=1, max_length=MAX_CHAT_CHARS, description="The user's question or message")
     mode: str = Field("analysis", description="'analysis' for post-gap-analysis Q&A, 'draft' for post-policy-draft Q&A")
     industry: Optional[str] = Field("healthcare", description="Industry context")
     jurisdiction: Optional[str] = Field(None, description="Jurisdiction context")
@@ -573,7 +580,7 @@ class HealthResponse(BaseModel):
 class IngestRequest(BaseModel):
     """Request body for ingesting a source document into the knowledge base."""
     source_name: str = Field(..., description="Human-readable name of the source document")
-    text: str = Field(..., min_length=10, description="Full text of the source document")
+    text: str = Field(..., min_length=10, max_length=MAX_INPUT_CHARS, description="Full text of the source document")
     category: str = Field(..., description="Source category: federal_regulation, ocr_guidance, state_law, policy_clause_library, policy_template, example_policy, enforcement_action, requirement_pack")
     jurisdiction: str = Field("federal", description="Jurisdiction: federal or state code (e.g., 'NY', 'CA')")
     citation: Optional[str] = Field(None, description="Formal citation string")

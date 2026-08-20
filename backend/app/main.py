@@ -15,6 +15,7 @@ Features:
 import asyncio
 import logging
 import os
+import secrets
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -25,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 
 from app.config import settings
+from app.error_utils import http_error
 from app.routers import analysis, export, action_package, knowledge_base
 from app.models.schemas import (
     DraftPolicyRequest,
@@ -127,25 +129,73 @@ app = FastAPI(
 )
 
 
-# ── API Key Middleware (FIX #3) ──
+# ── API Key Middleware ──
+# Endpoints reachable without a key: health, docs, and the SPA shell itself
+# (the frontend has to load before it can prompt for a password).
+_PUBLIC_PATHS = frozenset(["/api/health", "/docs", "/redoc", "/", "/openapi.json"])
+
+# Destructive / knowledge-base-mutating routes. These change what every future
+# generation is grounded in, so they require a separate admin credential rather
+# than the same shared password used to read the app.
+_ADMIN_PATH_PREFIXES = ("/api/kb/ingest", "/api/kb/seed", "/api/kb/collections")
+
+
+def _is_admin_request(request: Request) -> bool:
+    path = request.url.path
+    if request.method == "DELETE" and path.startswith("/api/kb/"):
+        return True
+    return request.method == "POST" and path.startswith(_ADMIN_PATH_PREFIXES)
+
+
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
-    """Require API key for all endpoints except health check and docs."""
-    # Skip auth for public endpoints and CORS preflight requests
-    if request.url.path in ["/api/health", "/docs", "/redoc", "/", "/openapi.json"] or request.method == "OPTIONS":
+    """Require the app password for API access, and a separate admin key for
+    destructive knowledge-base operations.
+
+    Fails CLOSED in production: if API_KEY is unset there, every request is
+    refused rather than served openly. A missing env var on a redeploy used to
+    silently turn the whole app public with no signal that it had happened --
+    the safe direction for that failure is 'nobody gets in', not 'everybody
+    does'.
+    """
+    if request.url.path in _PUBLIC_PATHS or request.method == "OPTIONS":
         return await call_next(request)
 
-    # If no API key is configured, allow all (development mode)
     if not settings.api_key:
+        if settings.is_production:
+            logger.critical(
+                "API_KEY is not set while ENVIRONMENT=production — refusing all API "
+                "requests. Set the API_KEY environment variable to restore service."
+            )
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Server is not configured for access. Contact the administrator."},
+            )
+        # Development only: no key configured, allow through.
         return await call_next(request)
 
-    # Check API key header
-    api_key = request.headers.get("x-api-key", "")
-    if api_key != settings.api_key:
+    supplied = request.headers.get("x-api-key", "")
+    # compare_digest avoids leaking the key's prefix through response timing.
+    if not secrets.compare_digest(supplied, settings.api_key):
         return JSONResponse(
             status_code=401,
             content={"detail": "Invalid or missing API key. Set x-api-key header."},
         )
+
+    if _is_admin_request(request):
+        admin_key = settings.admin_api_key
+        if not admin_key:
+            logger.warning("Admin action blocked: ADMIN_API_KEY is not configured (%s)", request.url.path)
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Administrative actions are not enabled on this deployment."},
+            )
+        supplied_admin = request.headers.get("x-admin-key", "")
+        if not secrets.compare_digest(supplied_admin, admin_key):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "This action requires an administrator key."},
+            )
 
     return await call_next(request)
 
@@ -164,6 +214,9 @@ _RATE_LIMITED_PREFIXES = (
     "/api/action-package",
     "/api/draft-policy",
     "/api/chat",
+    # KB writes are cheap to call but mutate what every future generation is
+    # grounded in, so they're limited for data integrity rather than cost.
+    "/api/kb",
 )
 _rate_limit_buckets: dict[str, deque] = defaultdict(deque)
 _rate_limit_lock = asyncio.Lock()
@@ -194,6 +247,35 @@ async def rate_limit_middleware(request: Request, call_next):
             bucket.append(now)
 
     return await call_next(request)
+
+
+# ── Security Headers ──
+# TLS is terminated by the platform, but the app still has to tell browsers to
+# enforce it and to refuse being framed. The CSP matches how the app actually
+# loads: same-origin bundles, Google Fonts, and API/LLM calls to our own origin.
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'",
+    )
+    if settings.is_production:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
 
 
 # ── CORS ──
@@ -252,15 +334,8 @@ async def draft_policy_endpoint(request: DraftPolicyRequest):
             unverified_claim_count=data.get("unverified_claim_count"),
         )
     except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg:
-            raise HTTPException(
-                status_code=429,
-                detail="Rate limited. Please wait a moment before retrying.",
-            )
-        raise HTTPException(
-            status_code=500, detail=f"Policy drafting failed: {error_msg}"
-        )
+        raise http_error(e, context="Policy drafting",
+                         user_message="Policy drafting failed. Please try again.")
 
 
 def _build_policy_dict(data: dict) -> dict:
@@ -485,13 +560,8 @@ async def compliance_chat(request: ChatRequest):
         )
         return ChatResponse(response=response_text)
     except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg:
-            raise HTTPException(
-                status_code=429,
-                detail="Rate limited. Please wait a moment before retrying.",
-            )
-        raise HTTPException(status_code=500, detail=f"Chat failed: {error_msg}")
+        raise http_error(e, context="Chat",
+                         user_message="The assistant couldn't answer that right now. Please try again.")
 
 
 # ── Serve React frontend static files in production ──

@@ -103,7 +103,7 @@ async def generate_action_package(request: ActionPackageRequest):
             raise HTTPException(status_code=402, detail="API key has insufficient credits.")
         if "529" in error_msg:
             raise HTTPException(status_code=503, detail="Model is overloaded. Please retry in a moment.")
-        raise HTTPException(status_code=500, detail=f"Action package generation failed: {error_msg}")
+        raise HTTPException(status_code=500, detail="Analysis failed. Please try again.") from None
 
 
 @router.post("/action-package/rewrite", response_model=RewrittenPolicy)
@@ -149,7 +149,7 @@ async def fix_all_gaps(request: RewritePolicyRequest):
             raise HTTPException(status_code=402, detail="API key has insufficient credits.")
         if "529" in error_msg:
             raise HTTPException(status_code=503, detail="Model is overloaded. Please retry in a moment.")
-        raise HTTPException(status_code=500, detail=f"Rewrite failed: {error_msg}")
+        raise HTTPException(status_code=500, detail="Rewrite failed. Please try again.") from None
 
 
 @router.post("/action-package-stream")
@@ -218,7 +218,7 @@ async def generate_action_package_from_file(
     try:
         text = await extract_text_from_file(contents, file.filename, file_ext)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Could not extract text from file: {str(e)}")
+        raise HTTPException(status_code=422, detail="Could not extract readable text from this file.") from None
 
     if not text or len(text.strip()) < 50:
         raise HTTPException(status_code=422, detail="Could not extract readable text (minimum 50 characters). Try pasting the policy text directly.")
@@ -242,7 +242,7 @@ async def generate_action_package_from_file(
             raise HTTPException(status_code=429, detail="Rate limited. Please wait a moment before retrying.")
         if "402" in error_msg:
             raise HTTPException(status_code=402, detail="API key has insufficient credits.")
-        raise HTTPException(status_code=500, detail=f"Action package generation failed: {error_msg}")
+        raise HTTPException(status_code=500, detail="Analysis failed. Please try again.") from None
 
 
 # ---------------------------------------------------------------------------

@@ -39,7 +39,7 @@ async def kb_stats():
         )
     except Exception as e:
         logger.error(f"KB stats error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Knowledge base operation failed.") from None
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -82,7 +82,7 @@ async def ingest_source(request: IngestRequest):
         raise
     except Exception as e:
         logger.error(f"Ingest error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Knowledge base operation failed.") from None
 
 
 @router.post("/seed")
@@ -99,7 +99,7 @@ async def seed_kb():
         }
     except Exception as e:
         logger.error(f"Seed error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Knowledge base operation failed.") from None
 
 
 @router.get("/collections")
@@ -116,7 +116,7 @@ async def list_collections():
         }
     except Exception as e:
         logger.error(f"Collections list error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Knowledge base operation failed.") from None
 
 
 @router.delete("/collections/{collection_name}")
@@ -138,4 +138,4 @@ async def reset_collection(collection_name: str):
         return {"status": "ok", "message": f"Collection '{collection_name}' has been reset"}
     except Exception as e:
         logger.error(f"Reset collection error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Knowledge base operation failed.") from None

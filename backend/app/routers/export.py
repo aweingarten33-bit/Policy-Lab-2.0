@@ -31,7 +31,7 @@ async def export_report(request: ExportRequest):
         )
     except Exception as e:
         logger.error(f"Export generation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Report generation failed.") from None
 
     content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return Response(
@@ -49,7 +49,7 @@ async def export_draft_policy(request: DraftPolicyExportRequest):
         file_bytes, filename = generate_draft_policy_export(policy_dict)
     except Exception as e:
         logger.error(f"Draft policy export failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Draft export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Draft export failed.") from None
 
     content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return Response(
@@ -73,7 +73,7 @@ async def export_updated_policy(request: UpdatedPolicyExportRequest):
         )
     except Exception as e:
         logger.error(f"Updated policy export failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Updated policy export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Updated policy export failed.") from None
 
     content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return Response(
@@ -97,7 +97,7 @@ async def export_action_package(request: PackageExportRequest):
         )
     except Exception as e:
         logger.error(f"Action package export failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Package export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Package export failed.") from None
 
     content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return Response(

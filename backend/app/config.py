@@ -11,6 +11,16 @@ from typing import List, Optional
 class Settings(BaseSettings):
     # ── API Security ──
     api_key: str = ""
+    # Separate credential for destructive knowledge-base operations (ingest,
+    # seed, delete). Deliberately has no default: if it isn't set, those
+    # endpoints are disabled entirely rather than falling back to api_key,
+    # so read access can never imply the ability to rewrite what every
+    # future generation is grounded in.
+    admin_api_key: str = ""
+
+    # Maximum characters accepted on any field that flows into a paid LLM
+    # call. Without a cap, a single request can run up an unbounded bill.
+    max_input_chars: int = 100_000
 
     # ── Provider API Keys (set whichever you have — cascade uses all available) ──
     groq_api_key: str = ""           # console.groq.com — free, fast, high limits

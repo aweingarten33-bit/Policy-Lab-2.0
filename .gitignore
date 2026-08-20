@@ -34,3 +34,7 @@ Thumbs.db
 # ChromaDB / knowledge base data
 backend/knowledge_base/
 backend/chroma_db/
+
+# Orphaned prototype extract — contained a third party's real published policy
+# documents repurposed as unlabeled seed content. Removed; never re-add.
+policy-lab-extracted/
