@@ -14,6 +14,7 @@ from typing import Optional
 from app.config import settings
 from app.services.orchestrator import GroundingUnavailableError
 from app.services.provider import get_provider
+from app.services.llm_service import CONFIDENTIALITY_RULE
 from app.services.industry_config import get_industry, get_regulations
 from app.services.retrieval.retriever import get_retriever
 from app.services.retrieval.live_research import get_live_research_service
@@ -120,7 +121,7 @@ not a training manual or a legal brief. State the rule, the responsible role, an
 timeframe; do not enumerate every hypothetical scenario or edge case. A tightly-written
 real policy beats a padded one."""
 
-    return prompt
+    return prompt + "\n\n" + CONFIDENTIALITY_RULE
 
 
 def _build_draft_user_prompt(policy_description: str, industry_slug: str, jurisdiction: Optional[str]) -> str:
@@ -135,7 +136,7 @@ def _build_draft_user_prompt(policy_description: str, industry_slug: str, jurisd
         "Write the full policy document. Every section must be complete — real sentences, real procedures, "
         "real regulatory citations. Make it ready to sign and adopt."
     )
-    return prompt
+    return prompt + "\n\n" + CONFIDENTIALITY_RULE
 
 
 async def _prepare_draft(

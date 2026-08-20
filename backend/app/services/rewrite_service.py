@@ -10,6 +10,7 @@ from typing import Optional
 
 from app.config import settings
 from app.services.provider import get_provider
+from app.services.llm_service import CONFIDENTIALITY_RULE
 from app.services.industry_config import get_industry
 from app.models.schemas import AnalysisResult, RewrittenPolicy, RewrittenPolicySection
 from app.services.retrieval.models import RetrievalContext
@@ -69,7 +70,7 @@ def _build_rewrite_system_prompt(industry_slug: Optional[str] = None) -> str:
     """Industry-aware rewrite persona — same domain expertise as the gap analysis
     prompt, so a Home Health or Other rewrite doesn't get a hospital compliance voice."""
     cfg = get_industry(industry_slug or "healthcare")
-    return cfg["persona"] + "\n\n" + REWRITE_TASK_INSTRUCTIONS
+    return cfg["persona"] + "\n\n" + REWRITE_TASK_INSTRUCTIONS + "\n\n" + CONFIDENTIALITY_RULE
 
 
 def _parse_json_response(raw_text: str) -> dict:
