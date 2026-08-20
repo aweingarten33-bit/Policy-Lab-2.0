@@ -327,6 +327,14 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
                 except Exception as e:
                     logger.warning(f"Guidance: a page failed to extract: {e}")
                     continue
+                finally:
+                    # pdfplumber keeps every character object it built for a
+                    # page. Across a long document that reached ~390 MB for a
+                    # single file, which is most of a small container's whole
+                    # budget. Dropping each page's cache as we go keeps peak
+                    # usage flat instead of proportional to page count.
+                    page.flush_cache()
+                    page.get_textmap.cache_clear()
                 if page_text.strip():
                     pages.append(page_text)
     except Exception as e:

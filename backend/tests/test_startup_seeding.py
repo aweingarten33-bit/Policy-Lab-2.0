@@ -42,6 +42,11 @@ def _isolated_store(tmp_path, monkeypatch):
         "app.services.retrieval.seed_data.restore_baked_knowledge_base",
         lambda: 0,
     )
+    # Runtime seeding ships disabled (it needs about twice the memory serving
+    # does, and overshooting kills the container). These tests are about how
+    # seeding behaves when it does run, so they opt in explicitly; the guard
+    # itself is covered by test_runtime_seeding_guard.py.
+    monkeypatch.setattr(main.settings, "kb_seed_at_runtime", True)
     yield
 
 

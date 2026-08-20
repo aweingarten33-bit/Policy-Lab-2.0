@@ -101,6 +101,25 @@ async def lifespan(app: FastAPI):
                 logger.info(f"Knowledge base already contains {existing} chunks — skipping seed")
                 return
 
+            if not settings.kb_seed_at_runtime:
+                # Refusing to seed here is deliberate. Seeding needs about
+                # twice the memory serving does; on a small instance the
+                # process gets killed, restarts to a still-empty knowledge
+                # base, and tries again -- a crash loop that takes the site
+                # down completely. Running ungrounded is bad; being offline
+                # is worse. The corpus belongs in the image.
+                seed_state.mark_failed(
+                    "Knowledge base is empty and runtime seeding is disabled. The corpus is "
+                    "built into the image; this container shipped without one. Rebuild the "
+                    "image, or set KB_SEED_AT_RUNTIME=true on an instance with enough memory."
+                )
+                logger.critical(
+                    "GROUNDING FAILURE: knowledge base is empty and runtime seeding is "
+                    "disabled to protect service availability. The app is UP but not "
+                    "source-grounded. See /api/kb/diagnose."
+                )
+                return
+
             logger.info("Knowledge base is empty — seeding from eCFR in the background...")
             seed_state.mark_started()
             results = await seed_knowledge_base_async()

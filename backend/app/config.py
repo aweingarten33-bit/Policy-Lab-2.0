@@ -82,6 +82,24 @@ class Settings(BaseSettings):
     kb_seed_timeout_seconds: int = 600
     kb_enabled: bool = True
 
+    # How many documents are embedded per batch. Embedding holds every
+    # document in the batch in memory at once, so this is the main lever on
+    # peak memory during seeding. 32 keeps the spike inside a small
+    # container's budget; raise it on a bigger instance for faster seeding.
+    kb_embed_batch_size: int = 32
+
+    # Whether a running container may download and embed the corpus itself.
+    #
+    # Seeding needs roughly twice the memory of serving. On a small instance
+    # that overshoot gets the process killed, and because the killed container
+    # restarts with a still-empty knowledge base it tries again, and again --
+    # a crash loop that takes the whole site down rather than degrading it.
+    #
+    # The corpus is built into the image instead (scripts/build_knowledge_base.py),
+    # where a build machine has room for it. Runtime seeding stays available
+    # for local development and as a deliberate opt-in.
+    kb_seed_at_runtime: bool = False
+
     # ── Live Research Settings ──
     live_research_enabled: bool = True
     live_research_max_results: int = 5

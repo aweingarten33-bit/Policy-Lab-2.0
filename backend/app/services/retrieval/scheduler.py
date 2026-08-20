@@ -18,6 +18,8 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 _scheduler: AsyncIOScheduler = None
@@ -28,6 +30,17 @@ async def refresh_ecfr_knowledge_base():
     Pull current eCFR content and update the ChromaDB knowledge base.
     Replaces existing eCFR-sourced content with today's version.
     """
+    # Same memory reasoning as startup seeding: a refresh re-embeds the whole
+    # corpus, so on a small instance it would kill a container that is
+    # currently serving traffic -- turning a stale knowledge base into an
+    # outage. Refreshing happens when the image is rebuilt.
+    if not settings.kb_seed_at_runtime:
+        logger.info(
+            "Scheduled eCFR refresh skipped: runtime seeding is disabled to protect "
+            "service memory. Rebuild the image to refresh the corpus."
+        )
+        return
+
     logger.info("Scheduled eCFR refresh starting...")
     started_at = datetime.utcnow()
 

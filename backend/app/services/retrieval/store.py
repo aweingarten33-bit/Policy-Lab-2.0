@@ -8,6 +8,7 @@ The store persists to disk at a configurable path (default: ./knowledge_base/).
 Collections map to source categories (federal_regulation, ocr_guidance, etc.).
 """
 
+import gc
 import logging
 import os
 from typing import Optional, List, Dict, Any
@@ -154,18 +155,20 @@ class ChromaStore:
                     clean[k] = str(v)
             clean_metas.append(clean)
 
-        # Add in batches of 100 to avoid API limits
-        batch_size = 100
+        # Embedding is the memory hot spot: every document in a batch is held
+        # as a tensor at once. At 100 per batch, seeding peaked over 1 GB --
+        # more than a small container has, so the process was killed mid-seed
+        # and restarted, forever. A smaller batch trades a little throughput
+        # for a peak that fits alongside the ~420 MB the app already needs.
+        batch_size = settings.kb_embed_batch_size
         for i in range(0, len(ids), batch_size):
-            batch_ids = ids[i:i + batch_size]
-            batch_docs = documents[i:i + batch_size]
-            batch_metas = clean_metas[i:i + batch_size]
-
             collection.upsert(
-                ids=batch_ids,
-                documents=batch_docs,
-                metadatas=batch_metas,
+                ids=ids[i:i + batch_size],
+                documents=documents[i:i + batch_size],
+                metadatas=clean_metas[i:i + batch_size],
             )
+            # Release each batch's tensors before building the next one.
+            gc.collect()
 
         logger.info(f"Added {len(ids)} chunks to {collection_name}")
 
