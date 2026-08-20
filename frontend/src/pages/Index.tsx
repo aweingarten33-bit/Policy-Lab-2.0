@@ -165,6 +165,34 @@ const RISK_MAP: Record<string, { label: string; color: string; bg: string }> = {
   compliant:{ label: "COMPLIANT",   color: "hsl(160 60% 36%)", bg: "hsl(160 60% 42% / 0.1)" },
 };
 
+// What kind of duty a finding asserts. A compliance officer's first question
+// about any finding is "do I have to do this, or are you recommending it?" —
+// and until now the screen gave the same answer for both. Only
+// "unverified_requirement" is set by the server rather than the model: the
+// finding claimed a legal mandate the cited source does not establish.
+const OBLIGATION_MAP: Record<string, { label: string; color: string; bg: string; title: string }> = {
+  required: {
+    label: "REQUIRED BY LAW", color: "hsl(0 72% 48%)", bg: "hsl(0 72% 51% / 0.1)",
+    title: "The cited regulation imposes this duty in mandatory terms.",
+  },
+  guidance: {
+    label: "AGENCY GUIDANCE", color: "hsl(220 60% 45%)", bg: "hsl(220 60% 50% / 0.1)",
+    title: "An agency recommends or interprets this. It is not black-letter law.",
+  },
+  best_practice: {
+    label: "BEST PRACTICE", color: "hsl(200 55% 38%)", bg: "hsl(200 55% 45% / 0.1)",
+    title: "Sound compliance practice, but not legally mandated.",
+  },
+  organizational_choice: {
+    label: "YOUR CHOICE", color: "hsl(240 10% 45%)", bg: "hsl(240 10% 50% / 0.09)",
+    title: "A standard your organization may adopt. No regulation requires it.",
+  },
+  unverified_requirement: {
+    label: "UNVERIFIED REQUIREMENT", color: "hsl(38 85% 38%)", bg: "hsl(38 85% 52% / 0.14)",
+    title: "This was presented as legally required, but the cited source does not establish that duty.",
+  },
+};
+
 function stripCiteTags(text: string): string {
   return text.replace(/<cite[^>]*>|<\/cite>/g, "");
 }
@@ -244,8 +272,31 @@ function GapRowItem({ row, urlMap, snippets }: { row: GapRow; urlMap?: Record<st
             </div>
           )}
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1 font-medium">Finding</p>
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-medium">Finding</p>
+              {(() => {
+                const o = OBLIGATION_MAP[row.obligation_type || "required"];
+                if (!o) return null;
+                return (
+                  <span
+                    title={o.title}
+                    className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full tracking-wider"
+                    style={{ color: o.color, background: o.bg }}
+                  >
+                    {o.label}
+                  </span>
+                );
+              })()}
+            </div>
             <p className="text-[13px] sm:text-sm text-foreground leading-relaxed">{linkifyRegulations(stripCiteTags(row.finding), urlMap, snippets)}</p>
+            {row.obligation_type === "unverified_requirement" && row.obligation_note && (
+              <div className="rounded-lg p-3 mt-2" style={{ background: "hsl(38 85% 52% / 0.09)" }}>
+                <p className="text-[11px] leading-relaxed text-foreground/80">
+                  <span className="font-bold" style={{ color: "hsl(38 85% 38%)" }}>Not shown to be required: </span>
+                  {row.obligation_note}
+                </p>
+              </div>
+            )}
           </div>
           <div className="rounded-xl p-3 sm:p-4 neu-inset">
             <p className="text-[10px] font-mono uppercase tracking-wider mb-1.5 font-medium" style={{ color: "hsl(var(--primary))" }}>Suggested Policy Language</p>

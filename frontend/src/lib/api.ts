@@ -140,6 +140,16 @@ export interface GapRow {
   citation: string;
   remediation_priority: string;
   oig_element?: string;
+  // What kind of duty this finding asserts. "unverified_requirement" is set
+  // server-side by the entailment gate, never by the model: the finding was
+  // presented as legally required, but the cited source does not establish it.
+  obligation_type?:
+    | "required"
+    | "guidance"
+    | "best_practice"
+    | "organizational_choice"
+    | "unverified_requirement";
+  obligation_note?: string;
   verification_warning?: string;
   evidence?: VerificationEvidence;
   source_attribution?: SourceAttribution;
