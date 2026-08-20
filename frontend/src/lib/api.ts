@@ -107,6 +107,7 @@ export interface GapRow {
   citation: string;
   remediation_priority: string;
   oig_element?: string;
+  verification_warning?: string;
   source_attribution?: SourceAttribution;
 }
 

@@ -145,6 +145,29 @@ class PackageOrchestrator:
 
         return context
 
+    def _flag_unsupported_specifics(
+        self,
+        gap_result: AnalysisResult,
+        retrieval_ctx: RetrievalContext,
+    ) -> None:
+        """Flag findings that state a concrete deadline the sources don't back up.
+
+        The citation-level check only asks whether a cited regulation exists.
+        It will happily pass "retain records for 10 years per 45 CFR §164.316"
+        because the citation is real -- even though the regulation says six.
+        A fabricated deadline attached to a genuine citation reads as
+        authoritative, so it gets flagged on the specific finding it appears in.
+        """
+        flagged = 0
+        for row in gap_result.gap_table:
+            combined = " ".join(filter(None, [row.finding, row.suggested_language]))
+            warning = self.verification.check_unsupported_specifics(combined, retrieval_ctx)
+            if warning:
+                row.verification_warning = warning
+                flagged += 1
+        if flagged:
+            logger.info(f"Flagged {flagged} finding(s) with unverified timeframes")
+
     def _verify_and_attribute(
         self,
         text: str,
@@ -307,6 +330,7 @@ class PackageOrchestrator:
                 gap_result.retrieved_sources_used = sources
                 gap_result.live_research_used = live_used
                 gap_result.verification_summary = ver_summary
+                self._flag_unsupported_specifics(gap_result, retrieval_ctx)
 
                 all_kb_sources.extend(s for s in sources if s not in all_kb_sources)
                 all_kb_source_urls.update(retrieval_ctx.get_source_url_map())

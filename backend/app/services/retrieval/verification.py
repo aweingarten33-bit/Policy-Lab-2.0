@@ -45,6 +45,30 @@ CITATION_PATTERNS = [
 # Build compiled regexes
 CITATION_REGEXES = [re.compile(p, re.IGNORECASE) for p in CITATION_PATTERNS]
 
+# ── Specific-claim patterns ──
+# Checking that a cited regulation *exists* says nothing about whether the
+# concrete number attached to it is real. "Records must be retained for ten
+# years per 45 CFR §164.316" passes a citation-existence check even when the
+# regulation says six -- the citation is real, the number is invented. These
+# fabricated deadlines/retention periods are the most damaging output this
+# tool can produce, since a user reads them as their actual legal obligation.
+
+NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "fifteen": 15, "eighteen": 18, "twenty": 20, "thirty": 30, "forty": 40,
+    "forty-five": 45, "sixty": 60, "ninety": 90,
+}
+
+_UNIT_PATTERN = r"(?:calendar\s+|business\s+|working\s+)?(day|days|month|months|year|years|week|weeks|hour|hours)"
+_DURATION_REGEX = re.compile(
+    r"\b(\d{1,4}|" + "|".join(NUMBER_WORDS.keys()) + r")[\s-]+" + _UNIT_PATTERN,
+    re.IGNORECASE,
+)
+
+# Sentence splitter that doesn't break on the periods inside "45 CFR §164.312"
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+
 
 class VerificationService:
     """
@@ -86,14 +110,78 @@ class VerificationService:
         if not citations_found:
             return []
 
+        # Map each citation to the sentence it appears in, so a claimed
+        # deadline/retention period can be checked against source material
+        # rather than only checking that the citation itself exists.
+        citation_context = self._map_citations_to_sentences(text, citations_found)
+
         verifications = []
 
         # Check each citation against the source set
         for citation in citations_found:
-            verification = self._verify_single_citation(citation, retrieval_context)
+            verification = self._verify_single_citation(
+                citation, retrieval_context, citation_context.get(citation, "")
+            )
             verifications.append(verification)
 
         return verifications
+
+    def _map_citations_to_sentences(self, text: str, citations: List[str]) -> Dict[str, str]:
+        """Map each citation to the first sentence it appears in."""
+        sentences = _SENTENCE_SPLIT.split(text)
+        mapping: Dict[str, str] = {}
+        for citation in citations:
+            for sentence in sentences:
+                if citation.lower() in sentence.lower():
+                    mapping[citation] = sentence.strip()
+                    break
+        return mapping
+
+    def _extract_specifics(self, sentence: str) -> List[str]:
+        """Pull concrete durations ('6 years', 'thirty days') out of a sentence.
+
+        These are the claims most worth checking: a retention period or
+        notification deadline stated as a legal requirement is something a
+        user will act on directly.
+        """
+        specifics = []
+        for match in _DURATION_REGEX.finditer(sentence):
+            qty_raw, unit = match.group(1).lower(), match.group(2).lower()
+            qty = NUMBER_WORDS.get(qty_raw)
+            if qty is None:
+                try:
+                    qty = int(qty_raw)
+                except ValueError:
+                    continue
+            unit_singular = unit.rstrip("s")
+            specifics.append(f"{qty} {unit_singular}")
+        # Dedupe, preserve order
+        seen = set()
+        return [s for s in specifics if not (s in seen or seen.add(s))]
+
+    def _specific_supported(self, specific: str, source_text: str) -> bool:
+        """Is this duration actually present in the retrieved source material?
+
+        Checks digit and word forms ('6 years' / 'six years') and both
+        singular and plural. Deliberately checks against ALL retrieved
+        source text rather than just the one matched chunk -- being lenient
+        here matters, since falsely flagging a real requirement as invented
+        erodes trust in the warnings that are genuine.
+        """
+        qty_str, unit = specific.split(" ", 1)
+        qty = int(qty_str)
+        haystack = source_text.lower()
+
+        forms = {str(qty)}
+        for word, value in NUMBER_WORDS.items():
+            if value == qty:
+                forms.add(word)
+
+        for form in forms:
+            for unit_form in (unit, unit + "s"):
+                if re.search(rf"\b{re.escape(form)}[\s-]+{re.escape(unit_form)}\b", haystack):
+                    return True
+        return False
 
     def verify_section(
         self,
@@ -243,17 +331,83 @@ class VerificationService:
         self,
         citation: str,
         retrieval_context: Optional[RetrievalContext] = None,
+        claim_sentence: str = "",
     ) -> ClaimVerification:
-        """Verify a single citation against the source set."""
+        """Verify a single citation against the source set.
+
+        Two separate questions get asked here: does the cited regulation
+        exist in our sources, and -- if the sentence attaches a concrete
+        deadline or retention period to it -- is that number actually in
+        the source material? A real citation carrying an invented number
+        is worse than no citation at all, because it reads as authoritative.
+        """
         attribution = self.create_source_attribution(citation, retrieval_context)
+        status = attribution.verification_status
+        warning = attribution.warning
+
+        # Only check specifics for citations we actually matched to a source;
+        # if the citation itself is already unverified, that's the headline.
+        if status in (VerificationStatus.verified, VerificationStatus.partially_verified) and claim_sentence:
+            specifics = self._extract_specifics(claim_sentence)
+            if specifics and retrieval_context:
+                all_source_text = " ".join(
+                    r.chunk.text for r in retrieval_context.get_all_sources()
+                )
+                unsupported = [
+                    s for s in specifics
+                    if not self._specific_supported(s, all_source_text)
+                ]
+                if unsupported:
+                    status = VerificationStatus.partially_verified
+                    detail = ", ".join(unsupported)
+                    warning = (
+                        f"The citation {citation} was found in source material, but the specific "
+                        f"timeframe(s) stated with it ({detail}) do not appear in that material. "
+                        f"Confirm the actual figure in the regulation before relying on it — do not "
+                        f"treat it as a legal requirement on this basis."
+                    )
 
         return ClaimVerification(
-            claim_text=citation,
+            claim_text=claim_sentence or citation,
             claimed_citation=citation,
-            verification_status=attribution.verification_status,
+            verification_status=status,
             supporting_evidence=attribution.retrieved_text,
             evidence_source=attribution.source_name,
-            warning=attribution.warning,
+            warning=warning,
+        )
+
+    def check_unsupported_specifics(
+        self,
+        text: str,
+        retrieval_context: Optional[RetrievalContext] = None,
+    ) -> Optional[str]:
+        """Return a plain-language warning if `text` states concrete timeframes
+        that don't appear anywhere in the retrieved source material.
+
+        Used to flag an individual finding or policy section inline, rather
+        than burying it in an aggregate count. Returns None when everything
+        checks out (the common case) so callers can stay quiet by default.
+        """
+        if not text or not retrieval_context:
+            return None
+
+        all_source_text = " ".join(r.chunk.text for r in retrieval_context.get_all_sources())
+        if not all_source_text.strip():
+            return None  # No sources at all -- that's reported separately, don't double-warn.
+
+        specifics = self._extract_specifics(text)
+        if not specifics:
+            return None
+
+        unsupported = [s for s in specifics if not self._specific_supported(s, all_source_text)]
+        if not unsupported:
+            return None
+
+        readable = ", ".join(f"{s}s" if not s.endswith("s") else s for s in unsupported)
+        return (
+            f"Verify this timeframe ({readable}) against the regulation itself — it isn't stated "
+            f"in the source material we retrieved, so treat it as a suggested standard rather than "
+            f"a confirmed legal deadline."
         )
 
     def _citations_match(self, cite_a: str, cite_b: str) -> bool:

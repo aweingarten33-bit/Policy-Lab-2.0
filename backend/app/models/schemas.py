@@ -147,6 +147,14 @@ class GapRow(BaseModel):
         None,
         description="OIG GCPG element this finding relates to (1–7), e.g. '3 — Training & Education'"
     )
+    verification_warning: Optional[str] = Field(
+        None,
+        description=(
+            "Set when this finding states a concrete deadline/retention period that does not "
+            "appear in the retrieved source material -- i.e. a real citation carrying a number "
+            "the sources don't support. Surfaced inline on the finding itself."
+        )
+    )
     # ── Source Attribution (Phase 3) ──
     source_attribution: Optional[SourceAttribution] = Field(
         None,

@@ -252,6 +252,14 @@ function GapRowItem({ row, urlMap, snippets }: { row: GapRow; urlMap?: Record<st
             <p className="text-[13px] sm:text-sm text-foreground/85 italic leading-relaxed">"{linkifyRegulations(stripCiteTags(row.suggested_language), urlMap, snippets)}"</p>
           </div>
           <p className="text-[10px] font-mono text-muted-foreground break-all">Cite: {linkifyRegulations(stripCiteTags(row.citation), urlMap, snippets)}</p>
+          {row.verification_warning && (
+            <div className="rounded-lg p-3" style={{ background: "hsl(38 85% 52% / 0.09)" }}>
+              <p className="text-[11px] leading-relaxed text-foreground/80">
+                <span className="font-bold" style={{ color: "hsl(38 85% 38%)" }}>Check this figure: </span>
+                {row.verification_warning}
+              </p>
+            </div>
+          )}
           {row.source_attribution && <SourceBadge attribution={row.source_attribution} urlMap={urlMap} />}
         </div>
       )}
