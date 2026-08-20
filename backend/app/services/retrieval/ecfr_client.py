@@ -384,7 +384,11 @@ def parts_to_source_chunks(part_data: Dict, category: SourceCategory) -> List[So
 
         metadata = SourceMetadata(
             source_name=f"{label} — {heading}" if heading else label,
-            source_type=SourceType.curated_source,
+            # SourceType has no `curated_source` member -- this line raised
+            # AttributeError on the first section of every part, so
+            # parts_to_source_chunks never returned anything and the seeder
+            # recorded 0 chunks for a fetch that had actually succeeded.
+            source_type=SourceType.retrieved_source,
             category=category,
             jurisdiction=Jurisdiction.federal,
             effective_date=fetched_date,

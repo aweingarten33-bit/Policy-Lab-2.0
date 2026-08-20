@@ -59,6 +59,7 @@ class ChromaStore:
 
     COLLECTION_NAMES = [
         "federal_regulation",
+        "federal_guidance",
         "ocr_guidance",
         "state_law",
         "policy_clause_library",

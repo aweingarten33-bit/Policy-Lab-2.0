@@ -261,19 +261,23 @@ class ComplianceRetriever:
         jurisdiction: Optional[str] = None,
     ) -> List[str]:
         """Determine which collections are most relevant for a step."""
-        # All steps benefit from federal regulations and OCR guidance
-        base_collections = ["federal_regulation", "ocr_guidance"]
+        # All steps benefit from federal regulations and agency guidance.
+        # federal_guidance carries the OIG/HCCA compliance-program material,
+        # which is what actually defines an "effective compliance program" --
+        # the CFR never states the seven elements, so a step that only sees
+        # regulatory text has nothing to ground program-design findings in.
+        base_collections = ["federal_regulation", "federal_guidance", "ocr_guidance"]
 
         # Step-specific collections
         step_collections = {
-            "gap_analysis": ["federal_regulation", "ocr_guidance", "enforcement_action", "requirement_pack"],
-            "draft_policy": ["example_policy", "policy_template", "policy_clause_library", "federal_regulation"],
-            "rewritten_policy": ["federal_regulation", "policy_clause_library", "policy_template"],
+            "gap_analysis": ["federal_regulation", "federal_guidance", "ocr_guidance", "enforcement_action", "requirement_pack"],
+            "draft_policy": ["example_policy", "policy_template", "policy_clause_library", "federal_regulation", "federal_guidance"],
+            "rewritten_policy": ["federal_regulation", "federal_guidance", "policy_clause_library", "policy_template"],
             "redline": ["federal_regulation", "policy_clause_library"],
             "adjacent_policies": ["policy_template", "example_policy", "requirement_pack"],
-            "remediation_plan": ["enforcement_action", "ocr_guidance", "requirement_pack"],
-            "board_summary": ["enforcement_action", "ocr_guidance"],
-            "implementation_checklist": ["policy_template", "requirement_pack", "policy_clause_library"],
+            "remediation_plan": ["federal_guidance", "enforcement_action", "ocr_guidance", "requirement_pack"],
+            "board_summary": ["federal_guidance", "enforcement_action", "ocr_guidance"],
+            "implementation_checklist": ["federal_guidance", "policy_template", "requirement_pack", "policy_clause_library"],
         }
 
         collections = step_collections.get(step_name, base_collections)

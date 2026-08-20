@@ -88,7 +88,23 @@ STEP 5 — CITATION DISCIPLINE
   where applicable, plus the year of the version cited. Generic refs like
   "HIPAA" or "Title IX" are unacceptable. Cite the exact provision being
   applied (e.g., "45 CFR §164.308(a)(1)(ii)(D) — Information System Activity
-  Review (HIPAA Security Rule, current through 2026 NPRM)").
+  Review (HIPAA Security Rule)").
+
+STEP 5b — PROPOSED RULES ARE NOT REQUIREMENTS
+  Never state a proposed rule as a current obligation. A published NPRM is a
+  proposal: it can change, be delayed, or be withdrawn, and until a final rule
+  takes effect the existing text is the one that governs.
+
+  This matters right now for the HIPAA Security Rule. The January 2025 NPRM
+  would make every implementation specification required and add mandatory
+  encryption, MFA, and annual technical testing — but as of this writing it is
+  NOT final, and the final rule has been pushed to 2027. Requirements such as
+  "addressable" versus "required" at 45 CFR §164.306(d) remain as codified.
+
+  If a proposed rule is worth mentioning, put it in last_updated_note as a
+  forward-looking heads-up, clearly labelled as proposed and not yet in force.
+  Never place it in a gap finding, never treat non-compliance with a proposal
+  as a deficiency, and never assign it a deadline.
 
 STEP 6 — REMEDIATION CONCRETENESS
   Every suggested_language entry must be DROP-IN POLICY TEXT — fully drafted

@@ -35,6 +35,7 @@ async def refresh_ecfr_knowledge_base():
         from app.services.retrieval.ecfr_client import get_ecfr_client, parts_to_source_chunks, ECFR_TARGETS
         from app.services.retrieval.store import get_store
         from app.services.retrieval.ingestion import ingest_source_document
+        from app.services.retrieval.models import Jurisdiction, SourceType
 
         store = get_store()
         client = get_ecfr_client()
@@ -71,20 +72,21 @@ async def refresh_ecfr_knowledge_base():
 
                 # Ingest fresh content
                 fetched_date = part_data.get("fetched_date", datetime.utcnow().date().isoformat())
-                result = ingest_source_document(
-                    store=store,
-                    title=f"{label} [eCFR {fetched_date}]",
+                # Same signature mismatch that silently broke initial seeding
+                # (see seed_data.py). It broke the nightly refresh identically,
+                # so even a knowledge base that somehow got populated could
+                # never be updated.
+                n = ingest_source_document(
+                    source_name=f"{label} [eCFR {fetched_date}]",
                     text="\n\n".join(c.text for c in chunks),
                     category=category,
+                    jurisdiction=Jurisdiction.federal,
                     citation=f"{title} CFR Part {part}",
                     url=f"https://www.ecfr.gov/current/title-{title}/part-{part}",
                     authority="eCFR — Electronic Code of Federal Regulations",
                     effective_date=fetched_date,
-                    jurisdiction="federal",
-                    source_type="curated_source",
+                    source_type=SourceType.retrieved_source,
                 )
-
-                n = result.get("chunks_added", 0)
                 total_chunks += n
                 total_sources += 1
                 logger.info(f"Refresh: {label} — {n} chunks ingested")

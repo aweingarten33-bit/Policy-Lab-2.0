@@ -26,6 +26,26 @@ from app.services.retrieval import seed_state
 
 
 @pytest.fixture(autouse=True)
+def _isolated_store(tmp_path, monkeypatch):
+    """Give every test an empty store of its own.
+
+    The bootstrap deliberately returns early when the knowledge base already
+    has chunks, so any developer (or earlier test) with a populated
+    ./knowledge_base made these tests report 'not_started' and fail for a
+    reason that had nothing to do with the behaviour under test.
+    """
+    from app.services.retrieval import store as store_module
+    monkeypatch.setattr(
+        store_module, "_store", store_module.ChromaStore(persist_dir=str(tmp_path / "kb"))
+    )
+    monkeypatch.setattr(
+        "app.services.retrieval.seed_data.restore_baked_knowledge_base",
+        lambda: 0,
+    )
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_state():
     seed_state.reset()
     yield

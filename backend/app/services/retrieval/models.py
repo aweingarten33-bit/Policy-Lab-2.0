@@ -35,6 +35,13 @@ class VerificationStatus(str, Enum):
 class SourceCategory(str, Enum):
     """Category of source material for collection management."""
     federal_regulation = "federal_regulation"       # Federal regulatory text (45 CFR, 42 CFR, etc.)
+    federal_guidance = "federal_guidance"           # Agency guidance documents that are not codified
+                                                    # in the CFR -- e.g. the OIG General Compliance
+                                                    # Program Guidance and the OIG/HCCA compliance
+                                                    # effectiveness resource guide. These define what
+                                                    # an effective compliance program looks like and
+                                                    # are cited constantly, but no eCFR part contains
+                                                    # them, so they need their own loader.
     ocr_guidance = "ocr_guidance"                   # OCR guidance and enforcement actions
     state_law = "state_law"                         # State-specific regulations and statutes
     policy_clause_library = "policy_clause_library" # Approved policy clause templates

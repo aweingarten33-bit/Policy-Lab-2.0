@@ -27,6 +27,7 @@ INDUSTRIES: dict = {
             # their text was never actually loaded, so those citations were
             # model recall rather than verified source material.
             (42, 1001, "42 CFR Part 1001 — OIG Exclusions & Anti-Kickback Safe Harbors", SourceCategory.federal_regulation),
+            (42, 1003, "42 CFR Part 1003 — OIG Civil Monetary Penalties", SourceCategory.federal_regulation),
             (42, 411,  "42 CFR Part 411 — Stark Law (Physician Self-Referral)", SourceCategory.federal_regulation),
             (45, 92,   "45 CFR Part 92 — Section 1557 Nondiscrimination in Health Programs", SourceCategory.federal_regulation),
         ],
@@ -419,6 +420,12 @@ POLICY_TYPES: dict = {
         {"slug": "oig_compliance_program",      "label": "OIG Compliance Program Policy",      "description": "Seven elements of an effective compliance program"},
         {"slug": "telehealth_policy",           "label": "Telehealth & Remote Care Policy",    "description": "HIPAA-compliant telehealth, consent, platform requirements"},
         {"slug": "code_of_conduct_hc",         "label": "Code of Conduct",                    "description": "Organizational ethics, fraud & abuse, reporting obligations"},
+        # Conflict of interest and compliance risk assessment are GCPG Elements
+        # 2 and 6 and are among the most commonly requested healthcare policies,
+        # but neither had an entry -- a hospital asking for either got routed
+        # through the generic Code of Conduct type.
+        {"slug": "conflict_of_interest_hc",     "label": "Conflict of Interest Policy",        "description": "Disclosure, recusal, gifts, board and physician financial relationships, Stark/AKS overlap"},
+        {"slug": "compliance_risk_assessment",  "label": "Compliance Risk Assessment Policy",  "description": "Annual enterprise risk assessment, risk scoring, work plan, auditing & monitoring"},
     ],
     "home_health": [
         {"slug": "patient_rights",            "label": "Patient Rights Policy",                       "description": "Notice of rights, grievance process, per 42 CFR 484.50"},
@@ -433,6 +440,13 @@ POLICY_TYPES: dict = {
         {"slug": "billing_compliance_hh",     "label": "Billing & Claims Compliance Policy",          "description": "PDGM billing accuracy, upcoding prevention, documentation support"},
         {"slug": "referral_compliance",       "label": "Referral Source Compliance Policy",           "description": "Anti-Kickback/Stark compliance for referral relationships"},
         {"slug": "telehealth_hh",             "label": "Telehealth & Remote Patient Monitoring Policy","description": "Virtual visit documentation, technology consent, HIPAA compliance"},
+        # Home health loads 45 CFR 164 but had no breach-response policy type,
+        # so the one policy that rule most directly requires could not be
+        # requested from the menu. Conflict of interest and risk assessment are
+        # added for the same reason they are on the hospital menu.
+        {"slug": "breach_notification_hh",    "label": "Breach Notification Policy",                  "description": "HIPAA/HITECH breach risk assessment, patient and HHS notification timelines"},
+        {"slug": "conflict_of_interest_hh",   "label": "Conflict of Interest Policy",                 "description": "Disclosure, recusal, gifts, referral-source financial relationships"},
+        {"slug": "risk_assessment_hh",        "label": "Compliance Risk Assessment Policy",           "description": "Annual risk assessment, auditing and monitoring work plan, corrective action"},
     ],
 }
 

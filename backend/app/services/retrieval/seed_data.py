@@ -19,6 +19,7 @@ from typing import Dict
 from app.services.retrieval.ecfr_client import get_ecfr_client, ECFR_TARGETS
 from app.config import settings
 from app.services.retrieval.ingestion import ingest_source_document
+from app.services.retrieval.models import Jurisdiction, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,61 @@ def seed_knowledge_base() -> Dict[str, int]:
         raise SeedingFailedError(f"Knowledge base seeding failed: {e}") from e
 
 
+async def _seed_guidance() -> Dict[str, int]:
+    """Load federal compliance-program guidance that has no CFR equivalent.
+
+    The seven elements of an effective compliance program -- the framework
+    every healthcare compliance officer and every HCCA certification is built
+    around -- appear in OIG guidance, not in the Code of Federal Regulations.
+    Without this the app named those elements purely from model memory while
+    presenting itself as source-grounded.
+
+    Failures here are logged and skipped: guidance is additive, and losing it
+    must never prevent the regulatory corpus from loading.
+    """
+    from app.services.retrieval.guidance_client import (
+        get_guidance_client, GUIDANCE_DOCUMENTS,
+    )
+    from app.services.retrieval.models import SourceCategory
+
+    client = get_guidance_client()
+    results: Dict[str, int] = {}
+
+    logger.info(f"Seeding compliance guidance ({len(GUIDANCE_DOCUMENTS)} documents)...")
+
+    for doc in GUIDANCE_DOCUMENTS:
+        try:
+            fetched = await client.fetch_document(doc)
+            if not fetched or not fetched.get("sections"):
+                logger.warning(f"Guidance: no content for {doc.label} — skipping")
+                results[doc.label] = 0
+                continue
+
+            total = 0
+            for section in fetched["sections"]:
+                total += ingest_source_document(
+                    source_name=f"{doc.label} — {section['heading']}",
+                    text=section["text"],
+                    category=SourceCategory.federal_guidance,
+                    jurisdiction=Jurisdiction.federal,
+                    citation=doc.citation,
+                    url=fetched["url"],
+                    authority=doc.authority,
+                    effective_date=doc.published,
+                    section=section["heading"],
+                    source_type=SourceType.retrieved_source,
+                )
+
+            results[doc.label] = total
+            logger.info(f"  ✓ {doc.label}: {total} chunks")
+
+        except Exception as e:
+            logger.error(f"Failed to seed guidance {doc.label}: {e}", exc_info=True)
+            results[doc.label] = 0
+
+    return results
+
+
 async def _async_seed() -> Dict[str, int]:
     """Async implementation: fetch eCFR and ingest into ChromaDB."""
     from app.services.retrieval.store import get_store
@@ -83,6 +139,13 @@ async def _async_seed() -> Dict[str, int]:
     results: Dict[str, int] = {}
     today = date.today().isoformat()
 
+    # Guidance first, deliberately. The bundled OIG/HCCA documents load from
+    # disk with no network at all, so seeding them before the eCFR preflight
+    # means a government API outage costs the regulatory corpus but still
+    # leaves the compliance-program guidance in place -- partial grounding
+    # instead of none.
+    results.update(await _seed_guidance())
+
     # Preflight: confirm eCFR is reachable ONCE before attempting every target.
     # Each part retries across several snapshot dates in two formats, so with
     # ~30 targets an unreachable eCFR would otherwise grind through hundreds of
@@ -90,10 +153,17 @@ async def _async_seed() -> Dict[str, int]:
     # check up front turns that into an immediate, clear failure.
     probe_title = ECFR_TARGETS[0][0] if ECFR_TARGETS else 45
     if await client.get_title_as_of(probe_title) is None:
-        raise SeedingFailedError(
+        message = (
             "eCFR is unreachable (titles.json returned no usable data), so no regulatory "
             "text can be downloaded. Skipping all targets rather than retrying each one."
         )
+        if sum(results.values()) > 0:
+            # Guidance did load. Raising here would throw away a usable partial
+            # corpus and report total failure, so report loudly and return what
+            # was actually obtained.
+            logger.error(f"{message} Continuing with guidance-only grounding.")
+            return results
+        raise SeedingFailedError(message)
 
     deadline = time.monotonic() + settings.kb_seed_timeout_seconds
     logger.info(f"Seeding knowledge base from eCFR ({len(ECFR_TARGETS)} targets, as of {today})...")
@@ -125,20 +195,25 @@ async def _async_seed() -> Dict[str, int]:
             # Ingest as a single document (ingestion module handles chunking)
             combined_text = "\n\n".join(c.text for c in chunks)
 
-            ingest_result = ingest_source_document(
-                store=store,
-                title=f"{label} [eCFR {today}]",
+            # This call used to pass `store=` and `title=` (neither is a
+            # parameter), a `source_type` string that is not a SourceType
+            # member, and then read `.get("chunks_added")` off what is
+            # actually an int. Every CFR part therefore raised TypeError
+            # inside the loop's except-block, which logged "Failed to seed"
+            # and recorded 0 -- indistinguishable from eCFR having no
+            # content. Downloading and parsing had already succeeded; the
+            # results were being thrown away at the last step.
+            n = ingest_source_document(
+                source_name=f"{label} [eCFR {today}]",
                 text=combined_text,
                 category=category,
+                jurisdiction=Jurisdiction.federal,
                 citation=f"{title} CFR Part {part}",
                 url=f"https://www.ecfr.gov/current/title-{title}/part-{part}",
                 authority="eCFR — Electronic Code of Federal Regulations (current, in-force text)",
                 effective_date=today,
-                jurisdiction="federal",
-                source_type="curated_source",
+                source_type=SourceType.retrieved_source,
             )
-
-            n = ingest_result.get("chunks_added", 0)
             results[label] = n
             logger.info(f"  ✓ {label}: {n} chunks from eCFR")
 
