@@ -17,6 +17,7 @@ automatically whenever an industry's regulation list changes.
 Each pull is timestamped so outputs clearly show when the regulation was retrieved.
 """
 
+import asyncio
 import logging
 import re
 import xml.etree.ElementTree as ET
@@ -62,12 +63,29 @@ class ECFRClient:
 
     def __init__(self):
         self._client = None
+        self._client_loop = None
         # title -> up_to_date_as_of, cached per run so titles.json is fetched once.
         self._title_dates: Dict[int, str] = {}
 
     @property
     def client(self) -> httpx.AsyncClient:
+        # An httpx.AsyncClient is bound to the event loop it was created in.
+        # This client is a process-wide singleton, and seeding used to run in a
+        # short-lived loop of its own -- so the client outlived that loop and
+        # every later call died with "Event loop is closed", permanently. That
+        # took out the nightly refresh too, which is why an empty knowledge base
+        # could never recover on its own. Rebuild whenever the loop changes.
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if self._client is not None and self._client_loop is not current_loop:
+            logger.info("eCFR client was bound to a different event loop — rebuilding it.")
+            self._client = None
+
         if self._client is None or self._client.is_closed:
+            self._client_loop = current_loop
             self._client = httpx.AsyncClient(
                 # Short per-request timeout: fetch_part may try several
                 # snapshot dates, and a 60s hang on each would blow the whole

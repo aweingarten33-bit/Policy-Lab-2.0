@@ -28,6 +28,18 @@ class SeedingFailedError(RuntimeError):
     chunks because eCFR legitimately had nothing new)."""
 
 
+async def seed_knowledge_base_async() -> Dict[str, int]:
+    """Seed the knowledge base from within an existing event loop.
+
+    Preferred over seed_knowledge_base() anywhere async is already available
+    (notably FastAPI startup). The sync wrapper below has to run the work in a
+    throwaway loop, and anything holding a connection created in that loop --
+    such as the shared eCFR HTTP client -- is left bound to a loop that no
+    longer exists the moment it finishes.
+    """
+    return await _async_seed()
+
+
 def seed_knowledge_base() -> Dict[str, int]:
     """
     Populate the knowledge base from live eCFR content.

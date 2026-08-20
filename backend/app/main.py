@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     # Auto-seed the knowledge base if enabled
     if settings.kb_auto_seed and settings.kb_enabled:
         try:
-            from app.services.retrieval.seed_data import seed_knowledge_base
+            from app.services.retrieval.seed_data import seed_knowledge_base_async
             from app.services.retrieval.store import get_store
 
             # Initialize the store first
@@ -83,7 +83,9 @@ async def lifespan(app: FastAPI):
                 logger.info(
                     "Knowledge base is empty — seeding with foundational regulatory content..."
                 )
-                results = seed_knowledge_base()
+                # Awaited in the startup loop rather than run in a throwaway
+                # one, so shared HTTP clients stay bound to a live loop.
+                results = await seed_knowledge_base_async()
                 total = sum(results.values())
                 if total == 0:
                     # Zero chunks after a seed attempt is a grounding outage, not
