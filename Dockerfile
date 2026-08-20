@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # --- Stage 2: backend runtime, serving the built frontend ---
-FROM python:3.11-slim
+FROM python:3.14-slim
 WORKDIR /app/backend
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
