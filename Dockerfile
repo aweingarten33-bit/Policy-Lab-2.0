@@ -32,7 +32,15 @@ COPY --from=frontend-build /fe/dist /app/frontend/dist
 #
 # Warns rather than fails on a transient eCFR outage; pass --require-success to
 # make an empty knowledge base a hard build failure instead.
-RUN python scripts/build_knowledge_base.py || true
+#
+# Bounded twice on purpose. Seeding is the slowest, most memory-hungry and most
+# network-dependent step in the build, and shipping an image matters more than
+# shipping a complete corpus: the bundled OIG/HCCA guidance loads from disk
+# regardless, so a capped run still yields real grounding. `timeout` covers a
+# hang the app's own budget cannot see, and `|| true` keeps any failure here
+# from blocking a deploy.
+ENV KB_SEED_TIMEOUT_SECONDS=360
+RUN timeout 600 python scripts/build_knowledge_base.py || true
 
 ENV ENVIRONMENT=production
 EXPOSE 8080
