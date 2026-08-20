@@ -55,6 +55,18 @@ async def health_check():
             "citations are not active. Re-seed via POST /api/kb/seed."
         )
 
+    corpus_date = None
+    corpus_age_days = None
+    if kb_chunks > 0:
+        try:
+            corpus_date = get_store().get_corpus_date()
+            if corpus_date:
+                from datetime import date as _date
+                corpus_age_days = (_date.today() - _date.fromisoformat(corpus_date)).days
+        except Exception as e:
+            # Never let an age lookup break the health check itself.
+            logger.warning(f"Health check could not determine corpus age: {e}")
+
     return HealthResponse(
         status="ok",
         version="3.0.0",
@@ -62,4 +74,6 @@ async def health_check():
         kb_chunks=kb_chunks,
         kb_grounded=kb_enabled and kb_chunks > 0 and not kb_unreadable,
         kb_unreadable=kb_unreadable,
+        kb_corpus_date=corpus_date,
+        kb_corpus_age_days=corpus_age_days,
     )

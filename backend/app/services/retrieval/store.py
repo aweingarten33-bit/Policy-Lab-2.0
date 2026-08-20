@@ -279,6 +279,39 @@ class ChromaStore:
         """True if any collection failed to report a count."""
         return any(v < 0 for v in self.get_all_stats().values())
 
+    def get_corpus_date(self) -> Optional[str]:
+        """The most recent effective_date across stored regulation chunks.
+
+        The corpus is built into the image, so it is exactly as current as the
+        last rebuild. Nothing surfaced that date, which meant a knowledge base
+        could quietly drift years out of date while every check still reported
+        a healthy "5,714 chunks stored".
+
+        Returns an ISO date string, or None if no dated chunk was found.
+        """
+        # Only eCFR-sourced chunks. Guidance chunks store the date the document
+        # itself was published -- the OIG guidance is stamped 2023 and always
+        # will be -- so including them reported a freshly built corpus as
+        # nearly three years old.
+        try:
+            collection = self.get_collection("federal_regulation")
+            if collection.count() == 0:
+                return None
+            # A sample is enough: every chunk from one build carries the same
+            # fetch date, so scanning the whole corpus on every health check
+            # would be wasted work.
+            sample = collection.get(limit=200, include=["metadatas"])
+        except Exception as e:
+            logger.warning(f"Could not read corpus dates: {e}")
+            return None
+
+        latest: Optional[str] = None
+        for meta in (sample.get("metadatas") or []):
+            date = (meta or {}).get("effective_date") or ""
+            if date and (latest is None or date > latest):
+                latest = date
+        return latest
+
     def delete_by_prefix(self, collection_name: str, id_prefix: str) -> int:
         """Delete every chunk whose id starts with `id_prefix`. Returns the count.
 

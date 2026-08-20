@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/kb", tags=["Knowledge Base"])
 
+# When to start advising a rebuild. Deliberately generous: codified regulation
+# changes slowly, and live .gov research covers recent developments regardless,
+# so this flags "worth refreshing", not "broken".
+CORPUS_STALE_AFTER_DAYS = 180
+
 
 @router.get("/stats", response_model=KnowledgeBaseStatsResponse)
 async def kb_stats():
@@ -175,6 +180,33 @@ async def kb_diagnose():
     except Exception as e:
         total = 0
         step("Knowledge base contents", False, f"Could not read the store: {e}")
+
+    # 0a. How old is the corpus? It is built into the image, so it is exactly
+    # as current as the last rebuild -- and nothing said so. A knowledge base
+    # can drift years out of date while every other check still reports a
+    # healthy "5,714 chunks stored".
+    if total > 0:
+        try:
+            corpus_date = get_store().get_corpus_date()
+            if not corpus_date:
+                step("Corpus age", True, "No dated chunks found — age unknown.")
+            else:
+                from datetime import date as _date
+                built = _date.fromisoformat(corpus_date)
+                days = (_date.today() - built).days
+                months = days // 30
+                fresh = days <= CORPUS_STALE_AFTER_DAYS
+                if fresh:
+                    detail = f"Regulations current as of {corpus_date} ({days} days old)."
+                else:
+                    detail = (
+                        f"Regulations are from {corpus_date} — about {months} months old. "
+                        f"Refresh with Manual Deploy → 'Clear build cache & deploy'. "
+                        f"Live .gov research still covers recent developments in the meantime."
+                    )
+                step("Corpus age", fresh, detail)
+        except Exception as e:
+            step("Corpus age", True, f"Could not determine corpus age: {e}")
 
     # A populated knowledge base means seeding correctly had nothing to do:
     # the corpus is built into the image. Reporting "seeding never ran" as a

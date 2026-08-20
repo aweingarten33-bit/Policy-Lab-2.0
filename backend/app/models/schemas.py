@@ -639,6 +639,11 @@ class HealthResponse(BaseModel):
     kb_chunks: int = 0
     kb_grounded: bool = False
     kb_unreadable: bool = False
+    # Date the stored regulations were downloaded. The corpus is built into the
+    # image, so it is exactly as current as the last rebuild -- and a chunk
+    # count alone cannot distinguish a fresh corpus from a years-old one.
+    kb_corpus_date: Optional[str] = None
+    kb_corpus_age_days: Optional[int] = None
 
 
 # ── Knowledge Base Management Models ──
