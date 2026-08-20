@@ -98,14 +98,34 @@ def test_build_script_does_not_fail_the_build_by_default():
     assert result.returncode == 0
 
 
-def test_build_succeeds_without_network_because_guidance_is_bundled():
+def test_a_normal_build_ships_guidance_even_with_no_network():
     """An offline build must still produce a usable corpus.
 
-    This test previously asserted the opposite: with no eCFR egress the build
-    loaded nothing, so --require-success failed. Bundling the OIG/HCCA
-    guidance PDFs in the repo changed that on purpose -- an eCFR outage now
-    costs the regulatory corpus but still leaves the compliance-program
-    guidance, which is partial grounding rather than none.
+    The bundled OIG/HCCA guidance loads from disk, so an eCFR outage costs the
+    regulatory corpus but leaves the compliance-program guidance -- partial
+    grounding rather than none. A default build should not be blocked by that.
+    """
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "scripts/build_knowledge_base.py"],
+        capture_output=True, text=True, timeout=600,
+        env={**os.environ, "KB_PERSIST_DIR": tempfile.mkdtemp()},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "SUCCESS" in result.stdout
+    # It must say plainly that the regulations are missing, not imply a
+    # complete corpus.
+    assert "0 regulatory" in result.stdout
+    assert "guidance-only grounding" in result.stderr
+
+
+def test_strict_mode_requires_the_regulations_not_merely_content():
+    """The gate has to check the thing it exists to protect.
+
+    Strict mode used to fail only when the total chunk count was zero. The
+    bundled guidance always loads from disk, so the total is never zero -- and
+    a build in which eCFR was unreachable and not one regulation downloaded
+    would have passed. The switch protected against nothing.
     """
     import subprocess, sys
     result = subprocess.run(
@@ -113,28 +133,18 @@ def test_build_succeeds_without_network_because_guidance_is_bundled():
         capture_output=True, text=True, timeout=600,
         env={**os.environ, "KB_PERSIST_DIR": tempfile.mkdtemp()},
     )
-    assert result.returncode == 0, result.stderr
-    assert "SUCCESS" in result.stdout
+    # No eCFR egress in this environment, so a strict build must refuse.
+    assert result.returncode == 1, result.stdout
+    assert "FAILED" in result.stderr
+    assert "no regulatory text was downloaded" in result.stderr
 
 
-def test_strict_mode_still_fails_when_absolutely_nothing_loads():
-    """--require-success must remain a real gate, not a rubber stamp."""
-    import subprocess, sys, textwrap
-    probe = textwrap.dedent("""
-        import asyncio, sys
-        sys.path.insert(0, ".")
-        import scripts.build_knowledge_base as bk
-        bk.asyncio = asyncio
-        async def nothing():
-            return 0          # _build reports a chunk count, not a results dict
-        bk._build = nothing
-        sys.argv = ["build", "--require-success"]
-        raise SystemExit(bk.main())
-    """)
+def test_strict_mode_reports_what_did_load():
+    """A failure that hides the partial success is harder to act on."""
+    import subprocess, sys
     result = subprocess.run(
-        [sys.executable, "-c", probe],
-        capture_output=True, text=True, timeout=120,
+        [sys.executable, "scripts/build_knowledge_base.py", "--require-success"],
+        capture_output=True, text=True, timeout=600,
         env={**os.environ, "KB_PERSIST_DIR": tempfile.mkdtemp()},
     )
-    assert result.returncode == 1
-    assert "FAILED" in result.stderr
+    assert "chunks of bundled guidance loaded" in result.stderr

@@ -39,15 +39,26 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-async def _build() -> int:
+async def _build() -> tuple:
+    """Build the corpus. Returns (total_chunks, regulation_chunks).
+
+    The two numbers are reported separately on purpose. The OIG/HCCA guidance
+    is bundled with the repo and loads from disk with no network at all, so a
+    total chunk count is never zero even when eCFR was completely unreachable
+    and not one regulation was downloaded. A build gate that only checked the
+    total would therefore always pass -- protecting against nothing.
+
+    The regulation count is what a strict build must actually require.
+    """
     from app.services.retrieval.seed_data import _async_seed
     from app.services.retrieval.store import get_store
 
     store = get_store()
-    existing = sum(v for v in store.get_all_stats().values() if v > 0)
+    stats = store.get_all_stats()
+    existing = sum(v for v in stats.values() if v > 0)
     if existing:
         print(f"[build-kb] Knowledge base already has {existing} chunks — nothing to do.")
-        return existing
+        return existing, max(stats.get("federal_regulation", 0), 0)
 
     print("[build-kb] Downloading regulations from eCFR and embedding them...")
     results = await _async_seed()
@@ -58,28 +69,55 @@ async def _build() -> int:
         print(f"[build-kb]   {marker} {label}: {count} chunks")
         total += count
 
-    print(f"[build-kb] Total: {total} chunks across {len(results)} sources.")
-    return total
+    regulation_chunks = max(get_store().get_all_stats().get("federal_regulation", 0), 0)
+    print(
+        f"[build-kb] Total: {total} chunks across {len(results)} sources "
+        f"({regulation_chunks} of them regulatory text from eCFR)."
+    )
+    return total, regulation_chunks
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--require-success", action="store_true",
-                        help="Fail the build if zero chunks were loaded.")
+                        help="Fail the build unless regulatory text was downloaded from eCFR.")
     args = parser.parse_args()
 
     try:
-        total = asyncio.run(_build())
+        total, regulation_chunks = asyncio.run(_build())
     except Exception as e:
         print(f"[build-kb] ERROR: {type(e).__name__}: {e}", file=sys.stderr)
-        total = 0
+        total, regulation_chunks = 0, 0
+
+    # Strict mode requires the regulations, not merely "some content". The
+    # bundled guidance loads from disk regardless, so checking the total would
+    # pass a build in which eCFR was unreachable and nothing was downloaded.
+    if args.require_success and regulation_chunks == 0:
+        print(
+            "[build-kb] FAILED: no regulatory text was downloaded from eCFR. "
+            f"({total} chunks of bundled guidance loaded, but a strict build "
+            "requires the regulations.) Refusing to ship an image whose "
+            "citations cannot be verified against current CFR text.",
+            file=sys.stderr,
+        )
+        return 1
 
     if total > 0:
-        print("[build-kb] SUCCESS — knowledge base baked into the image.")
+        print(
+            f"[build-kb] SUCCESS — {total} chunks baked into the image "
+            f"({regulation_chunks} regulatory)."
+        )
+        if regulation_chunks == 0:
+            print(
+                "[build-kb] WARNING: guidance loaded but eCFR returned no regulatory "
+                "text. This image ships with guidance-only grounding. Set "
+                "KB_SEED_REQUIRED=true to make this a build failure.",
+                file=sys.stderr,
+            )
         return 0
 
     message = (
-        "[build-kb] WARNING: no regulatory content was loaded. The image will ship "
+        "[build-kb] WARNING: no content was loaded at all. The image will ship "
         "without a prebuilt knowledge base and will fall back to seeding at runtime."
     )
     if args.require_success:
@@ -87,7 +125,7 @@ def main() -> int:
         return 1
 
     # Default: warn but let the build through. A transient eCFR outage should
-    # not block shipping a fix, and runtime seeding still covers this case.
+    # not block shipping a fix.
     print(message, file=sys.stderr)
     return 0
 

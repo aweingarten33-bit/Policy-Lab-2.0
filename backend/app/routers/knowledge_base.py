@@ -223,6 +223,53 @@ async def kb_diagnose():
             "detail": seed_state.describe(),
         })
 
+    # 0a2. Can the app actually reach a model? Everything else can be perfect
+    # -- corpus loaded, research working -- and nothing will generate if the
+    # provider is out of credit, rate limiting, or misconfigured. This page
+    # checked every other link in the chain except the one that writes the
+    # output, so "nothing is generating" had no diagnosis at all.
+    try:
+        from app.services.provider import get_provider
+
+        import time as _t
+
+        from app.config import settings as _settings
+        provider = get_provider()
+        configured = _settings.llm_cascade_models or []
+        if not configured:
+            step("AI provider", False,
+                 "No model is configured — every provider API key is unset. "
+                 "Set ANTHROPIC_API_KEY in the environment.")
+        else:
+            started = _t.monotonic()
+            try:
+                reply = await provider.complete(
+                    system_prompt="Reply with the single word: ok",
+                    user_message="ping",
+                    max_tokens=8,
+                    temperature=0,
+                )
+                elapsed = _t.monotonic() - started
+                step("AI provider", bool(reply and reply.strip()),
+                     f"{configured[0]} responded in {elapsed:.1f}s.")
+            except Exception as e:
+                text = f"{type(e).__name__}: {e}"
+                if "429" in text or "rate" in text.lower():
+                    detail = (f"Rate limited by the provider — {configured[0]}. "
+                              f"Wait a few minutes and retry.")
+                elif "402" in text or "credit" in text.lower() or "balance" in text.lower():
+                    detail = (f"The provider rejected the request for billing reasons "
+                              f"({configured[0]}). Check the account balance at "
+                              f"console.anthropic.com → Billing.")
+                elif "401" in text or "403" in text or "authentication" in text.lower():
+                    detail = (f"The provider rejected the API key ({configured[0]}). "
+                              f"Check ANTHROPIC_API_KEY in the environment.")
+                else:
+                    detail = f"Model call failed: {text[:300]}"
+                step("AI provider", False, detail)
+    except Exception as e:
+        step("AI provider", False, f"Could not test the provider: {type(e).__name__}: {e}")
+
     # 0b. Is live research actually reaching the internet? This used to fail
     # silently: a blocked search engine returned an empty list, identical to
     # "nothing relevant found", so there was no way to tell whether the .gov
