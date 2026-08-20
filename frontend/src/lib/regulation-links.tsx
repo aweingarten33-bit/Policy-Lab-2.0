@@ -3,6 +3,23 @@ import type { SourceSnippet } from "@/lib/api";
 
 type Rule = { pattern: RegExp; url: (m: RegExpExecArray) => string };
 
+/**
+ * Official link for a U.S. Code section.
+ *
+ * These used to point at law.cornell.edu. Two problems with that. Cornell's
+ * LII is a fine secondary source but it is a private university site, not the
+ * government — and this tool tells users its citations resolve to authoritative
+ * .gov sources. The generic rule also built a Cornell *search* URL rather than
+ * a section link, so it frequently landed on nothing at all.
+ *
+ * uscode.house.gov is the Office of the Law Revision Counsel: the official
+ * publisher of the U.S. Code, and a deep link straight to the section text.
+ */
+function uscodeUrl(title: string, section: string): string {
+  const granule = `USC-prelim-title${title}-section${section}`;
+  return `https://uscode.house.gov/view.xhtml?req=granuleid:${granule}&num=0&edition=prelim`;
+}
+
 // ── Curated rules: well-known regulations get the canonical authority URL ──
 const CURATED_RULES: Rule[] = [
   // 45 CFR §164.XXX (or 164.XXX(a)(1)) — most common HIPAA cite
@@ -97,7 +114,7 @@ const CURATED_RULES: Rule[] = [
   // 42 USC §1320d-XX (HIPAA statutory base)
   {
     pattern: /\b42\s*U\.?S\.?C\.?\s*§?\s*1320d(?:-\d+)?/gi,
-    url: () => `https://www.law.cornell.edu/uscode/text/42/1320d`,
+    url: () => uscodeUrl("42", "1320d"),
   },
 ];
 
@@ -112,8 +129,8 @@ const FALLBACK_RULES: Rule[] = [
   },
   // Any "<digits> U.S.C. ..." reference we didn't recognize
   {
-    pattern: /\b\d+\s*U\.?S\.?C\.?\s*§?\s*\d+[A-Za-z0-9\-]*/gi,
-    url: (m) => `https://www.law.cornell.edu/uscode/search?q=${encodeURIComponent(m[0])}`,
+    pattern: /\b(\d+)\s*U\.?S\.?C\.?\s*§?\s*(\d+[A-Za-z0-9\-]*)/gi,
+    url: (m) => uscodeUrl(m[1], m[2]),
   },
   // OCR / HHS sub-regulatory guidance references
   {

@@ -187,6 +187,24 @@ class VerificationEvidence(BaseModel):
     reason: str = ""
 
 
+class ObligationType(str, Enum):
+    """What kind of duty a finding asserts.
+
+    A compliance officer's first question about any finding is "do I have to
+    do this, or are you recommending it?" Collapsing the two is how an OSHA
+    provision saying an allowance "may" be made was reported as a must-fix
+    regulatory deficiency.
+    """
+    required = "required"                          # black-letter law imposes it
+    guidance = "guidance"                          # agency recommends/interprets
+    best_practice = "best_practice"                # sound practice, not mandated
+    organizational_choice = "organizational_choice"  # the org's own decision
+    # Assigned by the entailment gate, never by the model: the finding was
+    # presented as legally required, but the cited source does not establish
+    # that duty.
+    unverified_requirement = "unverified_requirement"
+
+
 class GapRow(BaseModel):
     """A single gap finding row."""
     clause: str = Field(..., description="Policy section or topic area")
@@ -200,6 +218,19 @@ class GapRow(BaseModel):
     finding: str = Field(..., description="What is wrong or missing")
     suggested_language: str = Field(..., description="Ready-to-paste policy text to remediate the gap")
     citation: str = Field(..., description="Full citation with source and year")
+    obligation_type: ObligationType = Field(
+        ObligationType.required,
+        description=(
+            "Whether the cited authority actually mandates this, merely recommends it, "
+            "is sound practice, or is the organization's own choice. Downgraded to "
+            "'unverified_requirement' by the entailment gate if a claimed mandate is not "
+            "established by the source text."
+        )
+    )
+    obligation_note: Optional[str] = Field(
+        None,
+        description="Why the obligation type changed, when the entailment gate downgraded it"
+    )
     remediation_priority: Optional[str] = Field(
         None,
         description="Immediate / 30-day / 90-day / Next-review remediation timeline"

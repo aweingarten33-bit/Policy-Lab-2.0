@@ -371,10 +371,16 @@ async def security_headers_middleware(request: Request, call_next):
         "Content-Security-Policy",
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "
+        # PDF text extraction runs in a web worker, and pdf.js instantiates it
+        # from a blob. Without these two, uploading a PDF fails -- which is
+        # exactly what happened when this header was first added and the
+        # library was still being pulled from a CDN.
+        "worker-src 'self' blob:; "
+        "child-src 'self' blob:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com data:; "
-        "img-src 'self' data:; "
-        "connect-src 'self'; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self' blob:; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self'",

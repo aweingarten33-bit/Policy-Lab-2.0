@@ -56,6 +56,20 @@ COLOR_RETRIEVED_SOURCE = RGBColor(0x29, 0x80, 0xB9)     # Blue — from curated 
 COLOR_LIVE_RESEARCH = RGBColor(0x8E, 0x44, 0xAD)        # Purple — from controlled web research
 COLOR_MODEL_INFERENCE = RGBColor(0xE6, 0x7E, 0x22)      # Orange — LLM training data, NOT verified
 
+# How each obligation class is presented. The wording is deliberately plain:
+# a compliance officer reading a finding needs to know whether it is law or a
+# recommendation before they read anything else about it.
+_OBLIGATION_LABELS = {
+    "required": ("LEGALLY REQUIRED", COLOR_CRITICAL),
+    "guidance": ("REGULATORY GUIDANCE — recommended, not mandated", COLOR_MODEL_INFERENCE),
+    "best_practice": ("BEST PRACTICE — not legally required", COLOR_BLACK),
+    "organizational_choice": ("ORGANIZATIONAL CHOICE — your decision to adopt", COLOR_BLACK),
+    "unverified_requirement": (
+        "UNVERIFIED REQUIREMENT — stated as mandatory, not confirmed against the source",
+        COLOR_MODEL_INFERENCE,
+    ),
+}
+
 # ── Verification Status Colors ──
 COLOR_STATUS_VERIFIED = RGBColor(0x27, 0xAE, 0x60)       # Green
 COLOR_STATUS_PARTIAL = RGBColor(0xF3, 0x9C, 0x12)        # Amber
@@ -701,6 +715,39 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
             run_v.font.color.rgb = COLOR_BLACK
             run_v.font.name = FONT_FAMILY
             p.paragraph_format.space_after = Pt(3)
+
+            # Whether this is actually mandatory. A reader's first question
+            # about any finding is "do I have to?", and a finding whose claimed
+            # mandate could not be confirmed against its own source must say so
+            # here rather than reading as settled law.
+            obligation = getattr(row, "obligation_type", None)
+            if obligation is not None:
+                label, colour = _OBLIGATION_LABELS.get(
+                    obligation.value, ("", COLOR_BLACK)
+                )
+                if label:
+                    p = doc.add_paragraph()
+                    run_l = p.add_run("Obligation: ")
+                    run_l.bold = True
+                    run_l.font.size = Pt(10)
+                    run_l.font.color.rgb = COLOR_BLACK
+                    run_l.font.name = FONT_FAMILY
+                    run_v = p.add_run(label)
+                    run_v.bold = True
+                    run_v.font.size = Pt(10)
+                    run_v.font.color.rgb = colour
+                    run_v.font.name = FONT_FAMILY
+                    p.paragraph_format.space_after = Pt(3)
+
+                    note = getattr(row, "obligation_note", None)
+                    if note:
+                        p = doc.add_paragraph()
+                        run_n = p.add_run(note)
+                        run_n.italic = True
+                        run_n.font.size = Pt(9)
+                        run_n.font.color.rgb = colour
+                        run_n.font.name = FONT_FAMILY
+                        p.paragraph_format.space_after = Pt(3)
 
             # Finding
             p = doc.add_paragraph()

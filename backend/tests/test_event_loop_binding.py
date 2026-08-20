@@ -23,9 +23,16 @@ from app.services.retrieval.ecfr_client import ECFRClient
 
 
 def _build_client_in_throwaway_loop(client: ECFRClient):
-    """Create the httpx client inside a loop that then closes."""
+    """Create the httpx client inside a loop that then closes.
+
+    Returns the object itself, not its id(). Comparing ids was flaky: once the
+    stale client is garbage-collected, CPython is free to hand its address to
+    the replacement, so the two ids could match even though rebuilding had
+    worked correctly. Holding a reference keeps the old object alive and makes
+    the identity comparison mean what it says.
+    """
     async def inner():
-        return id(client.client)
+        return client.client
     return asyncio.run(inner())
 
 
@@ -34,10 +41,10 @@ async def test_client_is_rebuilt_after_its_loop_closes():
     client = ECFRClient()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        stale_id = pool.submit(_build_client_in_throwaway_loop, client).result()
+        stale = pool.submit(_build_client_in_throwaway_loop, client).result()
 
     fresh = client.client  # accessed from a different, live loop
-    assert id(fresh) != stale_id, (
+    assert fresh is not stale, (
         "Reused a client bound to a closed loop — this is the bug that made the "
         "knowledge base unable to recover."
     )

@@ -248,6 +248,8 @@ class PackageOrchestrator:
                 continue
             self.verification.apply_claim_support(ev, support, outcome.get("note", ""))
 
+        self._gate_unproven_mandates(gap_result)
+
         verified = sum(
             1 for r in gap_result.gap_table
             if r.evidence and r.evidence.status == VerificationStatus.verified
@@ -256,6 +258,66 @@ class PackageOrchestrator:
             f"Evidence: {verified}/{len(gap_result.gap_table)} findings fully verified "
             f"(citation exists + specifics match + excerpt supports claim)"
         )
+
+    def _gate_unproven_mandates(self, gap_result: AnalysisResult) -> None:
+        """Stop a finding claiming a legal duty its own source does not impose.
+
+        Labelling alone was not enough. A finding could assert "OSHA requires
+        audiogram retention for employment plus 30 years", carry a real
+        citation, fail the support check -- and still be published in those
+        words with a small unverified badge beside it. The sentence a reader
+        acts on said "required", so that is the thing that has to change.
+
+        OSHA in fact requires two years for noise measurements and duration of
+        employment for audiograms. A longer period is a perfectly good company
+        standard; it is just not what the regulation says. That distinction is
+        the whole difference between a compliance tool and a plausible one.
+
+        Downgrades rather than deletes. The underlying observation is often
+        still worth acting on -- it simply cannot be presented as law.
+        """
+        from app.models.schemas import ClaimSupport, ObligationType
+
+        downgraded = 0
+        for row in gap_result.gap_table:
+            if row.obligation_type is not ObligationType.required:
+                continue  # only a claimed mandate can be an unproven mandate
+
+            evidence = row.evidence
+            if evidence is None:
+                continue
+
+            support = evidence.checks.claim_support
+            if support is ClaimSupport.contradicted:
+                reason = (
+                    "The cited source appears to contradict this requirement. Treat it as "
+                    "a proposed internal standard, not a regulatory obligation, and check "
+                    "the regulation directly before adopting it."
+                )
+            elif support is ClaimSupport.not_supported:
+                reason = (
+                    "The cited authority exists but its text does not establish this "
+                    "requirement. It may still be sound practice or a valid internal "
+                    "standard — it is not shown to be legally mandated."
+                )
+            elif evidence.checks.specifics_supported is False:
+                reason = (
+                    "A specific figure in this requirement does not appear in the cited "
+                    "source. Verify the exact period or threshold against the regulation "
+                    "before presenting it as mandatory."
+                )
+            else:
+                continue
+
+            row.obligation_type = ObligationType.unverified_requirement
+            row.obligation_note = reason
+            downgraded += 1
+
+        if downgraded:
+            logger.info(
+                f"Entailment gate: {downgraded} finding(s) claimed a legal requirement the "
+                f"cited source does not establish — reclassified as unverified."
+            )
 
     def _flag_unsupported_specifics(
         self,

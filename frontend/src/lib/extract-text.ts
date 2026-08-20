@@ -4,28 +4,30 @@
  * The backend also extracts text server-side for analysis.
  */
 
-declare global {
-  interface Window {
-    pdfjsLib: any;
-  }
+// Bundled, not fetched from a CDN.
+//
+// This used to inject a <script> tag pointing at cdnjs.cloudflare.com. Adding
+// a Content-Security-Policy of "script-src 'self'" then blocked that script
+// outright, so PDF.js never loaded and every PDF upload failed with "Failed to
+// load PDF.js" -- a security header silently removing a core feature.
+//
+// Loosening the CSP to allow the CDN would fix the symptom and reintroduce the
+// real problem: a third-party host able to run arbitrary script inside a tool
+// that handles compliance documents. Bundling the library removes both the
+// external dependency and the exception.
+// Imported lazily: the library and its worker are ~2MB, and most sessions
+// never upload a PDF. Loading it up front delayed first paint for everyone to
+// serve a minority of visits.
+async function loadPdfJs() {
+  const [pdfjsLib, worker] = await Promise.all([
+    import("pdfjs-dist"),
+    // Vite resolves this to a hashed asset on our own origin, so it satisfies
+    // both `script-src 'self'` and `worker-src 'self'`.
+    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+  ]);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
+  return pdfjsLib;
 }
-
-const loadPdfJs = (): Promise<any> =>
-  new Promise((resolve, reject) => {
-    if (window.pdfjsLib) {
-      resolve(window.pdfjsLib);
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-    script.onload = () => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-      resolve(window.pdfjsLib);
-    };
-    script.onerror = () => reject(new Error("Failed to load PDF.js"));
-    document.head.appendChild(script);
-  });
 
 async function extractPdfText(file: File): Promise<string> {
   const pdfjsLib = await loadPdfJs();

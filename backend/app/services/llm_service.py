@@ -271,6 +271,8 @@ failed analysis.
 
       "risk_level": "critical | high | moderate | low | compliant — the regulatory consequence of the gap, not your subjective sense of importance. Organizational-only findings (no regulatory citation) cannot be 'critical' — cap at 'moderate', since there is no regulator enforcing them.",
 
+      "obligation_type": "required | guidance | best_practice | organizational_choice — apply STEP 5d. Use 'required' ONLY where the cited text uses mandatory language (shall/must) and imposes this exact duty. A provision saying an allowance 'may' be made, or a non-mandatory appendix, is 'guidance', never 'required'. A stricter internal standard is 'organizational_choice'. This field is checked against the source text after generation: a 'required' claim the source does not establish is automatically reclassified and shown to the reader as unverified, so do not use it to add emphasis.",
+
       "current_state": "1–2 sentences, hard cap: direct quote OR close paraphrase of the EXACT policy language on this topic. If the policy is silent, write: 'Policy is silent — no provision addresses [specific obligation].' This field proves you read the actual document; it is a citation record, not analysis.",
 
       "finding": "2–3 sentences, hard cap. Name which axes pass/fail and the single sharpest deficiency. If regulatory: state the audit-day exposure — what document a regulator would demand and whether it would exist. If organizational-only: say so explicitly and state the operational risk instead of inventing regulatory exposure. Do not restate current_state, do not hedge, do not pad.",
