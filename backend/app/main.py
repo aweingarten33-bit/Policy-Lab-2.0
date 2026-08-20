@@ -28,6 +28,7 @@ from starlette.requests import Request
 
 from app.config import settings
 from app.error_utils import http_error
+from app.request_identity import client_id
 from app.services.orchestrator import GroundingUnavailableError
 from app.routers import analysis, export, action_package, knowledge_base
 from app.models.schemas import (
@@ -556,7 +557,7 @@ async def _run_draft_job(job_id: str, request: DraftPolicyRequest) -> None:
 
 
 @app.post("/api/draft-policy/start")
-async def start_draft_job(request: DraftPolicyRequest):
+async def start_draft_job(request: DraftPolicyRequest, http_request: Request):
     """Kick off a draft as a background task. Returns a job_id immediately.
 
     Use GET /api/draft-policy/stream/{job_id} to subscribe to live updates,
@@ -564,7 +565,7 @@ async def start_draft_job(request: DraftPolicyRequest):
     from app.services.draft_job_store import get_draft_job_store
 
     store = get_draft_job_store()
-    job_id = await store.create()
+    job_id = await store.create(owner=client_id(http_request))
     task = asyncio.create_task(_run_draft_job(job_id, request))
     _draft_running_tasks[job_id] = task
     task.add_done_callback(lambda t, jid=job_id: _draft_running_tasks.pop(jid, None))
@@ -572,7 +573,7 @@ async def start_draft_job(request: DraftPolicyRequest):
 
 
 @app.post("/api/draft-policy/cancel/{job_id}")
-async def cancel_draft_job(job_id: str):
+async def cancel_draft_job(job_id: str, http_request: Request):
     """Cancel an in-flight draft job. Safe to call even if it already finished (no-op)."""
     from app.services.draft_job_store import get_draft_job_store
 
@@ -580,19 +581,19 @@ async def cancel_draft_job(job_id: str):
     if task and not task.done():
         task.cancel()
     store = get_draft_job_store()
-    job = await store.get(job_id)
+    job = await store.get(job_id, owner=client_id(http_request))
     if job is not None and job.status == "running":
         await store.mark_error(job_id, "Cancelled by user")
     return {"cancelled": True}
 
 
 @app.get("/api/draft-policy/status/{job_id}")
-async def get_draft_job_status(job_id: str):
+async def get_draft_job_status(job_id: str, http_request: Request):
     """Return the current snapshot of a draft job. 404 if not found or expired."""
     from app.services.draft_job_store import get_draft_job_store
 
     store = get_draft_job_store()
-    job = await store.get(job_id)
+    job = await store.get(job_id, owner=client_id(http_request))
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found or expired")
     return {
@@ -606,14 +607,15 @@ async def get_draft_job_status(job_id: str):
 
 
 @app.get("/api/draft-policy/stream/{job_id}")
-async def stream_draft_job(job_id: str):
+async def stream_draft_job(job_id: str, http_request: Request):
     """SSE stream of draft job updates. Sends a frame whenever the job version
     changes, then closes once the job is complete or errored."""
     import json as _json
     from app.services.draft_job_store import get_draft_job_store
 
     store = get_draft_job_store()
-    initial = await store.get(job_id)
+    owner = client_id(http_request)
+    initial = await store.get(job_id, owner=owner)
     if initial is None:
         raise HTTPException(status_code=404, detail="Job not found or expired")
 

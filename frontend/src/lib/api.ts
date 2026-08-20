@@ -40,9 +40,42 @@ export function clearStoredPassword(): void {
   try { localStorage.removeItem(PASSWORD_STORAGE_KEY); } catch { /* ignore */ }
 }
 
+/**
+ * A random id for this browser session, used to bind background jobs to the
+ * client that started them. Everyone shares one app password, so this is not
+ * authentication -- it only answers "is this the same client that started
+ * this job?", which stops one person's policy text and analysis being
+ * readable by another who has a job id.
+ *
+ * sessionStorage, not localStorage: it should not outlive the tab, and a new
+ * session getting a new id is the correct behaviour.
+ */
+const CLIENT_ID_KEY = "policylab_client_id";
+
+function getClientId(): string {
+  try {
+    const existing = sessionStorage.getItem(CLIENT_ID_KEY);
+    if (existing) return existing;
+    const generated =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem(CLIENT_ID_KEY, generated);
+    return generated;
+  } catch {
+    // Private browsing can throw on storage access. Jobs then fall back to
+    // the shared anonymous bucket rather than the app breaking.
+    return "";
+  }
+}
+
 function authHeaders(password?: string): Record<string, string> {
   const pw = password ?? getStoredPassword();
-  return pw ? { "x-api-key": pw } : {};
+  const headers: Record<string, string> = {};
+  if (pw) headers["x-api-key"] = pw;
+  const cid = getClientId();
+  if (cid) headers["x-client-id"] = cid;
+  return headers;
 }
 
 /**

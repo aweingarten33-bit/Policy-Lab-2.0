@@ -16,6 +16,9 @@ from app.models.schemas import (
 )
 from app.services.orchestrator import get_orchestrator
 from app.services.text_extraction import extract_text_from_file
+from starlette.requests import Request
+
+from app.request_identity import client_id
 from app.services.job_store import get_job_store
 from app.services.rewrite_service import generate_rewritten_policy
 from app.services.retrieval.retriever import get_retriever
@@ -260,14 +263,14 @@ async def generate_action_package_from_file(
 # lives only in memory and self-expires after 30 minutes.
 
 @router.post("/action-package/start")
-async def start_action_package_job(request: ActionPackageRequest):
+async def start_action_package_job(request: ActionPackageRequest, http_request: Request):
     """Kick off an analysis as a background task. Returns a job_id immediately.
 
     Use GET /api/action-package/stream/{job_id} to subscribe to live updates,
     or GET /api/action-package/status/{job_id} for a one-shot snapshot.
     """
     store = get_job_store()
-    job_id = await store.create()
+    job_id = await store.create(owner=client_id(http_request))
     task = asyncio.create_task(_run_action_package_job(job_id, request))
     _running_tasks[job_id] = task
     task.add_done_callback(lambda t, jid=job_id: _running_tasks.pop(jid, None))
@@ -275,23 +278,23 @@ async def start_action_package_job(request: ActionPackageRequest):
 
 
 @router.post("/action-package/cancel/{job_id}")
-async def cancel_action_package_job(job_id: str):
+async def cancel_action_package_job(job_id: str, http_request: Request):
     """Cancel an in-flight job. Safe to call even if it already finished (no-op)."""
     task = _running_tasks.get(job_id)
     if task and not task.done():
         task.cancel()
     store = get_job_store()
-    job = await store.get(job_id)
+    job = await store.get(job_id, owner=client_id(http_request))
     if job is not None and job.status == "running":
         await store.mark_error(job_id, "Cancelled by user")
     return {"cancelled": True}
 
 
 @router.get("/action-package/status/{job_id}")
-async def get_action_package_job_status(job_id: str):
+async def get_action_package_job_status(job_id: str, http_request: Request):
     """Return the current snapshot of a job. 404 if not found or expired."""
     store = get_job_store()
-    job = await store.get(job_id)
+    job = await store.get(job_id, owner=client_id(http_request))
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found or expired")
     return {
@@ -304,11 +307,12 @@ async def get_action_package_job_status(job_id: str):
 
 
 @router.get("/action-package/stream/{job_id}")
-async def stream_action_package_job(job_id: str):
+async def stream_action_package_job(job_id: str, http_request: Request):
     """SSE stream of job updates. Sends a frame whenever the job version changes,
     then closes once the job is complete or errored."""
     store = get_job_store()
-    initial = await store.get(job_id)
+    owner = client_id(http_request)
+    initial = await store.get(job_id, owner=owner)
     if initial is None:
         raise HTTPException(status_code=404, detail="Job not found or expired")
 
