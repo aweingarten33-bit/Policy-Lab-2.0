@@ -55,6 +55,11 @@ LIVE_RESEARCH_REQUEST_TIMEOUT = 10.0
 # research improves an answer; it must never be the reason someone waits.
 LIVE_RESEARCH_TOTAL_BUDGET = 20.0
 
+# Per-result cap on live page text. Enough to hold the provision being cited
+# plus surrounding context, without letting a handful of long pages crowd the
+# verified CFR text out of the prompt.
+LIVE_RESEARCH_MAX_PAGE_CHARS = 6000
+
 
 def _is_gov_url(url: str) -> bool:
     """True for any .gov URL (state government sites don't share one domain,
@@ -470,8 +475,17 @@ class LiveResearchService:
             "api_key": TAVILY_API_KEY,
             "query": query,
             "max_results": 5,
-            "search_depth": "basic",  # "basic" = 1 credit; "advanced" = 2 credits
-            "include_raw_content": False,  # use snippet-extracted content; full HTML not needed
+            # Cost is driven by search_depth, not by raw content: "basic" is
+            # 1 credit, "advanced" is 2. Staying on basic keeps every search
+            # at a single credit.
+            "search_depth": "basic",
+            # Raw page text matters specifically for this product. Verification
+            # can only confirm a claim against text it actually holds, and a
+            # one-paragraph search summary rarely contains the provision being
+            # cited -- so citations came back unverified even when the source
+            # said exactly what the claim said. Full page text gives the
+            # verifier something real to check against.
+            "include_raw_content": settings.live_research_raw_content,
         }
         if bare_domain:
             payload["include_domains"] = [bare_domain]
@@ -498,8 +512,16 @@ class LiveResearchService:
                 continue
 
             title = (item.get("title") or "").strip()
-            # Prefer 'content' (Tavily's extracted snippet) over the raw URL
-            snippet = (item.get("content") or "").strip()
+            # Prefer full page text when it came back, falling back to Tavily's
+            # extracted summary. Trimmed rather than used whole: an entire
+            # regulation page can be enormous, and several of them per source
+            # would crowd out the retrieved CFR text in the prompt.
+            summary = (item.get("content") or "").strip()
+            raw = (item.get("raw_content") or "").strip()
+            if raw and len(raw) > len(summary):
+                snippet = raw[:LIVE_RESEARCH_MAX_PAGE_CHARS]
+            else:
+                snippet = summary
             published = (item.get("published_date") or "").strip() or None
 
             results.append(LiveResearchResult(

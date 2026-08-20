@@ -258,15 +258,28 @@ class VerificationService:
             for result in retrieval_context.get_all_sources():
                 meta = result.chunk.metadata
                 if meta.citation and self._citations_match(citation, meta.citation):
+                    # Locating the citation proves the authority exists. It says
+                    # nothing about whether that authority supports the claim
+                    # attached to it -- and an invented deadline hung off a real
+                    # section number is the exact failure this product must
+                    # catch. Marking that "verified" put a green badge on the
+                    # most dangerous kind of error. Only apply_claim_support,
+                    # which compares the claim against the cited passage, may
+                    # promote anything to verified.
                     return SourceAttribution(
-                        source_type=SourceType.verified_source if result.score > 0.8 else SourceType.retrieved_source,
-                        verification_status=VerificationStatus.verified,
+                        source_type=SourceType.retrieved_source,
+                        verification_status=VerificationStatus.partially_verified,
                         source_name=meta.source_name,
                         source_citation=meta.citation,
                         source_url=meta.url,
                         source_date=meta.effective_date,
                         retrieved_text=result.chunk.text[:500],
                         confidence=result.score,
+                        warning=(
+                            "The cited authority was located in source material, but this "
+                            "claim's substance was not checked against it. Confirm the "
+                            "passage says what the finding says."
+                        ),
                     )
 
         # Check the knowledge base directly
@@ -288,16 +301,24 @@ class VerificationService:
 
                     stored_citation = meta.get("citation", "")
                     if stored_citation and self._citations_match(citation, stored_citation):
+                        # Same rule as above, and the similarity threshold made
+                        # it worse: embedding distance measures how alike two
+                        # passages read, which is retrieval evidence, not proof
+                        # that a passage supports a claim.
                         score = max(0, 1.0 - distance)
                         return SourceAttribution(
-                            source_type=SourceType.verified_source if score > 0.8 else SourceType.retrieved_source,
-                            verification_status=VerificationStatus.verified if score > 0.7 else VerificationStatus.partially_verified,
+                            source_type=SourceType.retrieved_source,
+                            verification_status=VerificationStatus.partially_verified,
                             source_name=meta.get("source_name", ""),
                             source_citation=stored_citation,
                             source_url=meta.get("url") or None,
                             source_date=meta.get("effective_date") or None,
                             retrieved_text=doc_text[:500],
                             confidence=score,
+                            warning=(
+                                "The cited authority exists in the knowledge base, but this "
+                                "claim's substance was not checked against it."
+                            ),
                         )
         except Exception as e:
             logger.warning(f"Verification search failed for citation '{citation}': {e}")

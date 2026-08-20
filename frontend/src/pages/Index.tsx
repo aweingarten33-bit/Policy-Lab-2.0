@@ -1104,6 +1104,15 @@ export default function Index() {
                     <p className="font-medium text-[14px] text-foreground">{parsing ? "Parsing file..." : fileName || "Tap to upload file"}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">.txt .md .docx .pdf .rtf</p>
                   </div>
+                  {/* Shown here rather than only on the Legal page. Whether to
+                      paste real patient data is decided at the moment of
+                      upload, and a disclosure the user has to go looking for
+                      arrives too late to inform that decision. */}
+                  <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                    <span className="font-medium text-foreground">Do not upload real PHI or patient records.</span>{" "}
+                    Content is sent to third-party AI providers, and no Business Associate
+                    Agreement is in place with them. Use de-identified or sample policies.
+                  </p>
                   <div className="mt-3 flex items-center justify-end">
                     <button
                       type="button"

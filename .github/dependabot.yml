@@ -1,27 +1,53 @@
+# Dependency updates.
+#
+# Tuned down deliberately. The default settings opened seven pull requests at
+# once, several of them major-version jumps (vite 5 -> 8, node 20 -> 26,
+# python 3.11 -> 3.14) that would have broken the build if merged. That volume
+# meant the updates that actually matter -- security patches -- were buried in
+# noise and none of them got read.
+#
+# So: security advisories arrive as pull requests, and routine version drift is
+# batched into a single monthly PR instead of one per package.
 version: 2
 updates:
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+      interval: "monthly"
+    open-pull-requests-limit: 2
     labels: ["dependencies", "backend"]
+    groups:
+      backend-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Major versions land only when chosen deliberately and tested, never
+      # by an automated PR.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+      interval: "monthly"
+    open-pull-requests-limit: 2
     labels: ["dependencies", "frontend"]
+    groups:
+      frontend-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    open-pull-requests-limit: 1
     labels: ["dependencies", "docker"]
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    labels: ["dependencies", "ci"]
+    ignore:
+      # Base-image major bumps change the language runtime under the whole
+      # app; that is a deliberate migration, not a dependency update.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

@@ -118,6 +118,14 @@ class Settings(BaseSettings):
     live_research_enabled: bool = True
     live_research_max_results: int = 5
 
+    # Ask Tavily for full page text rather than just its summary. Costs no
+    # extra credits (search_depth drives price), but returns more data per
+    # search. It is on because verification can only confirm a claim against
+    # text it actually holds: a short summary usually omits the provision
+    # being cited, so correct citations were reported as unverified.
+    # Set LIVE_RESEARCH_RAW_CONTENT=false to go back to summaries.
+    live_research_raw_content: bool = True
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

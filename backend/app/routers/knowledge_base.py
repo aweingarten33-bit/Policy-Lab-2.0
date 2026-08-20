@@ -160,25 +160,62 @@ async def kb_diagnose():
     steps = []
     client = get_ecfr_client()
 
-    seeding = seed_state.get_state()
-    steps.append({
-        "step": "Background seeding",
-        "ok": seeding["status"] in ("succeeded", "running"),
-        "detail": seed_state.describe(),
-    })
-
     def step(name, ok, detail):
         steps.append({"step": name, "ok": ok, "detail": detail})
         return ok
 
-    # 0. What's in the store right now
+    # 0. What's in the store right now. Checked BEFORE seeding, because
+    # whether seeding ran is only meaningful once you know whether it needed
+    # to.
     try:
         stats = get_store().get_all_stats()
         total = sum(v for v in stats.values() if v > 0)
         step("Knowledge base contents", total > 0,
              f"{total} chunks stored. Per collection: {stats}")
     except Exception as e:
+        total = 0
         step("Knowledge base contents", False, f"Could not read the store: {e}")
+
+    # A populated knowledge base means seeding correctly had nothing to do:
+    # the corpus is built into the image. Reporting "seeding never ran" as a
+    # failure in that situation reads as an outage when everything is fine.
+    seeding = seed_state.get_state()
+    if total > 0 and seeding["status"] == "not_started":
+        step("Background seeding", True,
+             "Not needed — the corpus was built into the image, so this container "
+             "had nothing to download.")
+    else:
+        steps.append({
+            "step": "Background seeding",
+            "ok": seeding["status"] in ("succeeded", "running"),
+            "detail": seed_state.describe(),
+        })
+
+    # 0b. Is live research actually reaching the internet? This used to fail
+    # silently: a blocked search engine returned an empty list, identical to
+    # "nothing relevant found", so there was no way to tell whether the .gov
+    # research half of the product was working at all.
+    try:
+        from app.services.retrieval.live_research import (
+            get_live_research_service, TAVILY_API_KEY,
+        )
+        import time as _time
+
+        backend = "Tavily" if TAVILY_API_KEY else "DuckDuckGo (no TAVILY_API_KEY set)"
+        started = _time.monotonic()
+        live_results = await get_live_research_service().research(
+            query="HIPAA breach notification requirements",
+            policy_type="data_breach_response",
+            industry="healthcare",
+        )
+        took = _time.monotonic() - started
+        step("Live research (.gov search)", bool(live_results),
+             f"{backend}: {len(live_results)} results in {took:.1f}s"
+             + ("" if live_results else
+                " — no results. DuckDuckGo blocks cloud servers; set TAVILY_API_KEY "
+                "to restore live research."))
+    except Exception as e:
+        step("Live research (.gov search)", False, f"{type(e).__name__}: {e}")
 
     # 1. Can this server reach eCFR at all?
     try:
