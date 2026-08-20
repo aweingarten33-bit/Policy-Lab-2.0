@@ -4,6 +4,7 @@ API keys are NEVER hard-coded. All secrets come from .env or the runtime environ
 Supports multiple LLM providers via LiteLLM cascade fallback.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List, Optional
 
@@ -17,6 +18,19 @@ class Settings(BaseSettings):
     # so read access can never imply the ability to rewrite what every
     # future generation is grounded in.
     admin_api_key: str = ""
+
+    @field_validator("api_key", "admin_api_key", mode="after")
+    @classmethod
+    def _strip_credential(cls, value: str) -> str:
+        """Trim whitespace off credentials read from the environment.
+
+        Hosting dashboards routinely store a trailing space or newline when a
+        value is pasted into their UI. The stored key then differs from the
+        one the user typed by a character that is invisible in every place
+        they could look, and the comparison is exact -- so the correct
+        password is rejected with no way to see why.
+        """
+        return value.strip() if isinstance(value, str) else value
 
     # Maximum characters accepted on any field that flows into a paid LLM
     # call. Without a cap, a single request can run up an unbounded bill.

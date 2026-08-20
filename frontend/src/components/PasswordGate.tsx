@@ -69,9 +69,18 @@ export default function PasswordGate({ children }: { children: ReactNode }) {
         <form onSubmit={handleSubmit} className="rounded-2xl neu-raised p-6 space-y-4">
           <p className="nyt-eyebrow text-center">This tool is password-protected</p>
           <div className="rounded-xl neu-inset px-4 py-3">
+            {/* autoCapitalize/autoCorrect are set explicitly: pasting a
+                password on a phone very often carries a trailing space, and
+                some mobile keyboards still capitalise or "correct" the first
+                character even in a password field. Either one makes a correct
+                password fail with no visible difference on screen. */}
             <input
               type="password"
               autoFocus
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="current-password"
               value={password}
               onChange={(e) => { setPassword(e.target.value); setError(""); }}
               placeholder="Enter password"

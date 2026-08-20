@@ -26,19 +26,18 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("API_KEY", "secret123")
-    monkeypatch.setenv("KB_AUTO_SEED", "false")
+def client(monkeypatch):
+    """Configure the running app in place.
 
-    import app.config as cfg
-    from importlib import reload
-    reload(cfg)
+    Deliberately does not reload app.config/app.main: reloading rebinds those
+    modules for every test that runs afterwards, which made an unrelated test
+    in another file fail depending on collection order.
+    """
     import app.main as main
-    reload(main)
 
     monkeypatch.setattr(main.settings, "api_key", "secret123")
     monkeypatch.setattr(main.settings, "environment", "production")
+    monkeypatch.setattr(main.settings, "kb_auto_seed", False)
     return TestClient(main.app)
 
 
