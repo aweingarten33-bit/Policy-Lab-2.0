@@ -19,7 +19,7 @@ Each pull is timestamped so outputs clearly show when the regulation was retriev
 
 import logging
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 import httpx
@@ -86,12 +86,39 @@ class ECFRClient:
 
         Returns a dict with 'sections': list of {section, heading, text} dicts.
         """
-        today = (as_of or date.today()).isoformat()
+        base_date = as_of or date.today()
+
+        # eCFR publishes point-in-time snapshots with a lag, so a request for
+        # *today* can legitimately have no published version yet -- which took
+        # down seeding entirely rather than degrading. Regulation text rarely
+        # changes day to day, so stepping back to a recent snapshot is both
+        # safe and far more robust than depending on today existing.
+        for days_back in (0, 1, 3, 7, 30):
+            attempt_date = (base_date - timedelta(days=days_back)).isoformat()
+            result = await self._fetch_part_for_date(title, part, attempt_date)
+            if result and result.get("sections"):
+                if days_back:
+                    logger.info(
+                        f"eCFR: title-{title} part {part} unavailable for {base_date.isoformat()}, "
+                        f"used snapshot from {attempt_date}"
+                    )
+                return result
+
+        logger.warning(
+            f"eCFR: no usable snapshot for title-{title} part {part} within 30 days of "
+            f"{base_date.isoformat()}"
+        )
+        return None
+
+    async def _fetch_part_for_date(
+        self, title: int, part: int, today: str
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch one CFR part for one specific published date."""
         url = f"{ECFR_BASE}/full/{today}/title-{title}.json"
         params = {"part": str(part)}
 
         try:
-            logger.info(f"Fetching eCFR: 45 CFR Part {part} as of {today}")
+            logger.info(f"Fetching eCFR: {title} CFR Part {part} as of {today}")
             response = await self.client.get(url, params=params)
 
             if response.status_code == 404:

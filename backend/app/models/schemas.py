@@ -573,6 +573,13 @@ class HealthResponse(BaseModel):
     """Health check response."""
     status: str = "ok"
     version: str = "3.0.0"
+    # Knowledge-base grounding state. An empty KB is the app's most consequential
+    # silent failure: output still looks fully source-grounded (same UI, same
+    # citation formatting) while nothing is actually backing it. Surfacing the
+    # chunk count here makes that state monitorable instead of invisible.
+    kb_enabled: bool = True
+    kb_chunks: int = 0
+    kb_grounded: bool = False
 
 
 # ── Knowledge Base Management Models ──
