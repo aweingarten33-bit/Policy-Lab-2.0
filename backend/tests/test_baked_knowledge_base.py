@@ -148,3 +148,36 @@ def test_strict_mode_reports_what_did_load():
         env={**os.environ, "KB_PERSIST_DIR": tempfile.mkdtemp()},
     )
     assert "chunks of bundled guidance loaded" in result.stderr
+
+
+class TestReleaseBuildIsStrict:
+    """The build must refuse to ship an image whose citations cannot be
+    checked against current CFR text.
+
+    This flag is a Docker build argument, set in the Dockerfile rather than in
+    the hosting dashboard. A platform's environment-variable panel does not
+    reach a build arg, so configuring it there would look enabled and do
+    nothing -- the exact silent no-op the flag exists to prevent.
+    """
+
+    def _dockerfile(self):
+        import pathlib
+        return (pathlib.Path(__file__).resolve().parents[2] / "Dockerfile").read_text()
+
+    def test_the_gate_is_on(self):
+        assert "ARG KB_SEED_REQUIRED=true" in self._dockerfile()
+
+    def test_the_flag_actually_reaches_the_build_step(self):
+        """Declaring the arg is not enough; the RUN line has to consume it."""
+        text = self._dockerfile()
+        assert "--require-success" in text
+        assert '[ "$KB_SEED_REQUIRED" = "true" ]' in text
+
+    def test_the_tradeoff_is_written_down(self):
+        """Whoever hits a blocked deploy during an eCFR outage needs to find
+        the reason and the way out at the point of the setting."""
+        # Collapsed first: the comment wraps across lines, so the phrases are
+        # not contiguous in the raw file.
+        text = " ".join(self._dockerfile().replace("#", " ").split())
+        assert "an eCFR outage blocks deploys entirely" in text
+        assert "Set it back to false to ship during one" in text

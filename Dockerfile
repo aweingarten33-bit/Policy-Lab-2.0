@@ -40,13 +40,22 @@ COPY --from=frontend-build /fe/dist /app/frontend/dist
 # hang the app's own budget cannot see, and `|| true` keeps any failure here
 # from blocking a deploy.
 #
-# KB_SEED_REQUIRED=true turns an empty corpus into a build failure, so a
-# production image cannot ship ungrounded without anyone noticing. It defaults
-# to false because a transient eCFR outage should not block a fix from
-# shipping, and the bundled OIG/HCCA guidance still loads from disk either
-# way -- but a release build should set it:
-#     docker build --build-arg KB_SEED_REQUIRED=true .
-ARG KB_SEED_REQUIRED=false
+# KB_SEED_REQUIRED=true refuses to ship an image whose citations cannot be
+# checked against current CFR text: if eCFR could not be reached and no
+# regulation was downloaded, the build fails instead of quietly producing a
+# guidance-only image.
+#
+# It is set here in the repo rather than in the hosting dashboard on purpose.
+# This is a Docker build argument, and a platform's environment-variable panel
+# does not reach one -- so setting it there would look enabled and do nothing,
+# which is precisely the kind of silent no-op this flag exists to prevent.
+# Change it here and commit; a local build can still override with
+# --build-arg KB_SEED_REQUIRED=false.
+#
+# The trade-off, stated plainly: while this is true, an eCFR outage blocks
+# deploys entirely, including unrelated fixes. Set it back to false to ship
+# during one.
+ARG KB_SEED_REQUIRED=true
 ENV KB_SEED_TIMEOUT_SECONDS=360
 RUN timeout 600 python scripts/build_knowledge_base.py \
       $( [ "$KB_SEED_REQUIRED" = "true" ] && echo --require-success ) \
