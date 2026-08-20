@@ -23,6 +23,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ .
 COPY --from=frontend-build /fe/dist /app/frontend/dist
 
+# --- Bake the knowledge base into the image ---
+# Downloading and embedding regulations at container START meant redoing the
+# work on every deploy (ephemeral filesystem) and blocking the app past the
+# platform health-check window, so the corpus never finished building. Doing it
+# once here means containers boot instantly against a complete, already-embedded
+# store with no network dependency. Runtime seeding remains as a fallback.
+#
+# Warns rather than fails on a transient eCFR outage; pass --require-success to
+# make an empty knowledge base a hard build failure instead.
+RUN python scripts/build_knowledge_base.py || true
+
 ENV ENVIRONMENT=production
 EXPOSE 8080
 # Binds 0.0.0.0 deliberately. Security guidance to default to 127.0.0.1 targets

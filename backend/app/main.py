@@ -78,6 +78,14 @@ async def lifespan(app: FastAPI):
         from app.services.retrieval import seed_state
 
         try:
+            # If the corpus was baked into the image but KB_PERSIST_DIR points
+            # at a mounted disk, copy it across before deciding to download.
+            try:
+                from app.services.retrieval.seed_data import restore_baked_knowledge_base
+                restore_baked_knowledge_base()
+            except Exception as e:
+                logger.warning(f"Prebuilt knowledge base restore skipped: {e}")
+
             store = get_store()
             stats = store.get_all_stats()
 

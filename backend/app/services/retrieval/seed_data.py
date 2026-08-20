@@ -128,3 +128,45 @@ async def _async_seed() -> Dict[str, int]:
     total = sum(results.values())
     logger.info(f"KB seeded from eCFR: {total} total chunks across {len(results)} sources")
     return results
+
+
+# Path the knowledge base is baked into at image build time (see
+# scripts/build_knowledge_base.py). Kept here so the runtime bootstrap can
+# find it regardless of where KB_PERSIST_DIR points.
+BAKED_KB_DIR = "/app/backend/knowledge_base"
+
+
+def restore_baked_knowledge_base() -> int:
+    """Copy the image-baked knowledge base into the configured persist dir.
+
+    Only relevant when KB_PERSIST_DIR points somewhere else -- typically a
+    mounted persistent disk. Without this, attaching a disk would silently
+    discard the prebuilt corpus and force a slow re-download on first boot.
+
+    Returns the number of files copied (0 if nothing to do).
+    """
+    import os
+    import shutil
+
+    target = os.path.abspath(settings.kb_persist_dir)
+    baked = os.path.abspath(BAKED_KB_DIR)
+
+    if target == baked:
+        return 0  # already using the baked copy directly
+    if not os.path.isdir(baked) or not os.listdir(baked):
+        return 0  # nothing was baked
+    if os.path.isdir(target) and os.listdir(target):
+        return 0  # target already populated; never overwrite live data
+
+    try:
+        os.makedirs(os.path.dirname(target) or "/", exist_ok=True)
+        shutil.copytree(baked, target, dirs_exist_ok=True)
+        copied = sum(len(files) for _, _, files in os.walk(target))
+        logger.info(
+            f"Restored prebuilt knowledge base from the image into {target} "
+            f"({copied} files) — no download needed."
+        )
+        return copied
+    except Exception as e:
+        logger.warning(f"Could not restore the prebuilt knowledge base into {target}: {e}")
+        return 0
