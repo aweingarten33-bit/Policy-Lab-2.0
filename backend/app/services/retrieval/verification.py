@@ -1,84 +1,167 @@
-"""
-Verification Service — Post-generation claim verification against source material.
+"""Regulatory verification and claim-evidence construction.
 
-After each generation step, this service checks whether:
-  1. Cited regulations exist in the source set
-  2. Quoted language is actually supported by source text
-  3. Claims without source backing are flagged as unverified
-
-This is the core of the no-hallucination architecture:
-  - If a claim cannot be verified from source material, it is flagged
-  - If a citation doesn't exist in the source set, it is flagged
-  - The UI and export clearly show what is verified vs. unverified
+Verification is intentionally stricter than retrieval. A source being similar,
+or even containing the cited section number, is not proof that it supports a
+claim. A finding becomes ``verified`` only after all applicable deterministic
+checks pass and the exact cited excerpt substantively supports the claim.
 """
 
-import re
+from __future__ import annotations
+
+from dataclasses import dataclass
 import logging
-from typing import Optional, List, Dict, Tuple
+import re
+from typing import Dict, List, Optional, Tuple
 
 from app.services.retrieval.models import (
-    SourceChunk, SourceMetadata, SourceType, SourceCategory,
-    RetrievalResult, RetrievalContext,
-    SourceAttribution, VerificationStatus, ClaimVerification, VerificationReport,
+    ClaimVerification,
+    RetrievalContext,
+    SourceAttribution,
+    SourceCategory,
+    SourceType,
+    VerificationReport,
+    VerificationStatus,
 )
 from app.services.retrieval.store import get_store
 
 logger = logging.getLogger(__name__)
 
-# ── Citation patterns ──
 
-# Common regulatory citation patterns
-CITATION_PATTERNS = [
-    # CFR citations: 45 CFR §164.530(b)(1), 42 CFR Part 2
-    r'\d+\s+CFR\s+§?\d+\.\d+(?:\([a-z]\)(?:\(\d+\))?)?',
-    r'\d+\s+CFR\s+Part\s+\d+',
-    # USC citations: 42 USC §1320d-6
-    r'\d+\s+USC\s+§?\d+[a-z]?-?\d*',
-    # State code citations: NY Pub Health Law §18
-    r'[A-Z]{2}\s+(?:Pub\s+)?(?:Health|Gen\s+Bus|Civil|Penal)\s+(?:Law|Code)\s+§?\d+',
-    # OIG citations
-    r'OIG\s+(?:C-?\d{4}|Advisory\s+Opinion\s+\d{2}-\d+)',
-    # OCR citations
-    r'OCR\s+(?:Guidance|Bulletin|FAQ)\s+.*?\d{4}',
-]
-
-# Build compiled regexes
-CITATION_REGEXES = [re.compile(p, re.IGNORECASE) for p in CITATION_PATTERNS]
-
-# ── Specific-claim patterns ──
-# Checking that a cited regulation *exists* says nothing about whether the
-# concrete number attached to it is real. "Records must be retained for ten
-# years per 45 CFR §164.316" passes a citation-existence check even when the
-# regulation says six -- the citation is real, the number is invented. These
-# fabricated deadlines/retention periods are the most damaging output this
-# tool can produce, since a user reads them as their actual legal obligation.
-
-NUMBER_WORDS = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
-    "fifteen": 15, "eighteen": 18, "twenty": 20, "thirty": 30, "forty": 40,
-    "forty-five": 45, "sixty": 60, "ninety": 90,
-}
-
-_UNIT_PATTERN = r"(?:calendar\s+|business\s+|working\s+)?(day|days|month|months|year|years|week|weeks|hour|hours)"
-_DURATION_REGEX = re.compile(
-    r"\b(\d{1,4}|" + "|".join(NUMBER_WORDS.keys()) + r")[\s-]+" + _UNIT_PATTERN,
+# ---------------------------------------------------------------------------
+# Citation parsing
+# ---------------------------------------------------------------------------
+# Repeated subsection groups matter. ``(b)(1)(ii)(A)`` must not be truncated to
+# ``(b)(1)`` or treated as interchangeable with a neighbouring paragraph.
+_SUBS = r"(?:\s*\([A-Za-z0-9]+\))*"
+_CFR_SECTION_RE = re.compile(
+    rf"\b(?P<title>\d+)\s*CFR\s*(?:(?:§|section)\s*)?(?P<section>\d+(?:\.\d+)+)(?P<subs>{_SUBS})",
+    re.IGNORECASE,
+)
+_CFR_PART_RE = re.compile(r"\b(?P<title>\d+)\s*CFR\s+Part\s+(?P<part>\d+)\b", re.IGNORECASE)
+_USC_RE = re.compile(
+    rf"\b(?P<title>\d+)\s*U\.?S\.?C\.?\s*(?:(?:§|section)\s*)?(?P<section>\d+[A-Za-z0-9-]*)(?P<subs>{_SUBS})",
+    re.IGNORECASE,
+)
+_STATE_SECTION_RE = re.compile(
+    rf"\b(?P<state>[A-Z]{{2}})\s+(?P<body>[A-Za-z][A-Za-z0-9 .&'/-]{{1,80}}?)\s+§\s*(?P<section>[A-Za-z0-9.-]+)(?P<subs>{_SUBS})",
     re.IGNORECASE,
 )
 
-# Sentence splitter that doesn't break on the periods inside "45 CFR §164.312"
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+CITATION_PATTERNS = [
+    _CFR_SECTION_RE.pattern,
+    _CFR_PART_RE.pattern,
+    _USC_RE.pattern,
+    _STATE_SECTION_RE.pattern,
+    r"OIG\s+(?:C-?\d{4}|Advisory\s+Opinion\s+\d{2}-\d+)",
+    r"OCR\s+(?:Guidance|Bulletin|FAQ)\s+.*?\d{4}",
+]
+CITATION_REGEXES = [re.compile(p, re.IGNORECASE) for p in CITATION_PATTERNS]
+_SUBSECTION_RE = re.compile(r"\(([A-Za-z0-9]+)\)")
+
+
+# ---------------------------------------------------------------------------
+# Concrete-fact parsing
+# ---------------------------------------------------------------------------
+# Numeric hallucinations are especially dangerous because they look precise.
+# Keep these checks deterministic and scoped to the cited authority.
+NUMBER_WORDS = {
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+    "hundred": 100,
+}
+_NUM_WORD_PATTERN = "|".join(sorted(NUMBER_WORDS, key=len, reverse=True))
+_NUM_TOKEN = rf"(?:\d{{1,9}}(?:\.\d+)?|{_NUM_WORD_PATTERN})"
+_UNIT_PATTERN = r"(?:calendar\s+|business\s+|working\s+)?(day|days|month|months|year|years|week|weeks|hour|hours)"
+_DURATION_REGEX = re.compile(rf"\b(?P<n>{_NUM_TOKEN})[\s-]+(?P<u>{_UNIT_PATTERN})", re.IGNORECASE)
+_PERCENT_REGEX = re.compile(rf"\b(?P<n>{_NUM_TOKEN})\s*(?:%|percent)\b", re.IGNORECASE)
+_MONEY_REGEX = re.compile(r"(?P<raw>(?:USD\s*)?\$\s*\d[\d,]*(?:\.\d{1,2})?|\b\d[\d,]*(?:\.\d{1,2})?\s+dollars?\b)", re.IGNORECASE)
+_RATIO_REGEX = re.compile(r"\b(?P<a>\d{1,5})\s*(?::|to)\s*(?P<b>\d{1,5})\b|\b(?P<a2>\d{1,5})\s+per\s+(?P<b2>\d{1,5})\b", re.IGNORECASE)
+_AGE_REGEX = re.compile(r"\b(?:age\s+)?(?P<n>\d{1,3})\s*(?:years?\s+of\s+age|years?\s+old|or\s+older|or\s+younger)\b|\bage\s+(?P<n2>\d{1,3})\b", re.IGNORECASE)
+_DISTANCE_REGEX = re.compile(r"\b(?P<n>\d+(?:\.\d+)?)\s*(?P<u>feet|foot|ft|inches|inch|meters|meter|miles|mile|yards|yard)\b", re.IGNORECASE)
+_THRESHOLD_REGEX = re.compile(
+    r"\b(?P<q>at\s+least|no\s+fewer\s+than|no\s+more\s+than|not\s+more\s+than|minimum\s+of|maximum\s+of)\s+(?P<n>\d{1,7})\b",
+    re.IGNORECASE,
+)
+
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z(])")
+
+_MANDATORY_CLAIM_RE = re.compile(
+    r"\b(must|shall|required|requires|requirement|mandatory|prohibited|may\s+not|cannot|must\s+not)\b",
+    re.IGNORECASE,
+)
+_MANDATORY_SOURCE_RE = re.compile(
+    r"\b(must|shall|required|is\s+required|are\s+required|may\s+not|prohibited|shall\s+not)\b",
+    re.IGNORECASE,
+)
+_PERMISSIVE_SOURCE_RE = re.compile(
+    r"\b(may|should|recommend(?:s|ed|ation)?|encourage(?:s|d)?|consider|optional|best\s+practice)\b",
+    re.IGNORECASE,
+)
+
+# Only authoritative material may prove a legal/regulatory claim. Templates and
+# example policies are useful retrieval context but are not legal authority.
+_NON_AUTHORITATIVE_CATEGORIES = {
+    SourceCategory.policy_clause_library,
+    SourceCategory.policy_template,
+    SourceCategory.example_policy,
+}
+
+
+@dataclass(frozen=True)
+class ConcreteFact:
+    kind: str
+    value: str
+    unit: str = ""
+    qualifier: str = ""
+    raw: str = ""
+
+    @property
+    def display(self) -> str:
+        if self.kind == "duration":
+            return f"{self.value} {self.unit}"
+        if self.kind == "percent":
+            return f"{self.value}%"
+        if self.kind == "money":
+            return self.raw or f"${self.value}"
+        if self.kind == "ratio":
+            return f"{self.value}:{self.unit}"
+        if self.kind == "age":
+            return f"age {self.value}"
+        if self.kind == "distance":
+            return f"{self.value} {self.unit}"
+        if self.kind == "threshold":
+            return f"{self.qualifier} {self.value}".strip()
+        return self.raw or self.value
 
 
 class VerificationService:
-    """
-    Verifies claims in generated outputs against the curated knowledge base.
-
-    For each claim or citation in an output:
-      1. Check if the cited regulation exists in the source set
-      2. Check if the quoted language matches source text
-      3. Flag claims that cannot be verified
-    """
+    """Verify generated compliance claims against retrieved authority."""
 
     def __init__(self):
         self._store = None
@@ -89,99 +172,27 @@ class VerificationService:
             self._store = get_store()
         return self._store
 
+    # ------------------------------------------------------------------
+    # Public citation verification
+    # ------------------------------------------------------------------
     def verify_citations(
         self,
         text: str,
         retrieval_context: Optional[RetrievalContext] = None,
     ) -> List[ClaimVerification]:
-        """
-        Verify all regulatory citations found in a text against the source set.
-
-        Args:
-            text: The generated text to verify
-            retrieval_context: The retrieval context used during generation
-
-        Returns:
-            List of ClaimVerification results for each citation found
-        """
-        # Extract all citations from the text
         citations_found = self._extract_citations(text)
-
         if not citations_found:
             return []
 
-        # Map each citation to the sentence it appears in, so a claimed
-        # deadline/retention period can be checked against source material
-        # rather than only checking that the citation itself exists.
         citation_context = self._map_citations_to_sentences(text, citations_found)
-
-        verifications = []
-
-        # Check each citation against the source set
-        for citation in citations_found:
-            verification = self._verify_single_citation(
-                citation, retrieval_context, citation_context.get(citation, "")
+        return [
+            self._verify_single_citation(
+                citation,
+                retrieval_context,
+                citation_context.get(citation, ""),
             )
-            verifications.append(verification)
-
-        return verifications
-
-    def _map_citations_to_sentences(self, text: str, citations: List[str]) -> Dict[str, str]:
-        """Map each citation to the first sentence it appears in."""
-        sentences = _SENTENCE_SPLIT.split(text)
-        mapping: Dict[str, str] = {}
-        for citation in citations:
-            for sentence in sentences:
-                if citation.lower() in sentence.lower():
-                    mapping[citation] = sentence.strip()
-                    break
-        return mapping
-
-    def _extract_specifics(self, sentence: str) -> List[str]:
-        """Pull concrete durations ('6 years', 'thirty days') out of a sentence.
-
-        These are the claims most worth checking: a retention period or
-        notification deadline stated as a legal requirement is something a
-        user will act on directly.
-        """
-        specifics = []
-        for match in _DURATION_REGEX.finditer(sentence):
-            qty_raw, unit = match.group(1).lower(), match.group(2).lower()
-            qty = NUMBER_WORDS.get(qty_raw)
-            if qty is None:
-                try:
-                    qty = int(qty_raw)
-                except ValueError:
-                    continue
-            unit_singular = unit.rstrip("s")
-            specifics.append(f"{qty} {unit_singular}")
-        # Dedupe, preserve order
-        seen = set()
-        return [s for s in specifics if not (s in seen or seen.add(s))]
-
-    def _specific_supported(self, specific: str, source_text: str) -> bool:
-        """Is this duration actually present in the retrieved source material?
-
-        Checks digit and word forms ('6 years' / 'six years') and both
-        singular and plural. Deliberately checks against ALL retrieved
-        source text rather than just the one matched chunk -- being lenient
-        here matters, since falsely flagging a real requirement as invented
-        erodes trust in the warnings that are genuine.
-        """
-        qty_str, unit = specific.split(" ", 1)
-        qty = int(qty_str)
-        haystack = source_text.lower()
-
-        forms = {str(qty)}
-        for word, value in NUMBER_WORDS.items():
-            if value == qty:
-                forms.add(word)
-
-        for form in forms:
-            for unit_form in (unit, unit + "s"):
-                if re.search(rf"\b{re.escape(form)}[\s-]+{re.escape(unit_form)}\b", haystack):
-                    return True
-        return False
+            for citation in citations_found
+        ]
 
     def verify_section(
         self,
@@ -189,33 +200,19 @@ class VerificationService:
         section_text: str,
         retrieval_context: Optional[RetrievalContext] = None,
     ) -> VerificationReport:
-        """
-        Verify an entire output section.
-
-        Args:
-            section_name: Name of the output section (e.g., 'gap_analysis')
-            section_text: The full text of the section
-            retrieval_context: The retrieval context used during generation
-
-        Returns:
-            VerificationReport with verification results for all claims
-        """
         claim_verifications = self.verify_citations(section_text, retrieval_context)
+        verified = sum(v.verification_status == VerificationStatus.verified for v in claim_verifications)
+        partially = sum(v.verification_status == VerificationStatus.partially_verified for v in claim_verifications)
+        unverified = sum(v.verification_status == VerificationStatus.unverified for v in claim_verifications)
+        contradicted = sum(v.verification_status == VerificationStatus.contradicted for v in claim_verifications)
 
-        # Count by status
-        verified = sum(1 for v in claim_verifications if v.verification_status == VerificationStatus.verified)
-        partially = sum(1 for v in claim_verifications if v.verification_status == VerificationStatus.partially_verified)
-        unverified = sum(1 for v in claim_verifications if v.verification_status == VerificationStatus.unverified)
-        contradicted = sum(1 for v in claim_verifications if v.verification_status == VerificationStatus.contradicted)
-
-        # Determine overall status
-        if contradicted > 0:
+        if contradicted:
             overall = VerificationStatus.contradicted
         elif unverified > verified:
             overall = VerificationStatus.unverified
-        elif partially > 0 or (unverified > 0 and verified > 0):
+        elif partially or (unverified and verified):
             overall = VerificationStatus.partially_verified
-        elif verified > 0:
+        elif verified:
             overall = VerificationStatus.verified
         else:
             overall = VerificationStatus.unverified
@@ -237,116 +234,292 @@ class VerificationService:
         retrieval_context: Optional[RetrievalContext] = None,
         claim_text: str = "",
     ) -> SourceAttribution:
-        """
-        Create a SourceAttribution for a specific citation.
-
-        This determines whether the citation came from:
-          - Retrieved source material (verified)
-          - Live research (verified but time-sensitive)
-          - Model knowledge (unverified — needs independent review)
-
-        Args:
-            citation: The citation string
-            retrieval_context: The retrieval context from the generation step
-            claim_text: The text of the claim being attributed
-
-        Returns:
-            SourceAttribution with verification status and source info
-        """
-        # First, check if this citation appears in retrieved sources
         if retrieval_context:
-            for result in retrieval_context.get_all_sources():
-                meta = result.chunk.metadata
-                if meta.citation and self._citations_match(citation, meta.citation):
-                    # Locating the citation proves the authority exists. It says
-                    # nothing about whether that authority supports the claim
-                    # attached to it -- and an invented deadline hung off a real
-                    # section number is the exact failure this product must
-                    # catch. Marking that "verified" put a green badge on the
-                    # most dangerous kind of error. Only apply_claim_support,
-                    # which compares the claim against the cited passage, may
-                    # promote anything to verified.
-                    return SourceAttribution(
-                        source_type=SourceType.retrieved_source,
-                        verification_status=VerificationStatus.partially_verified,
-                        source_name=meta.source_name,
-                        source_citation=meta.citation,
-                        source_url=meta.url,
-                        source_date=meta.effective_date,
-                        retrieved_text=result.chunk.text[:500],
-                        confidence=result.score,
-                        warning=(
-                            "The cited authority was located in source material, but this "
-                            "claim's substance was not checked against it. Confirm the "
-                            "passage says what the finding says."
-                        ),
-                    )
+            match = self._find_source_for_citation(citation, retrieval_context)
+            if match is not None:
+                meta = match.chunk.metadata
+                current = bool(getattr(meta, "is_current", True))
+                scope_text = self._source_scope_text(citation, meta.citation or "", match.chunk.text)
+                scope_ok = bool(scope_text)
+                status = (
+                    VerificationStatus.partially_verified
+                    if current and scope_ok
+                    else VerificationStatus.unverified
+                )
+                warning = (
+                    "The cited authority was located, but the claim itself has not yet been "
+                    "tested against the cited passage."
+                    if status == VerificationStatus.partially_verified
+                    else "The cited authority could not be verified at the exact current citation scope."
+                )
+                return SourceAttribution(
+                    source_type=meta.source_type,
+                    verification_status=status,
+                    source_name=meta.source_name,
+                    source_citation=meta.citation,
+                    source_url=meta.url,
+                    source_date=meta.effective_date,
+                    retrieved_text=self._select_excerpt(claim_text, scope_text or match.chunk.text, citation=citation)[:500],
+                    confidence=match.score,
+                    warning=warning,
+                )
 
-        # Check the knowledge base directly
+        # A direct KB lookup may locate a citation that was not in the generation
+        # context. It still earns only partial verification until claim support
+        # is checked.
         try:
             search_results = self.store.query_all_collections(
                 query_text=citation,
-                n_results_per_collection=2,
+                n_results_per_collection=3,
             )
-
             for result_set in search_results:
                 results = result_set["results"]
-                if not results["ids"] or not results["ids"][0]:
+                if not results.get("ids") or not results["ids"][0]:
                     continue
-
-                for i, chunk_id in enumerate(results["ids"][0]):
-                    meta = results["metadatas"][0][i] if results["metadatas"] else {}
-                    doc_text = results["documents"][0][i] if results["documents"] else ""
-                    distance = results["distances"][0][i] if results["distances"] else 1.0
-
-                    stored_citation = meta.get("citation", "")
-                    if stored_citation and self._citations_match(citation, stored_citation):
-                        # Same rule as above, and the similarity threshold made
-                        # it worse: embedding distance measures how alike two
-                        # passages read, which is retrieval evidence, not proof
-                        # that a passage supports a claim.
-                        score = max(0, 1.0 - distance)
-                        return SourceAttribution(
-                            source_type=SourceType.retrieved_source,
-                            verification_status=VerificationStatus.partially_verified,
-                            source_name=meta.get("source_name", ""),
-                            source_citation=stored_citation,
-                            source_url=meta.get("url") or None,
-                            source_date=meta.get("effective_date") or None,
-                            retrieved_text=doc_text[:500],
-                            confidence=score,
-                            warning=(
-                                "The cited authority exists in the knowledge base, but this "
-                                "claim's substance was not checked against it."
-                            ),
-                        )
+                for i, _chunk_id in enumerate(results["ids"][0]):
+                    meta_dict = results["metadatas"][0][i] if results.get("metadatas") else {}
+                    stored_citation = meta_dict.get("citation", "")
+                    category_raw = meta_dict.get("category") or result_set.get("collection")
+                    try:
+                        category = SourceCategory(category_raw)
+                    except Exception:
+                        category = None
+                    if category in _NON_AUTHORITATIVE_CATEGORIES:
+                        continue
+                    if not stored_citation or not self._citations_match(citation, stored_citation):
+                        continue
+                    if str(meta_dict.get("is_current", "true")).lower() in {"false", "0", "no"}:
+                        continue
+                    doc_text = results["documents"][0][i] if results.get("documents") else ""
+                    scope_text = self._source_scope_text(citation, stored_citation, doc_text)
+                    if not scope_text:
+                        continue
+                    distance = results["distances"][0][i] if results.get("distances") else 1.0
+                    score = max(0.0, 1.0 - distance)
+                    return SourceAttribution(
+                        source_type=SourceType.retrieved_source,
+                        verification_status=VerificationStatus.partially_verified,
+                        source_name=meta_dict.get("source_name", ""),
+                        source_citation=stored_citation,
+                        source_url=meta_dict.get("url") or None,
+                        source_date=meta_dict.get("effective_date") or None,
+                        retrieved_text=self._select_excerpt(claim_text, scope_text, citation=citation)[:500],
+                        confidence=score,
+                        warning="Citation located in authoritative material; substantive claim support is still pending.",
+                    )
         except Exception as e:
-            logger.warning(f"Verification search failed for citation '{citation}': {e}")
+            logger.warning("Verification search failed for citation %r: %s", citation, e)
 
-        # Not found in any source — mark as model inference
         return SourceAttribution(
             source_type=SourceType.model_knowledge,
             verification_status=VerificationStatus.unverified,
             source_citation=citation,
             confidence=0.0,
-            warning="Not verified from loaded sources. Requires independent review.",
+            warning="Not verified from current authoritative sources. Requires independent review.",
         )
 
+    # ------------------------------------------------------------------
+    # Evidence records used by the production gap-analysis path
+    # ------------------------------------------------------------------
+    def build_claim_evidence(
+        self,
+        claim_id: str,
+        claim_text: str,
+        citation: str,
+        retrieval_context: Optional[RetrievalContext] = None,
+    ):
+        from app.models.schemas import ClaimSupport, EvidenceChecks, EvidenceSource, VerificationEvidence
+
+        evidence = VerificationEvidence(
+            claim_id=claim_id,
+            claim_text=claim_text,
+            citation=citation or None,
+            status=VerificationStatus.unverified,
+            source=EvidenceSource(),
+            checks=EvidenceChecks(),
+            reason="",
+        )
+
+        if not retrieval_context or not retrieval_context.get_all_sources():
+            evidence.reason = "No authoritative source material was retrieved, so this claim could not be verified."
+            return evidence
+
+        match = self._find_source_for_citation(citation, retrieval_context)
+        if match is None:
+            evidence.reason = (
+                f"The cited authority ({citation or 'none given'}) was not found in current "
+                "authoritative source material retrieved for this request."
+            )
+            return evidence
+
+        meta = match.chunk.metadata
+        if not getattr(meta, "is_current", True):
+            evidence.source = EvidenceSource(
+                name=meta.source_name,
+                url=meta.url,
+                version_date=meta.effective_date,
+                excerpt=self._select_excerpt(claim_text, match.chunk.text, citation=citation),
+            )
+            evidence.reason = "The matching source is marked non-current, so it cannot verify a present legal requirement."
+            return evidence
+
+        scope_text = self._source_scope_text(citation, meta.citation or "", match.chunk.text)
+        if not scope_text:
+            evidence.source = EvidenceSource(
+                name=meta.source_name,
+                url=meta.url,
+                version_date=meta.effective_date,
+                excerpt=self._select_excerpt(claim_text, match.chunk.text, citation=citation),
+            )
+            evidence.reason = (
+                "The regulation section was located, but the exact subsection cited by the "
+                "finding was not present in that source text."
+            )
+            return evidence
+
+        evidence.checks.citation_exists = True
+        excerpt = self._select_excerpt(claim_text, scope_text, citation=citation)
+        evidence.source = EvidenceSource(
+            name=meta.source_name,
+            url=meta.url,
+            version_date=meta.effective_date,
+            excerpt=excerpt,
+        )
+
+        # IMPORTANT: concrete facts are checked only against the matched cited
+        # authority/scope, never against the pooled retrieval context. A number
+        # appearing in an unrelated regulation must not rescue a bad claim.
+        specifics = self._extract_specifics(claim_text)
+        if specifics:
+            unsupported = [f for f in specifics if not self._specific_supported(f, scope_text)]
+            evidence.checks.specifics_supported = not unsupported
+            if unsupported:
+                evidence.status = VerificationStatus.partially_verified
+                evidence.reason = (
+                    "The cited authority was found, but these concrete fact(s) are not stated "
+                    f"at that citation scope: {', '.join(f.display for f in unsupported)}."
+                )
+                return evidence
+
+        evidence.status = VerificationStatus.partially_verified
+        evidence.checks.claim_support = ClaimSupport.not_checked
+        evidence.reason = (
+            "The current cited authority and any concrete facts were located at the cited "
+            "scope. Substantive claim support still requires the entailment check."
+        )
+        return evidence
+
+    def apply_claim_support(self, evidence, support, note: str = ""):
+        """Fold the semantic entailment result into an evidence record.
+
+        This is the only path to ``verified``. It is additionally guarded by a
+        deterministic modality check so a classifier cannot promote a mandatory
+        claim from an excerpt that is clearly only permissive/recommendatory.
+        """
+        from app.models.schemas import ClaimSupport
+
+        excerpt = evidence.source.excerpt or ""
+        if (
+            support == ClaimSupport.supported
+            and self._claim_asserts_mandate(evidence.claim_text)
+            and self._excerpt_is_clearly_permissive(excerpt)
+        ):
+            support = ClaimSupport.not_supported
+            note = note or (
+                "The claim presents a legal mandate, but the cited passage uses permissive "
+                "or recommendatory language rather than imposing that duty."
+            )
+
+        evidence.checks.claim_support = support
+
+        if support == ClaimSupport.contradicted:
+            evidence.status = VerificationStatus.contradicted
+            evidence.reason = note or "The authoritative excerpt contradicts this claim."
+        elif (
+            support == ClaimSupport.supported
+            and evidence.checks.citation_exists
+            and evidence.checks.specifics_supported is not False
+            and evidence.source.excerpt
+        ):
+            evidence.status = VerificationStatus.verified
+            evidence.reason = note or (
+                "Current citation located, concrete facts match the cited scope, and the "
+                "authoritative excerpt supports the claim."
+            )
+        elif support == ClaimSupport.not_supported:
+            evidence.status = VerificationStatus.unverified
+            evidence.reason = note or "The cited authority exists, but the cited passage does not support this claim."
+        else:
+            evidence.status = VerificationStatus.partially_verified
+            evidence.reason = note or "The cited passage bears on the claim but does not fully establish it."
+        return evidence
+
+    def check_unsupported_specifics(
+        self,
+        text: str,
+        retrieval_context: Optional[RetrievalContext] = None,
+        citation: str = "",
+    ) -> Optional[str]:
+        """Return an inline warning for concrete facts unsupported by the cited authority."""
+        if not text or not retrieval_context:
+            return None
+
+        specifics = self._extract_specifics(text)
+        if not specifics:
+            return None
+
+        if citation:
+            match = self._find_source_for_citation(citation, retrieval_context)
+            if match is None:
+                return None
+            source_text = self._source_scope_text(citation, match.chunk.metadata.citation or "", match.chunk.text)
+        else:
+            source_text = " ".join(
+                r.chunk.text
+                for r in retrieval_context.get_all_sources()
+                if self._is_authoritative_result(r)
+            )
+
+        if not source_text.strip():
+            return None
+
+        unsupported = [f for f in specifics if not self._specific_supported(f, source_text)]
+        if not unsupported:
+            return None
+
+        return (
+            "Verify this concrete fact against the cited authority ("
+            + ", ".join(f.display for f in unsupported)
+            + "). It is not stated at the cited source scope, so it must not be presented as a confirmed legal requirement."
+        )
+
+    # ------------------------------------------------------------------
+    # Citation matching and excerpt selection
+    # ------------------------------------------------------------------
     def _extract_citations(self, text: str) -> List[str]:
-        """Extract all regulatory citations from a text."""
-        citations = []
+        citations: List[str] = []
         for regex in CITATION_REGEXES:
-            matches = regex.findall(text)
-            citations.extend(matches)
-        # Deduplicate while preserving order
+            for match in regex.finditer(text):
+                citations.append(match.group(0).strip())
         seen = set()
         unique = []
-        for c in citations:
-            c_clean = c.strip()
-            if c_clean not in seen:
-                seen.add(c_clean)
-                unique.append(c_clean)
+        for citation in citations:
+            key = self._normalize_generic_citation(citation)
+            if key not in seen:
+                seen.add(key)
+                unique.append(citation)
         return unique
+
+    def _map_citations_to_sentences(self, text: str, citations: List[str]) -> Dict[str, str]:
+        sentences = _SENTENCE_SPLIT.split(text)
+        mapping: Dict[str, str] = {}
+        for citation in citations:
+            needle = self._normalize_generic_citation(citation)
+            for sentence in sentences:
+                if needle in self._normalize_generic_citation(sentence):
+                    mapping[citation] = sentence.strip()
+                    break
+        return mapping
 
     def _verify_single_citation(
         self,
@@ -354,39 +527,21 @@ class VerificationService:
         retrieval_context: Optional[RetrievalContext] = None,
         claim_sentence: str = "",
     ) -> ClaimVerification:
-        """Verify a single citation against the source set.
-
-        Two separate questions get asked here: does the cited regulation
-        exist in our sources, and -- if the sentence attaches a concrete
-        deadline or retention period to it -- is that number actually in
-        the source material? A real citation carrying an invented number
-        is worse than no citation at all, because it reads as authoritative.
-        """
-        attribution = self.create_source_attribution(citation, retrieval_context)
+        attribution = self.create_source_attribution(citation, retrieval_context, claim_text=claim_sentence)
         status = attribution.verification_status
         warning = attribution.warning
 
-        # Only check specifics for citations we actually matched to a source;
-        # if the citation itself is already unverified, that's the headline.
-        if status in (VerificationStatus.verified, VerificationStatus.partially_verified) and claim_sentence:
+        if status == VerificationStatus.partially_verified and claim_sentence and attribution.retrieved_text:
             specifics = self._extract_specifics(claim_sentence)
-            if specifics and retrieval_context:
-                all_source_text = " ".join(
-                    r.chunk.text for r in retrieval_context.get_all_sources()
+            unsupported = [
+                fact for fact in specifics
+                if not self._specific_supported(fact, attribution.retrieved_text)
+            ]
+            if unsupported:
+                warning = (
+                    f"Citation {citation} was located, but these concrete fact(s) are not "
+                    f"supported by the cited passage: {', '.join(f.display for f in unsupported)}."
                 )
-                unsupported = [
-                    s for s in specifics
-                    if not self._specific_supported(s, all_source_text)
-                ]
-                if unsupported:
-                    status = VerificationStatus.partially_verified
-                    detail = ", ".join(unsupported)
-                    warning = (
-                        f"The citation {citation} was found in source material, but the specific "
-                        f"timeframe(s) stated with it ({detail}) do not appear in that material. "
-                        f"Confirm the actual figure in the regulation before relying on it — do not "
-                        f"treat it as a legal requirement on this basis."
-                    )
 
         return ClaimVerification(
             claim_text=claim_sentence or citation,
@@ -397,30 +552,80 @@ class VerificationService:
             warning=warning,
         )
 
-    # ── Evidence-based verification ──
-    # Guiding rule: semantic similarity is RETRIEVAL evidence, not VERIFICATION
-    # evidence. A vector-store distance can tell you which passage to inspect;
-    # it cannot establish that a claim is true. Everything below reasons about
-    # the exact retrieved passage instead.
-
-    def _find_source_for_citation(
-        self, citation: str, retrieval_context: RetrievalContext
-    ):
-        """Return the retrieved result whose citation matches, else None."""
+    def _find_source_for_citation(self, citation: str, retrieval_context: RetrievalContext):
         if not citation:
             return None
+
+        candidates = []
         for result in retrieval_context.get_all_sources():
+            if not self._is_authoritative_result(result):
+                continue
             meta = result.chunk.metadata
-            if meta.citation and self._citations_match(citation, meta.citation):
-                return result
-        return None
+            if not meta.citation or not self._citations_match(citation, meta.citation):
+                continue
+            scope_ok = bool(self._source_scope_text(citation, meta.citation, result.chunk.text))
+            current = bool(getattr(meta, "is_current", True))
+            exact = self._normalize_generic_citation(citation) == self._normalize_generic_citation(meta.citation)
+            candidates.append((current, scope_ok, exact, result.score, result))
 
-    def _select_excerpt(self, claim: str, source_text: str, max_chars: int = 600) -> str:
-        """Pick the passage from the source that best bears on the claim.
+        if not candidates:
+            return None
 
-        Chooses by term overlap rather than position so the excerpt shown as
-        evidence is the part a reader would actually need to judge the claim.
-        """
+        # Current + correct scope dominates semantic similarity.
+        candidates.sort(key=lambda x: (x[0], x[1], x[2], x[3]), reverse=True)
+        return candidates[0][-1]
+
+    @staticmethod
+    def _is_authoritative_result(result) -> bool:
+        meta = result.chunk.metadata
+        return meta.category not in _NON_AUTHORITATIVE_CATEGORIES
+
+    def _source_scope_text(self, claimed: str, stored: str, source_text: str) -> str:
+        """Return text for the exact citation scope, or empty when scope is absent."""
+        claimed_key = self._citation_key(claimed)
+        stored_key = self._citation_key(stored)
+        if claimed_key is None:
+            return source_text
+
+        kind, authority, section, subs = claimed_key
+        if not subs:
+            return source_text
+
+        if stored_key is not None:
+            skind, sauthority, ssection, ssubs = stored_key
+            if (kind, authority, section) != (skind, sauthority, ssection):
+                return ""
+            # Metadata itself proves the chunk is at this scope when it is exact
+            # or a descendant of the claimed paragraph.
+            if ssubs and tuple(ssubs[: len(subs)]) == tuple(subs):
+                return source_text
+
+        lower = source_text.lower()
+        pos = 0
+        first_pos = None
+        for token in subs:
+            marker = f"({str(token).lower()})"
+            idx = lower.find(marker, pos)
+            if idx < 0:
+                return ""
+            if first_pos is None:
+                first_pos = idx
+            pos = idx + len(marker)
+
+        start = max(0, (first_pos or 0) - 150)
+        end = min(len(source_text), pos + 2200)
+        return source_text[start:end]
+
+    def _select_excerpt(
+        self,
+        claim: str,
+        source_text: str,
+        *,
+        citation: str = "",
+        max_chars: int = 900,
+    ) -> str:
+        if not source_text:
+            return ""
         sentences = [s.strip() for s in _SENTENCE_SPLIT.split(source_text) if s.strip()]
         if not sentences:
             return source_text[:max_chars]
@@ -434,16 +639,12 @@ class VerificationService:
             overlap = len(claim_terms & self._content_terms(sent))
             scored.append((overlap, i, sent))
         scored.sort(key=lambda t: (-t[0], t[1]))
-
-        # Keep the best sentence plus its neighbours, in original order.
         best_idx = scored[0][1]
-        window = sentences[max(0, best_idx - 1): best_idx + 2]
-        excerpt = " ".join(window).strip()
-        return excerpt[:max_chars]
+        window = sentences[max(0, best_idx - 1) : best_idx + 2]
+        return " ".join(window).strip()[:max_chars]
 
     @staticmethod
     def _content_terms(text: str) -> set:
-        """Lowercased content words, minus regulatory boilerplate."""
         stop = {
             "the", "and", "for", "that", "this", "with", "from", "must", "shall",
             "any", "all", "such", "under", "section", "part", "cfr", "usc", "may",
@@ -451,214 +652,211 @@ class VerificationService:
             "its", "their", "them", "they", "policy", "policies", "required",
             "requirement", "requirements", "including", "include", "includes",
         }
-        words = re.findall(r"[a-z]{4,}", text.lower())
-        return {w for w in words if w not in stop}
+        return {
+            w for w in re.findall(r"[a-z]{4,}", text.lower())
+            if w not in stop
+        }
 
-    def build_claim_evidence(
-        self,
-        claim_id: str,
-        claim_text: str,
-        citation: str,
-        retrieval_context: Optional[RetrievalContext] = None,
-    ):
-        """Build an auditable evidence record for a single claim.
-
-        Runs the deterministic checks:
-          1. Does the cited section exist in retrieved authoritative material?
-          2. Are concrete durations stated with it actually in that material?
-          3. Which exact passage bears on this claim?
-
-        The semantic claim-support check (does the excerpt actually entail the
-        claim?) is deliberately left as NOT_CHECKED here and filled in
-        separately, so a status is never upgraded to "verified" by a similarity
-        score alone.
-        """
-        from app.models.schemas import (
-            VerificationEvidence, EvidenceSource, EvidenceChecks, ClaimSupport,
-        )
-
-        evidence = VerificationEvidence(
-            claim_id=claim_id,
-            claim_text=claim_text,
-            citation=citation or None,
-            status=VerificationStatus.unverified,
-            source=EvidenceSource(),
-            checks=EvidenceChecks(),
-            reason="",
-        )
-
-        if not retrieval_context or not retrieval_context.get_all_sources():
-            evidence.reason = (
-                "No authoritative source material was retrieved for this request, so "
-                "this claim could not be checked against anything."
-            )
-            return evidence
-
-        match = self._find_source_for_citation(citation, retrieval_context)
-        if match is None:
-            evidence.reason = (
-                f"The cited authority ({citation or 'none given'}) was not among the "
-                f"authoritative sources retrieved for this request, so the citation "
-                f"itself could not be confirmed."
-            )
-            return evidence
-
-        meta = match.chunk.metadata
-        evidence.checks.citation_exists = True
-        evidence.source = EvidenceSource(
-            name=meta.source_name,
-            url=meta.url,
-            version_date=meta.effective_date,
-            excerpt=self._select_excerpt(claim_text, match.chunk.text),
-        )
-
-        # Concrete durations are checked against ALL retrieved text, not just
-        # this chunk, to avoid false alarms when a figure is stated in a
-        # neighbouring section of the same regulation.
-        all_text = " ".join(r.chunk.text for r in retrieval_context.get_all_sources())
-        specifics = self._extract_specifics(claim_text)
-        if specifics:
-            unsupported = [s for s in specifics if not self._specific_supported(s, all_text)]
-            evidence.checks.specifics_supported = not unsupported
-            if unsupported:
-                evidence.status = VerificationStatus.partially_verified
-                evidence.reason = (
-                    f"The cited authority was found, but the timeframe(s) stated with it "
-                    f"({', '.join(unsupported)}) do not appear in the source text. Confirm "
-                    f"the actual figure in the regulation before relying on it."
-                )
-                return evidence
-
-        # Citation confirmed and no contradicted specifics, but the substantive
-        # claim has not been tested against the excerpt yet.
-        evidence.status = VerificationStatus.partially_verified
-        evidence.checks.claim_support = ClaimSupport.not_checked
-        evidence.reason = (
-            "The cited authority was located in retrieved source material and any stated "
-            "timeframes match it. Whether the excerpt fully supports the substantive claim "
-            "has not been independently confirmed."
-        )
-        return evidence
-
-    def apply_claim_support(self, evidence, support, note: str = ""):
-        """Fold a claim-support result into an evidence record.
-
-        This is the only path to a `verified` status: the citation must exist,
-        stated specifics must hold, and the excerpt must be judged to support
-        the claim. Nothing else may promote a record to verified.
-        """
-        from app.models.schemas import ClaimSupport
-
-        evidence.checks.claim_support = support
-
-        if support == ClaimSupport.contradicted:
-            evidence.status = VerificationStatus.contradicted
-            evidence.reason = note or (
-                "The authoritative excerpt appears to contradict this claim. Do not rely "
-                "on it without checking the regulation directly."
-            )
-        elif support == ClaimSupport.supported and evidence.checks.citation_exists:
-            evidence.status = VerificationStatus.verified
-            evidence.reason = note or (
-                "Citation located in authoritative source material, stated timeframes "
-                "match, and the cited passage supports this claim."
-            )
-        elif support == ClaimSupport.not_supported:
-            evidence.status = VerificationStatus.unverified
-            evidence.reason = note or (
-                "The cited authority exists, but the passage does not appear to support "
-                "this claim. Treat the claim as unverified."
-            )
-        else:
-            evidence.status = VerificationStatus.partially_verified
-            evidence.reason = note or (
-                "The cited authority exists and partially bears on this claim, but does "
-                "not fully establish it."
-            )
-        return evidence
-
-    def check_unsupported_specifics(
-        self,
-        text: str,
-        retrieval_context: Optional[RetrievalContext] = None,
-    ) -> Optional[str]:
-        """Return a plain-language warning if `text` states concrete timeframes
-        that don't appear anywhere in the retrieved source material.
-
-        Used to flag an individual finding or policy section inline, rather
-        than burying it in an aggregate count. Returns None when everything
-        checks out (the common case) so callers can stay quiet by default.
-        """
-        if not text or not retrieval_context:
+    def _citation_key(self, citation: str) -> Optional[Tuple[str, str, str, Tuple[str, ...]]]:
+        if not citation:
             return None
-
-        all_source_text = " ".join(r.chunk.text for r in retrieval_context.get_all_sources())
-        if not all_source_text.strip():
-            return None  # No sources at all -- that's reported separately, don't double-warn.
-
-        specifics = self._extract_specifics(text)
-        if not specifics:
-            return None
-
-        unsupported = [s for s in specifics if not self._specific_supported(s, all_source_text)]
-        if not unsupported:
-            return None
-
-        readable = ", ".join(f"{s}s" if not s.endswith("s") else s for s in unsupported)
-        return (
-            f"Verify this timeframe ({readable}) against the regulation itself — it isn't stated "
-            f"in the source material we retrieved, so treat it as a suggested standard rather than "
-            f"a confirmed legal deadline."
-        )
+        if m := _CFR_SECTION_RE.search(citation):
+            return (
+                "cfr",
+                m.group("title"),
+                m.group("section"),
+                tuple(x.lower() for x in _SUBSECTION_RE.findall(m.group("subs") or "")),
+            )
+        if m := _CFR_PART_RE.search(citation):
+            return ("cfr_part", m.group("title"), m.group("part"), tuple())
+        if m := _USC_RE.search(citation):
+            return (
+                "usc",
+                m.group("title"),
+                m.group("section").lower(),
+                tuple(x.lower() for x in _SUBSECTION_RE.findall(m.group("subs") or "")),
+            )
+        if m := _STATE_SECTION_RE.search(citation):
+            body = re.sub(r"\s+", " ", m.group("body").lower()).strip()
+            return (
+                f"state:{m.group('state').upper()}",
+                body,
+                m.group("section").lower(),
+                tuple(x.lower() for x in _SUBSECTION_RE.findall(m.group("subs") or "")),
+            )
+        return None
 
     def _citations_match(self, cite_a: str, cite_b: str) -> bool:
-        """
-        Check if two citations refer to the same regulation.
-        Handles minor formatting differences.
-        """
-        # Normalize both citations
-        def normalize(c: str) -> str:
-            c = c.lower().strip()
-            c = re.sub(r'[§¶]', '', c)         # Remove section symbols first --
-                                                # eCFR-ingested citations are stored
-                                                # as "45 CFR § 164.312" (space after §)
-                                                # while the model writes "§164.312" (no
-                                                # space); removing § before collapsing
-                                                # whitespace left a stray double-space
-                                                # that made every real citation fail to
-                                                # match its own source.
-            c = re.sub(r'\s+', ' ', c).strip()  # Then collapse whitespace
-            c = c.replace('section', 'sec')    # Normalize
-            c = c.replace('part ', 'part')     # Normalize
-            return c
+        a_key = self._citation_key(cite_a)
+        b_key = self._citation_key(cite_b)
+        if a_key and b_key:
+            if a_key[:3] != b_key[:3]:
+                return False
+            a_subs, b_subs = a_key[3], b_key[3]
+            if not a_subs or not b_subs:
+                return True
+            # Ancestor/descendant is acceptable for locating source material;
+            # _source_scope_text then proves the exact claimed paragraph exists.
+            shorter = min(len(a_subs), len(b_subs))
+            return a_subs[:shorter] == b_subs[:shorter]
 
-        a = normalize(cite_a)
-        b = normalize(cite_b)
+        # Never let a state citation match a different state's authority.
+        a_state = re.match(r"^\s*([A-Z]{2})\b", cite_a, re.IGNORECASE)
+        b_state = re.match(r"^\s*([A-Z]{2})\b", cite_b, re.IGNORECASE)
+        if a_state and b_state and a_state.group(1).upper() != b_state.group(1).upper():
+            return False
 
-        # Exact match after normalization
+        a = self._normalize_generic_citation(cite_a)
+        b = self._normalize_generic_citation(cite_b)
+        if not a or not b:
+            return False
         if a == b:
             return True
 
-        # One contains the other
-        if a in b or b in a:
-            return True
+        # Generic guidance names may carry a year or subtitle. Allow containment
+        # only at a token boundary; never use it to match parsed CFR/USC cites.
+        if a_key or b_key:
+            return False
+        return re.search(rf"(?:^| ){re.escape(a)}(?: |$)", b) is not None or re.search(
+            rf"(?:^| ){re.escape(b)}(?: |$)", a
+        ) is not None
 
-        # Check if the core citation number matches
-        # e.g., "45 cfr 164.530" should match "45 cfr 164.530(b)"
-        a_core = re.sub(r'\([a-z]\)', '', a)
-        b_core = re.sub(r'\([a-z]\)', '', b)
-        if a_core == b_core:
-            return True
+    @staticmethod
+    def _normalize_generic_citation(citation: str) -> str:
+        c = citation.lower().strip()
+        c = re.sub(r"[§¶,;:]", " ", c)
+        c = c.replace("section", " ")
+        c = re.sub(r"\s+", " ", c).strip()
+        return c
 
-        return False
+    # ------------------------------------------------------------------
+    # Concrete fact helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _number_value(raw: str) -> str:
+        value = raw.lower().replace(",", "").strip()
+        if value in NUMBER_WORDS:
+            return str(NUMBER_WORDS[value])
+        try:
+            n = float(value)
+            return str(int(n)) if n.is_integer() else str(n)
+        except ValueError:
+            return value
+
+    def _extract_specifics(self, text: str) -> List[ConcreteFact]:
+        facts: List[ConcreteFact] = []
+
+        for m in _DURATION_REGEX.finditer(text):
+            unit = m.group("u").lower().strip()
+            unit = re.sub(r"^(calendar|business|working)\s+", "", unit).rstrip("s")
+            facts.append(ConcreteFact("duration", self._number_value(m.group("n")), unit, raw=m.group(0)))
+
+        for m in _PERCENT_REGEX.finditer(text):
+            facts.append(ConcreteFact("percent", self._number_value(m.group("n")), raw=m.group(0)))
+
+        for m in _MONEY_REGEX.finditer(text):
+            digits = re.sub(r"[^0-9.]", "", m.group("raw"))
+            if digits:
+                facts.append(ConcreteFact("money", self._number_value(digits), raw=m.group("raw")))
+
+        for m in _RATIO_REGEX.finditer(text):
+            a, b = (m.group("a"), m.group("b")) if m.group("a") else (m.group("a2"), m.group("b2"))
+            facts.append(ConcreteFact("ratio", a, b, raw=m.group(0)))
+
+        for m in _AGE_REGEX.finditer(text):
+            n = m.group("n") or m.group("n2")
+            facts.append(ConcreteFact("age", n, raw=m.group(0)))
+
+        for m in _DISTANCE_REGEX.finditer(text):
+            unit = m.group("u").lower()
+            canonical = {
+                "feet": "foot", "ft": "foot", "foot": "foot",
+                "inches": "inch", "inch": "inch",
+                "meters": "meter", "meter": "meter",
+                "miles": "mile", "mile": "mile",
+                "yards": "yard", "yard": "yard",
+            }[unit]
+            facts.append(ConcreteFact("distance", self._number_value(m.group("n")), canonical, raw=m.group(0)))
+
+        for m in _THRESHOLD_REGEX.finditer(text):
+            q = re.sub(r"\s+", " ", m.group("q").lower()).strip()
+            facts.append(ConcreteFact("threshold", m.group("n"), qualifier=q, raw=m.group(0)))
+
+        seen = set()
+        unique = []
+        for fact in facts:
+            key = (fact.kind, fact.value, fact.unit, fact.qualifier)
+            if key not in seen:
+                seen.add(key)
+                unique.append(fact)
+        return unique
+
+    def _number_forms(self, value: str) -> set[str]:
+        forms = {value}
+        try:
+            ivalue = int(float(value))
+        except ValueError:
+            return forms
+        for word, n in NUMBER_WORDS.items():
+            if n == ivalue:
+                forms.add(word)
+        return forms
+
+    def _specific_supported(self, fact: ConcreteFact, source_text: str) -> bool:
+        haystack = source_text.lower()
+        forms = self._number_forms(fact.value)
+
+        if fact.kind == "duration":
+            return any(
+                re.search(rf"\b{re.escape(n)}[\s-]+(?:calendar\s+|business\s+|working\s+)?{re.escape(fact.unit)}s?\b", haystack)
+                for n in forms
+            )
+        if fact.kind == "percent":
+            return any(re.search(rf"\b{re.escape(n)}\s*(?:%|percent)\b", haystack) for n in forms)
+        if fact.kind == "money":
+            return any(
+                re.search(rf"(?:\$\s*{re.escape(n)}\b|\b{re.escape(n)}\s+dollars?\b)", haystack.replace(",", ""))
+                for n in forms
+            )
+        if fact.kind == "ratio":
+            return bool(
+                re.search(rf"\b{re.escape(fact.value)}\s*(?::|to)\s*{re.escape(fact.unit)}\b", haystack)
+                or re.search(rf"\b{re.escape(fact.value)}\s+per\s+{re.escape(fact.unit)}\b", haystack)
+            )
+        if fact.kind == "age":
+            return any(
+                re.search(rf"\bage\s+{re.escape(n)}\b|\b{re.escape(n)}\s+years?\s+(?:of\s+age|old)\b|\b{re.escape(n)}\s+or\s+(?:older|younger)\b", haystack)
+                for n in forms
+            )
+        if fact.kind == "distance":
+            unit_forms = {
+                "foot": r"(?:foot|feet|ft)",
+                "inch": r"(?:inch|inches)",
+                "meter": r"(?:meter|meters)",
+                "mile": r"(?:mile|miles)",
+                "yard": r"(?:yard|yards)",
+            }[fact.unit]
+            return any(re.search(rf"\b{re.escape(n)}\s*{unit_forms}\b", haystack) for n in forms)
+        if fact.kind == "threshold":
+            q = re.escape(fact.qualifier).replace(r"\ ", r"\s+")
+            return bool(re.search(rf"\b{q}\s+{re.escape(fact.value)}\b", haystack))
+        return True
+
+    @staticmethod
+    def _claim_asserts_mandate(text: str) -> bool:
+        return bool(_MANDATORY_CLAIM_RE.search(text or ""))
+
+    @staticmethod
+    def _excerpt_is_clearly_permissive(text: str) -> bool:
+        if not text:
+            return False
+        return bool(_PERMISSIVE_SOURCE_RE.search(text)) and not bool(_MANDATORY_SOURCE_RE.search(text))
 
 
-# Singleton
 _verification: Optional[VerificationService] = None
 
 
 def get_verification_service() -> VerificationService:
-    """Get the singleton VerificationService instance."""
     global _verification
     if _verification is None:
         _verification = VerificationService()
