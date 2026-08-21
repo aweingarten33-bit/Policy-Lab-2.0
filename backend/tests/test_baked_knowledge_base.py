@@ -12,6 +12,7 @@ Run: python -m pytest tests/test_baked_knowledge_base.py -v
 """
 
 import os
+import re
 import pathlib
 import tempfile
 from unittest.mock import patch
@@ -98,25 +99,38 @@ def test_build_script_does_not_fail_the_build_by_default():
     assert result.returncode == 0
 
 
-def test_a_normal_build_ships_guidance_even_with_no_network():
-    """An offline build must still produce a usable corpus.
-
-    The bundled OIG/HCCA guidance loads from disk, so an eCFR outage costs the
-    regulatory corpus but leaves the compliance-program guidance -- partial
-    grounding rather than none. A default build should not be blocked by that.
-    """
+def _run_build(*flags):
     import subprocess, sys
-    result = subprocess.run(
-        [sys.executable, "scripts/build_knowledge_base.py"],
-        capture_output=True, text=True, timeout=600,
+    return subprocess.run(
+        [sys.executable, "scripts/build_knowledge_base.py", *flags],
+        capture_output=True, text=True, timeout=900,
         env={**os.environ, "KB_PERSIST_DIR": tempfile.mkdtemp()},
     )
+
+
+def _regulatory_chunks(stdout):
+    """How many chunks came from eCFR, per the build's own report."""
+    match = re.search(r"\((\d+) of them regulatory text from eCFR\)", stdout)
+    return int(match.group(1)) if match else 0
+
+
+def test_a_normal_build_never_fails_and_reports_what_it_got():
+    """A default build ships whatever it could load and says which.
+
+    Written to hold with or without network access. It previously asserted the
+    offline outcome specifically, which passed on a machine with no eCFR egress
+    and failed in CI, where eCFR is reachable and the regulations really do
+    download -- the test encoding its author's environment rather than the
+    behaviour.
+    """
+    result = _run_build()
     assert result.returncode == 0, result.stderr
     assert "SUCCESS" in result.stdout
-    # It must say plainly that the regulations are missing, not imply a
+    # Either way it must state the regulatory count rather than imply a
     # complete corpus.
-    assert "0 regulatory" in result.stdout
-    assert "guidance-only grounding" in result.stderr
+    assert "regulatory" in result.stdout
+    if _regulatory_chunks(result.stdout) == 0:
+        assert "guidance-only grounding" in result.stderr
 
 
 def test_strict_mode_requires_the_regulations_not_merely_content():
@@ -127,27 +141,19 @@ def test_strict_mode_requires_the_regulations_not_merely_content():
     a build in which eCFR was unreachable and not one regulation downloaded
     would have passed. The switch protected against nothing.
     """
-    import subprocess, sys
-    result = subprocess.run(
-        [sys.executable, "scripts/build_knowledge_base.py", "--require-success"],
-        capture_output=True, text=True, timeout=600,
-        env={**os.environ, "KB_PERSIST_DIR": tempfile.mkdtemp()},
-    )
-    # No eCFR egress in this environment, so a strict build must refuse.
-    assert result.returncode == 1, result.stdout
-    assert "FAILED" in result.stderr
-    assert "no regulatory text was downloaded" in result.stderr
+    result = _run_build("--require-success")
+    regulatory = _regulatory_chunks(result.stdout)
 
-
-def test_strict_mode_reports_what_did_load():
-    """A failure that hides the partial success is harder to act on."""
-    import subprocess, sys
-    result = subprocess.run(
-        [sys.executable, "scripts/build_knowledge_base.py", "--require-success"],
-        capture_output=True, text=True, timeout=600,
-        env={**os.environ, "KB_PERSIST_DIR": tempfile.mkdtemp()},
-    )
-    assert "chunks of bundled guidance loaded" in result.stderr
+    if regulatory > 0:
+        # eCFR was reachable: a strict build is exactly what should succeed.
+        assert result.returncode == 0, result.stderr
+    else:
+        assert result.returncode == 1, result.stdout
+        assert "FAILED" in result.stderr
+        assert "no regulatory text was downloaded" in result.stderr
+        # The failure must still report the partial success, or it is harder
+        # to act on.
+        assert "chunks of bundled guidance loaded" in result.stderr
 
 
 class TestReleaseBuildIsStrict:

@@ -38,12 +38,13 @@ jobs:
 
       - name: Run tests
         working-directory: backend
-        # No network in CI, so seeding cannot reach eCFR. The suite is written
-        # to work offline: the bundled guidance PDFs load from disk and the
-        # tests that need a corpus build their own temporary store.
+        # KB_AUTO_SEED is deliberately NOT set here. Setting it to "false"
+        # disabled the startup bootstrap that several tests exist to exercise,
+        # so they reported "seeding never started" and failed -- the CI
+        # configuration breaking the tests rather than the tests catching a
+        # regression. Each test controls seeding through its own fixtures.
         env:
           ENVIRONMENT: test
-          KB_AUTO_SEED: "false"
         run: python -m pytest tests/ -q
 
   frontend:

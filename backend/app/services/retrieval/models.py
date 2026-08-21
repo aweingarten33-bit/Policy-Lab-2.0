@@ -16,20 +16,20 @@ from datetime import datetime
 
 # ── Enums ──
 
-class SourceType(str, Enum):
-    """Origin of a claim or piece of information."""
-    model_knowledge = "model_knowledge"        # LLM training data — NOT verified
-    retrieved_source = "retrieved_source"      # From curated internal knowledge base
-    live_research = "live_research"            # From controlled web research
-    verified_source = "verified_source"        # Cross-checked against source material
-
-
-class VerificationStatus(str, Enum):
-    """Verification result for a claim."""
-    verified = "verified"                      # Confirmed against source material
-    partially_verified = "partially_verified"  # Some support found, not exact match
-    unverified = "unverified"                  # No supporting source found
-    contradicted = "contradicted"              # Source material contradicts the claim
+# Re-exported from app.models.schemas rather than redefined here.
+#
+# Both modules used to declare their own SourceType and VerificationStatus with
+# identical members. Two enum classes with the same values are still two
+# classes: `status == VerificationStatus.verified` is True across them, but
+# `status is VerificationStatus.verified` is always False. Identity comparison
+# is the natural way to write an enum check, several call sites use it, and it
+# silently evaluated False depending on which module the caller happened to
+# import from -- so a verified claim could read as unverified purely because of
+# an import line.
+#
+# app.models.schemas imports nothing from this package, so importing it here
+# creates no cycle.
+from app.models.schemas import SourceType, VerificationStatus  # noqa: F401
 
 
 class SourceCategory(str, Enum):
