@@ -1,5 +1,4 @@
-"""
-Compliance Chat Service.
+"""Compliance Chat Service.
 
 Post-analysis and post-draft Q&A assistant. Answers questions about the
 findings or the drafted policy using the context already generated — it does
@@ -19,9 +18,12 @@ from typing import Optional
 from app.services.provider import get_provider
 from app.services.retrieval.retriever import get_retriever
 from app.services.retrieval.live_research import get_live_research_service
-from app.models.schemas import ChatMessage
+from app.models.schemas import ChatMessage, MAX_CHAT_CHARS, MAX_INPUT_CHARS
 
 logger = logging.getLogger(__name__)
+
+MAX_CHAT_HISTORY_MESSAGES = 10
+MAX_CHAT_HISTORY_CHARS = MAX_CHAT_CHARS * MAX_CHAT_HISTORY_MESSAGES
 
 CHAT_SYSTEM_PROMPT = """You are an expert compliance advisor built into a Policy Gap Analyzer tool. The user has just run a gap analysis or generated a policy draft and is asking follow-up questions about it.
 
@@ -58,6 +60,39 @@ Note: You are not providing legal advice. Findings should be independently verif
 Keep responses concise — 2-3 paragraphs."""
 
 
+def _validate_chat_inputs(
+    message: str,
+    context_summary: Optional[str],
+    history: list[ChatMessage],
+) -> list[ChatMessage]:
+    """Bound every user-controlled string before it reaches a paid model call."""
+    if len(message) > MAX_CHAT_CHARS:
+        raise ValueError(
+            f"Chat message is too large. Maximum is {MAX_CHAT_CHARS:,} characters."
+        )
+
+    if context_summary and len(context_summary) > MAX_INPUT_CHARS:
+        raise ValueError(
+            f"Chat context is too large. Maximum is {MAX_INPUT_CHARS:,} characters."
+        )
+
+    recent_history = history[-MAX_CHAT_HISTORY_MESSAGES:]
+    total_history_chars = 0
+    for item in recent_history:
+        if len(item.content) > MAX_CHAT_CHARS:
+            raise ValueError(
+                f"A chat history message exceeds the {MAX_CHAT_CHARS:,}-character limit."
+            )
+        total_history_chars += len(item.content)
+
+    if total_history_chars > MAX_CHAT_HISTORY_CHARS:
+        raise ValueError(
+            f"Chat history is too large. Maximum is {MAX_CHAT_HISTORY_CHARS:,} characters."
+        )
+
+    return recent_history
+
+
 async def chat(
     message: str,
     mode: str = "analysis",
@@ -66,9 +101,10 @@ async def chat(
     context_summary: Optional[str] = None,
     conversation_history: Optional[list[ChatMessage]] = None,
 ) -> str:
-    """Run a single Q&A chat turn and return the response text."""
+    """Run a single bounded Q&A chat turn and return the response text."""
     provider = get_provider()
     history = conversation_history or []
+    recent_history = _validate_chat_inputs(message, context_summary, history)
 
     messages: list[dict] = []
 
@@ -103,9 +139,6 @@ async def chat(
     if retrieval_ctx.total_sources_found > 0:
         messages.append({
             "role": "user",
-            # Labelled "retrieved", not "verified": this material has been
-            # looked up, not checked against a claim. Calling it verified here
-            # is the same overclaim the evidence layer exists to remove.
             "content": f"RETRIEVED SOURCE MATERIAL for this question:\n\n{retrieval_ctx.formatted_context}",
         })
         messages.append({
@@ -116,13 +149,18 @@ async def chat(
             ),
         })
 
-    recent_history = history[-10:]
     for msg in recent_history:
         messages.append({"role": msg.role, "content": msg.content})
 
     messages.append({"role": "user", "content": message})
 
-    logger.info(f"Chat turn — mode: {mode}, industry: {industry}, history: {len(history)}")
+    logger.info(
+        "Chat turn — mode: %s, industry: %s, history supplied: %s, history used: %s",
+        mode,
+        industry,
+        len(history),
+        len(recent_history),
+    )
 
     response_text = await provider.complete_chat(
         system_prompt=CHAT_SYSTEM_PROMPT,
