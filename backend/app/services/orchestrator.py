@@ -668,16 +668,36 @@ class PackageOrchestrator:
             yield package
             return
 
-        yield package  # ← user sees results here, ~30s in
+        # Findings go out first, unverified, so the reader is not staring at a
+        # spinner while the checks run.
+        package.status = PackageStatus.analyzing
+        yield package
 
-        gap_findings = [
-            f"{row.clause}: {row.finding[:100]}"
-            for row in package.gap_analysis.gap_table
-            if row.status != "compliant"
-        ]
-
-        # Rewrite + redline streaming phases retired (May 2026). Gap analysis was
-        # already yielded above as the streaming package; no further phases needed.
+        # Then the verification pass. This is the whole point of the product and
+        # it was not running at all on this path: the checks lived only in
+        # generate_full_package(), which nothing calls. Findings were reaching
+        # users with no evidence record, no claim-support check, and no
+        # obligation gate -- so a claimed legal mandate the source never
+        # established went out looking exactly like one it did.
+        #
+        # Running it after the first yield rather than before is deliberate:
+        # correctness is not negotiable, but making someone wait for it before
+        # seeing anything is.
+        try:
+            package.status = PackageStatus.verifying
+            await self._build_evidence(package.gap_analysis, retrieval_ctx)
+            self._flag_unsupported_specifics(package.gap_analysis, retrieval_ctx)
+            package.unverified_claim_count = sum(
+                1 for row in package.gap_analysis.gap_table
+                if row.evidence
+                and row.evidence.status is VerificationStatus.unverified
+            )
+            logger.info(f"[{package_id}] Verification pass complete")
+        except Exception as e:
+            # A failed check must never delete a finding. It must also never
+            # silently pass one: without evidence a row stays unverified, which
+            # is what the absent evidence record already means.
+            logger.error(f"[{package_id}] Verification pass failed: {e}", exc_info=True)
 
         package.kb_sources_used = all_kb_sources if all_kb_sources else None
         package.kb_source_urls = all_kb_source_urls if all_kb_source_urls else None
