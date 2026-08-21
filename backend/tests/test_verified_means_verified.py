@@ -1,20 +1,9 @@
 """
 "Verified" must mean the source supports the claim.
 
-The product's whole promise is that a citation was checked rather than
-recalled. A second attribution path -- still live, reached from the
-orchestrator and the draft service -- awarded VerificationStatus.verified as
-soon as the citation *string* matched something in the knowledge base, and in
-one branch simply because embedding similarity cleared 0.7.
-
-Neither checks the claim. A fabricated "30-day deadline" hung off a real
-45 CFR 164.404 matched perfectly and came back with a green Verified badge --
-a real citation attached to an invented requirement, which is the single most
-dangerous output this tool can produce and precisely what it exists to catch.
-
-Citation-exists and claim-supported are different facts. Only
-apply_claim_support, which compares the claim against the cited passage, may
-promote anything to verified.
+A real citation alone is never enough. Verification requires an authoritative
+excerpt and a successful claim-support check; missing evidence cannot be
+promoted to a green Verified state.
 
 Run: python -m pytest tests/test_verified_means_verified.py -v
 """
@@ -57,7 +46,6 @@ def verifier(tmp_path, monkeypatch):
 
 class TestCitationMatchIsNotVerification:
     def test_a_real_citation_alone_does_not_earn_verified(self, verifier):
-        """The exact failure: correct section number, invented deadline."""
         context = _context_with(
             "45 CFR § 164.404",
             "A covered entity shall notify each individual whose unsecured protected "
@@ -69,28 +57,21 @@ class TestCitationMatchIsNotVerification:
             context,
             claim_text="Notification must be sent within 30 days of discovery.",
         )
-        assert attribution.verification_status != VerificationStatus.verified, (
-            "a citation that merely exists was marked verified — this is how an "
-            "invented requirement gets a green badge"
-        )
+        assert attribution.verification_status != VerificationStatus.verified
 
     def test_the_located_source_is_still_reported(self, verifier):
-        """Downgrading the status must not throw away the evidence."""
         context = _context_with("45 CFR § 164.404", "Notification within 60 calendar days.")
         attribution = verifier.create_source_attribution("45 CFR § 164.404", context, claim_text="x")
-
         assert attribution.source_citation == "45 CFR § 164.404"
         assert "60 calendar days" in (attribution.retrieved_text or "")
-        assert attribution.warning, "the user needs to be told what was not checked"
+        assert attribution.warning
 
     def test_high_similarity_does_not_earn_verified(self, verifier):
-        """Embedding distance is retrieval evidence, not verification evidence."""
         context = _context_with("45 CFR § 164.404", "Breach notification requirements.", score=0.99)
         attribution = verifier.create_source_attribution("45 CFR § 164.404", context, claim_text="x")
         assert attribution.verification_status != VerificationStatus.verified
 
     def test_an_unknown_citation_is_unverified(self, verifier):
-        """Unchanged behaviour, guarded so the fix doesn't over-correct."""
         attribution = verifier.create_source_attribution(
             "45 CFR § 999.999", _context_with("45 CFR § 164.404", "Something else."), claim_text="x"
         )
@@ -99,16 +80,20 @@ class TestCitationMatchIsNotVerification:
 
 
 class TestOnlyClaimSupportPromotes:
-    def _evidence(self, verifier, citation_exists=True):
-        from app.models.schemas import VerificationEvidence, EvidenceChecks
+    def _evidence(self, verifier, citation_exists=True, with_excerpt=True):
+        from app.models.schemas import VerificationEvidence, EvidenceChecks, EvidenceSource
         return VerificationEvidence(
             claim_id="c1",
             claim_text="Notification must be sent within 30 days of discovery.",
             checks=EvidenceChecks(citation_exists=citation_exists),
+            source=EvidenceSource(
+                excerpt="A covered entity must send notification within 30 days of discovery."
+                if with_excerpt else None
+            ),
             status=VerificationStatus.unverified,
         )
 
-    def test_supported_plus_existing_citation_is_verified(self, verifier):
+    def test_supported_plus_existing_citation_and_excerpt_is_verified(self, verifier):
         evidence = verifier.apply_claim_support(
             self._evidence(verifier), ClaimSupport.supported
         )
@@ -117,6 +102,12 @@ class TestOnlyClaimSupportPromotes:
     def test_supported_without_a_real_citation_is_not_verified(self, verifier):
         evidence = verifier.apply_claim_support(
             self._evidence(verifier, citation_exists=False), ClaimSupport.supported
+        )
+        assert evidence.status != VerificationStatus.verified
+
+    def test_supported_without_an_excerpt_is_not_verified(self, verifier):
+        evidence = verifier.apply_claim_support(
+            self._evidence(verifier, with_excerpt=False), ClaimSupport.supported
         )
         assert evidence.status != VerificationStatus.verified
 

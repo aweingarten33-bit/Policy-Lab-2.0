@@ -154,7 +154,6 @@ async def _prepare_draft(
 
     logger.info(f"Drafting policy — industry: {industry_slug}, description: {policy_description[:80]}")
 
-    # Retrieve reference material: real policy examples + templates from KB
     retriever = get_retriever()
     ctx = retriever.retrieve_for_step(
         step_name="draft_policy",
@@ -164,9 +163,6 @@ async def _prepare_draft(
         industry=industry_slug,
     )
 
-    # State law is never in the KB (only federal eCFR content is seeded), so
-    # when a jurisdiction is selected this always does a live search of state
-    # government sources rather than relying on the KB alone.
     ctx = await get_live_research_service().augment_retrieval_context(
         context=ctx,
         policy_type="compliance_policy",
@@ -176,9 +172,6 @@ async def _prepare_draft(
     if ctx.live_research_used:
         logger.info(f"Draft live research: {len(ctx.live_research_results)} results injected")
 
-    # Same grounding gate as gap analysis: a drafted policy full of
-    # confident citations, produced with zero retrieved sources, is exactly
-    # the output a compliance officer would most wrongly trust.
     if settings.require_grounding and not ctx.get_all_sources():
         logger.error("Draft BLOCKED: zero sources retrieved — refusing ungrounded output.")
         raise GroundingUnavailableError(
@@ -188,9 +181,13 @@ async def _prepare_draft(
 
     if ctx.total_sources_found > 0:
         user_message += (
-            f"\n\nREFERENCE MATERIAL — use these real policy examples and templates "
-            f"for language, structure, section headings, and depth. Match this caliber "
-            f"of writing:\n\n{ctx.formatted_context}"
+            "\n\nREFERENCE MATERIAL follows. Treat primary statutes, regulations, and official "
+            "agency material as the only evidence that a legal obligation exists. Policy "
+            "examples, templates, clause libraries, and peer language are structural/writing "
+            "references only and MUST NOT be used to establish that something is legally "
+            "required. If the primary authority does not state the requirement, do not present "
+            "it as law.\n\n"
+            f"{ctx.formatted_context}"
         )
         logger.info(f"Draft KB: {ctx.total_sources_found} reference chunks injected")
 
@@ -198,10 +195,13 @@ async def _prepare_draft(
 
 
 def attach_attribution(data: dict, ctx: RetrievalContext) -> dict:
-    """Attach source-attribution/verification fields to a parsed draft dict,
-    mirroring what the gap-analysis package already surfaces in the UI --
-    otherwise Draft silently retrieves and live-searches sources but never
-    shows the user any proof of it."""
+    """Attach a fail-closed citation-verification summary to a draft.
+
+    ``verified`` means fully verified. A citation that merely exists is only
+    partially verified and must count as requiring review. This prevents the
+    Draft flow from saying "All citations verified" when every citation only
+    passed the citation-existence check.
+    """
     verifier = get_verification_service()
     report = verifier.verify_section(
         section_name="draft_policy",
@@ -213,7 +213,13 @@ def attach_attribution(data: dict, ctx: RetrievalContext) -> dict:
     data["kb_source_urls"] = ctx.get_source_url_map() or None
     data["source_snippets"] = ctx.get_source_snippets() or None
     data["live_research_used"] = ctx.live_research_used
-    data["unverified_claim_count"] = report.unverified_claims
+
+    not_fully_verified = (
+        report.partially_verified_claims
+        + report.unverified_claims
+        + report.contradicted_claims
+    )
+    data["unverified_claim_count"] = not_fully_verified
 
     if report.total_claims == 0:
         if ctx.total_sources_found > 0:
@@ -227,16 +233,31 @@ def attach_attribution(data: dict, ctx: RetrievalContext) -> dict:
                 "No source material was available in the knowledge base. This draft "
                 "is model inference only and MUST be independently verified."
             )
-    elif report.unverified_claims > 0:
+    elif not_fully_verified > 0:
+        details = []
+        if report.partially_verified_claims:
+            details.append(f"{report.partially_verified_claims} partially verified")
+        if report.unverified_claims:
+            details.append(f"{report.unverified_claims} unverified")
+        if report.contradicted_claims:
+            details.append(f"{report.contradicted_claims} contradicted")
         data["verification_overall"] = (
-            f"{report.unverified_claims} of {report.total_claims} citations could not "
-            f"be verified against loaded sources. These require independent review by "
-            f"qualified compliance counsel."
+            f"{not_fully_verified} of {report.total_claims} citation-backed claim(s) are "
+            f"not fully verified ({', '.join(details)}). Do not treat those statements "
+            f"as confirmed legal requirements until the cited authority is checked."
+        )
+    elif report.verified_claims == report.total_claims:
+        data["verification_overall"] = (
+            f"All {report.total_claims} citation-backed claim(s) are fully verified against "
+            f"{len(sources)} authoritative source(s). Content should still be independently "
+            f"confirmed before adoption."
         )
     else:
+        # Defensive branch: aggregate counts should normally cover every claim.
+        data["unverified_claim_count"] = report.total_claims
         data["verification_overall"] = (
-            f"All {report.total_claims} citation(s) verified against {len(sources)} "
-            f"source(s) in the knowledge base. Content should still be independently confirmed."
+            "Verification results were internally incomplete. Treat every citation-backed "
+            "claim in this draft as unverified until independently confirmed."
         )
 
     return data
@@ -259,8 +280,6 @@ def parse_draft_response(raw_text: str) -> dict:
         logger.error(f"Draft JSON parse error: {e}. Response length: {len(match.group(0))} chars. Tail: {match.group(0)[-300:]!r}")
         raise ValueError(f"Invalid JSON from model: {e}")
 
-    # Normalize sections: GPT sometimes returns content as a nested dict of subsections.
-    # Flatten any dict content into a plain string so the schema validates cleanly.
     for section in data.get("sections", []):
         content = section.get("content", "")
         if isinstance(content, dict):
@@ -271,9 +290,6 @@ def parse_draft_response(raw_text: str) -> dict:
         elif not isinstance(content, str):
             section["content"] = str(content)
 
-    # Built here instead of by the model — asking it to write the entire document a
-    # second time as one block roughly doubled output size and was the main driver
-    # of responses getting truncated before the JSON could close.
     data["full_text"] = "\n\n".join(
         f"{s.get('title', '')}\n\n{s.get('content', '')}" for s in data.get("sections", [])
     )
@@ -287,10 +303,7 @@ async def draft_policy(
     industry: Optional[str] = None,
     jurisdiction: Optional[str] = None,
 ) -> dict:
-    """
-    Generate a complete policy document from a plain-English description.
-    Returns a dict with policy_title, full_text, sections, regulations_applied, etc.
-    """
+    """Generate a complete policy document from a plain-English description."""
     provider = get_provider()
     system_prompt, user_message, ctx = await _prepare_draft(policy_description, industry, jurisdiction)
 
@@ -311,17 +324,7 @@ async def draft_policy_stream(
     jurisdiction: Optional[str] = None,
     context_holder: Optional[dict] = None,
 ):
-    """
-    Same as draft_policy(), but yields raw text chunks as they're generated
-    instead of waiting for the full response. The caller is responsible for
-    accumulating the chunks and calling parse_draft_response() once the
-    generator is exhausted.
-
-    Since a generator can't also return a value, pass a dict as
-    context_holder -- the RetrievalContext is stashed into it (key "ctx")
-    once built, so the caller can read it after the stream finishes and
-    call attach_attribution() itself.
-    """
+    """Stream a draft while exposing retrieval context to the caller."""
     provider = get_provider()
     system_prompt, user_message, ctx = await _prepare_draft(policy_description, industry, jurisdiction)
     if context_holder is not None:

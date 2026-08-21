@@ -7,7 +7,7 @@ import json
 import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
-from typing import Optional, List
+from typing import Optional
 
 from app.services.orchestrator import GroundingUnavailableError
 from app.models.schemas import (
@@ -20,6 +20,7 @@ from starlette.requests import Request
 
 from app.request_identity import client_id
 from app.services.job_store import get_job_store
+from app.services.package_integrity import reconcile_package_verification
 from app.services.rewrite_service import generate_rewritten_policy
 from app.services.retrieval.retriever import get_retriever
 from app.services.retrieval.live_research import get_live_research_service
@@ -56,6 +57,7 @@ async def _run_action_package_job(job_id: str, request: ActionPackageRequest) ->
             requested_outputs=request.outputs,
             enable_live_research=request.enable_live_research,
         ):
+            package = reconcile_package_verification(package)
             last_package = package
             await store.update_package(job_id, package)
         if last_package is not None and last_package.status == PackageStatus.failed:
@@ -69,19 +71,10 @@ async def _run_action_package_job(job_id: str, request: ActionPackageRequest) ->
 
 @router.post("/action-package", response_model=ComplianceActionPackage)
 async def generate_action_package(request: ActionPackageRequest):
-    """
-    Generate the Complete Compliance Action Package from a policy document.
-    
-    Produces up to 7 outputs:
-    1. Gap Analysis
-    2. Rewritten Policy
-    3. Redline Document (tracked changes)
-    4. Adjacent Policy Recommendations
-    5. 90-Day Remediation Plan
-    6. Board-Ready Summary
-    7. Implementation Checklist
-    
-    No policy text is stored — processing is stateless and ephemeral.
+    """Generate the current gap-analysis package from a policy document.
+
+    The policy text is processed transiently. Background-job snapshots, when
+    that API is used, live only in process memory and expire automatically.
     """
     orchestrator = get_orchestrator()
 
@@ -94,7 +87,7 @@ async def generate_action_package(request: ActionPackageRequest):
             requested_outputs=request.outputs,
             enable_live_research=request.enable_live_research,
         )
-        return package
+        return reconcile_package_verification(package)
     except GroundingUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from None
     except ValueError as e:
@@ -162,12 +155,7 @@ async def fix_all_gaps(request: RewritePolicyRequest):
 
 @router.post("/action-package-stream")
 async def generate_action_package_stream(request: ActionPackageRequest):
-    """
-    SSE streaming version — yields ComplianceActionPackage JSON after each phase:
-      Phase 0: gap analysis (~30s) — displayed immediately
-      Phase 1: rewrite + adjacent + action plan in parallel
-      Phase 2: redline + board summary + checklist in parallel
-    """
+    """SSE version of the current gap-analysis pipeline."""
     orchestrator = get_orchestrator()
 
     async def event_stream():
@@ -180,9 +168,9 @@ async def generate_action_package_stream(request: ActionPackageRequest):
                 requested_outputs=request.outputs,
                 enable_live_research=request.enable_live_research,
             ):
+                package = reconcile_package_verification(package)
                 yield f"data: {package.model_dump_json()}\n\n"
         except Exception as e:
-            import json
             logger.error(f"Streaming error: {e}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
@@ -201,47 +189,46 @@ async def generate_action_package_stream(request: ActionPackageRequest):
 async def generate_action_package_from_file(
     file: UploadFile = File(...),
     jurisdiction: Optional[str] = Form(None),
+    industry: Optional[str] = Form(None),
     enable_live_research: Optional[str] = Form("false"),
 ):
-    """
-    Upload a policy file and generate the Complete Compliance Action Package.
-    
+    """Upload a policy file and generate the current gap-analysis package.
+
     Supports: .txt, .md, .docx, .pdf, .rtf
     Max file size: 10MB
-    No files are stored — text is extracted in memory and processed statelessly.
+    File bytes are processed in memory and are not persisted by this endpoint.
     """
-    # Validate file size
     max_size = 10 * 1024 * 1024  # 10MB
     contents = await file.read()
     if len(contents) > max_size:
         raise HTTPException(status_code=413, detail=f"File too large ({len(contents) / 1024 / 1024:.1f}MB). Maximum is 10MB.")
 
-    # Validate file type
-    allowed_extensions = {".txt", ".md", ".docx", ".doc", ".pdf", ".rtf"}
-    file_ext = "." + (file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "")
-    if file_ext not in allowed_extensions:
-        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_ext}. Allowed: {', '.join(allowed_extensions)}")
+    filename = file.filename or "upload"
 
-    # Extract text
+    allowed_extensions = {".txt", ".md", ".docx", ".doc", ".pdf", ".rtf"}
+    file_ext = "." + (filename.rsplit(".", 1)[-1].lower() if "." in filename else "")
+    if file_ext not in allowed_extensions:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_ext}. Allowed: {', '.join(sorted(allowed_extensions))}")
+
     try:
-        text = await extract_text_from_file(contents, file.filename, file_ext)
-    except Exception as e:
+        text = await extract_text_from_file(contents, filename, file_ext)
+    except Exception:
         raise HTTPException(status_code=422, detail="Could not extract readable text from this file.") from None
 
     if not text or len(text.strip()) < 50:
         raise HTTPException(status_code=422, detail="Could not extract readable text (minimum 50 characters). Try pasting the policy text directly.")
 
-    # Generate the action package
-    live_research = enable_live_research.lower() in ("true", "1", "yes")
+    live_research = (enable_live_research or "false").lower() in ("true", "1", "yes")
     orchestrator = get_orchestrator()
     try:
         package = await orchestrator.generate_full_package(
             text=text,
-            file_name=file.filename,
+            file_name=filename,
+            industry=industry,
             jurisdiction=jurisdiction,
             enable_live_research=live_research,
         )
-        return package
+        return reconcile_package_verification(package)
     except GroundingUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from None
     except ValueError as e:
@@ -279,13 +266,17 @@ async def start_action_package_job(request: ActionPackageRequest, http_request: 
 
 @router.post("/action-package/cancel/{job_id}")
 async def cancel_action_package_job(job_id: str, http_request: Request):
-    """Cancel an in-flight job. Safe to call even if it already finished (no-op)."""
+    """Cancel a job only after proving the caller owns that job."""
+    store = get_job_store()
+    owner = client_id(http_request)
+    job = await store.get(job_id, owner=owner)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+
     task = _running_tasks.get(job_id)
     if task and not task.done():
         task.cancel()
-    store = get_job_store()
-    job = await store.get(job_id, owner=client_id(http_request))
-    if job is not None and job.status == "running":
+    if job.status == "running":
         await store.mark_error(job_id, "Cancelled by user")
     return {"cancelled": True}
 
@@ -318,15 +309,13 @@ async def stream_action_package_job(job_id: str, http_request: Request):
 
     async def event_stream():
         last_version = -1
-        # Watchdog: stop streaming after 15 minutes of inactivity to avoid orphaned
-        # generators if a client connects and never disconnects.
         max_iterations = 15 * 60 * 2  # 0.5s per iteration
         iterations = 0
         while iterations < max_iterations:
             iterations += 1
-            current = await store.get(job_id)
+            current = await store.get(job_id, owner=owner)
             if current is None:
-                yield f"data: {json.dumps({'status': 'error', 'error': 'Job expired'})}\n\n"
+                yield f"data: {json.dumps({'status': 'error', 'error': 'Job expired or access revoked'})}\n\n"
                 return
             if current.version != last_version:
                 last_version = current.version

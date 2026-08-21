@@ -61,7 +61,11 @@ RUN timeout 600 python scripts/build_knowledge_base.py \
       $( [ "$KB_SEED_REQUIRED" = "true" ] && echo --require-success ) \
     || { [ "$KB_SEED_REQUIRED" = "true" ] && exit 1; true; }
 
+# Production is fail-closed at both layers: the image must contain regulatory
+# chunks, and each request must retrieve authoritative source material before
+# the model is allowed to generate a compliance analysis.
 ENV ENVIRONMENT=production
+ENV REQUIRE_GROUNDING=true
 EXPOSE 8080
 # Binds 0.0.0.0 deliberately. Security guidance to default to 127.0.0.1 targets
 # servers run directly on a host; inside a container the platform's proxy
