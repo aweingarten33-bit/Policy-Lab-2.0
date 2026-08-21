@@ -38,21 +38,23 @@ def reconcile_package_verification(
     for row in rows:
         evidence = getattr(row, "evidence", None)
         verified = evidence is not None and evidence.status is VerificationStatus.verified
+        checks = getattr(evidence, "checks", None) if evidence is not None else None
+        specifics_supported = getattr(checks, "specifics_supported", None)
 
         if evidence is None:
             missing_evidence += 1
             not_fully_verified += 1
         elif not verified:
             not_fully_verified += 1
-            if (
-                getattr(evidence.checks, "specifics_supported", None) is False
-                and not getattr(row, "verification_warning", None)
-            ):
-                row.verification_warning = evidence.reason or (
+            if specifics_supported is False and not getattr(row, "verification_warning", None):
+                row.verification_warning = getattr(evidence, "reason", "") or (
                     "A concrete fact in this finding was not confirmed at the cited authority."
                 )
 
-        if row.obligation_type is ObligationType.required and not verified:
+        # Older/internal test doubles may not carry obligation_type. In real
+        # GapRow objects it is always present; only touch legal labels when the
+        # field actually exists.
+        if getattr(row, "obligation_type", None) is ObligationType.required and not verified:
             row.obligation_type = ObligationType.unverified_requirement
             if evidence is None:
                 reason = (
@@ -64,7 +66,7 @@ def reconcile_package_verification(
                     "The cited source contradicts this claimed requirement. It cannot be "
                     "presented as legally required without independent confirmation."
                 )
-            elif getattr(evidence.checks, "specifics_supported", None) is False:
+            elif specifics_supported is False:
                 reason = (
                     "A concrete figure, threshold, deadline, percentage, amount, age, ratio, "
                     "or distance in this requirement was not confirmed at the cited source scope."
