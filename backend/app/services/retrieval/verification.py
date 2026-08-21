@@ -449,6 +449,17 @@ class VerificationService:
         elif support == ClaimSupport.not_supported:
             evidence.status = VerificationStatus.unverified
             evidence.reason = note or "The cited authority exists, but the cited passage does not support this claim."
+        elif not evidence.checks.citation_exists or not evidence.source.excerpt:
+            # No located authority and no excerpt means there is nothing to have
+            # partially supported anything. This previously fell through to
+            # partially_verified, which both overstated the result and printed a
+            # reason -- "the cited passage bears on the claim" -- describing a
+            # passage that was never found.
+            evidence.status = VerificationStatus.unverified
+            evidence.reason = note or (
+                "No authoritative passage was located for this citation, so the claim "
+                "could not be checked against source material."
+            )
         else:
             evidence.status = VerificationStatus.partially_verified
             evidence.reason = note or "The cited passage bears on the claim but does not fully establish it."

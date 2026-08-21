@@ -123,3 +123,70 @@ class TestOnlyClaimSupportPromotes:
         )
         assert evidence.status == VerificationStatus.contradicted
         assert evidence.reason
+
+
+class TestAbsentEvidenceIsNotPartialSupport:
+    """"Partially verified" has to mean something was partially supported.
+
+    Every case that was not verified, contradicted or explicitly unsupported
+    fell through to partially_verified -- including a claim whose citation was
+    never located and one with no excerpt at all. Nothing had partially
+    supported those claims; there was no passage in play. The status
+    overstated the result, and its stated reason, "the cited passage bears on
+    the claim", described a passage that did not exist.
+    """
+
+    def _evidence(self, **checks):
+        from app.models.schemas import (
+            EvidenceChecks, EvidenceSource, VerificationEvidence,
+        )
+        excerpt = checks.pop("excerpt", None)
+        return VerificationEvidence(
+            claim_id="c", claim_text="45 CFR 164.530 requires annual training.",
+            checks=EvidenceChecks(**checks),
+            source=EvidenceSource(excerpt=excerpt),
+        )
+
+    def test_a_citation_that_was_never_located_is_unverified(self):
+        from app.models.schemas import ClaimSupport, VerificationStatus
+        from app.services.retrieval.verification import VerificationService
+
+        ev = self._evidence(citation_exists=False, excerpt="some retrieved text")
+        out = VerificationService().apply_claim_support(ev, ClaimSupport.supported)
+
+        assert out.status is VerificationStatus.unverified
+        assert "No authoritative passage was located" in out.reason
+
+    def test_no_excerpt_is_unverified(self):
+        from app.models.schemas import ClaimSupport, VerificationStatus
+        from app.services.retrieval.verification import VerificationService
+
+        ev = self._evidence(citation_exists=True, excerpt=None)
+        out = VerificationService().apply_claim_support(ev, ClaimSupport.supported)
+
+        assert out.status is VerificationStatus.unverified
+
+    def test_genuine_partial_support_still_reads_as_partial(self):
+        """The status must keep its real meaning, not collapse into unverified."""
+        from app.models.schemas import ClaimSupport, VerificationStatus
+        from app.services.retrieval.verification import VerificationService
+
+        ev = self._evidence(citation_exists=True, excerpt="A covered entity must train.")
+        out = VerificationService().apply_claim_support(
+            ev, ClaimSupport.partially_supported
+        )
+
+        assert out.status is VerificationStatus.partially_verified
+
+    def test_nothing_reaches_verified_without_citation_and_excerpt(self):
+        from app.models.schemas import ClaimSupport, VerificationStatus
+        from app.services.retrieval.verification import VerificationService
+
+        service = VerificationService()
+        for kwargs in (
+            {"citation_exists": False, "excerpt": "text"},
+            {"citation_exists": True, "excerpt": None},
+            {"citation_exists": True, "excerpt": "text", "specifics_supported": False},
+        ):
+            out = service.apply_claim_support(self._evidence(**kwargs), ClaimSupport.supported)
+            assert out.status is not VerificationStatus.verified, kwargs
