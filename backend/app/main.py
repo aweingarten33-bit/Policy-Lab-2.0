@@ -9,7 +9,8 @@ Features:
   - Controlled live research from curated regulatory sources
   - Post-generation verification against source material
   - Source attribution on every output (verified, retrieved, live research, model inference)
-  - Privacy-first: No PHI or policy text is stored. All processing is ephemeral.
+  - Privacy-first: uploaded policy text is not persisted to disk or a database;
+    temporary background-job output lives only in process memory and expires.
 """
 
 import asyncio
@@ -50,6 +51,16 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan — startup and shutdown events."""
+    # Keep strong references to fire-and-forget startup tasks. asyncio keeps
+    # only weak references to tasks; an unreferenced task can otherwise vanish
+    # before it finishes. The set also gives shutdown one place to cancel them.
+    background_tasks: set[asyncio.Task] = set()
+
+    def _track_background_task(task: asyncio.Task) -> asyncio.Task:
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
+        return task
+
     # Startup
     cascade = settings.llm_cascade_models
     logger.info(
@@ -104,12 +115,6 @@ async def lifespan(app: FastAPI):
                 return
 
             if not settings.kb_seed_at_runtime:
-                # Refusing to seed here is deliberate. Seeding needs about
-                # twice the memory serving does; on a small instance the
-                # process gets killed, restarts to a still-empty knowledge
-                # base, and tries again -- a crash loop that takes the site
-                # down completely. Running ungrounded is bad; being offline
-                # is worse. The corpus belongs in the image.
                 seed_state.mark_failed(
                     "Knowledge base is empty and runtime seeding is disabled. The corpus is "
                     "built into the image; this container shipped without one. Rebuild the "
@@ -144,13 +149,10 @@ async def lifespan(app: FastAPI):
                 "The service is running, but source-verified output is NOT available."
             )
 
-    seed_task = None
     if settings.kb_auto_seed and settings.kb_enabled:
-        seed_task = asyncio.create_task(_bootstrap_knowledge_base())
+        _track_background_task(asyncio.create_task(_bootstrap_knowledge_base()))
 
-    # ── FIX: Warm up the embedding model at startup ──────────────────────────
-    # sentence-transformers loads the model on first use, adding 10-30s latency
-    # to the very first request. Warming up here means every request is fast.
+    # ── Warm up the embedding model at startup ───────────────────────────────
     if settings.kb_enabled:
         logger.info("Warming up embedding model (sentence-transformers)...")
         loop = asyncio.get_running_loop()
@@ -158,11 +160,8 @@ async def lifespan(app: FastAPI):
         def _warmup():
             from app.services.retrieval.store import _get_embedding_function
             ef = _get_embedding_function()
-            # Run a dummy embed to force model download + load
             ef(["warmup"])
 
-        # Also backgrounded: this downloads a model on a cold container,
-        # which is another multi-minute way to miss the health check.
         async def _warm():
             try:
                 await loop.run_in_executor(None, _warmup)
@@ -170,14 +169,9 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning(f"Embedding warmup failed (non-fatal): {e}")
 
-        asyncio.create_task(_warm())
-    # ─────────────────────────────────────────────────────────────────────────
+        _track_background_task(asyncio.create_task(_warm()))
 
     # ── Start the nightly regulatory refresh ──
-    # start_scheduler() existed but was never called, so the "if startup seeding
-    # fails, the nightly job will fix it" fallback described elsewhere in the
-    # code was never actually running. An empty knowledge base therefore stayed
-    # empty until the next deploy.
     scheduler_started = False
     if settings.kb_enabled:
         try:
@@ -189,7 +183,13 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown tracked startup work cleanly rather than leaving tasks dangling.
+    pending_tasks = tuple(background_tasks)
+    for task in pending_tasks:
+        task.cancel()
+    if pending_tasks:
+        await asyncio.gather(*pending_tasks, return_exceptions=True)
+
     if scheduler_started:
         try:
             from app.services.retrieval.scheduler import stop_scheduler
@@ -207,17 +207,17 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if not settings.is_production else None,
     redoc_url="/redoc" if not settings.is_production else None,
+    openapi_url="/openapi.json" if not settings.is_production else None,
 )
 
 
 # ── API Key Middleware ──
-# Endpoints reachable without a key: health, docs, and the SPA shell itself
-# (the frontend has to load before it can prompt for a password).
+# Health and the frontend shell remain reachable without a key. Diagnostics are
+# API functionality and can trigger outbound/provider checks, so they require
+# the same app credential as the rest of /api rather than being anonymously
+# callable from the internet.
 _PUBLIC_PATHS = frozenset([
-    "/api/health", "/docs", "/redoc", "/", "/openapi.json",
-    # Diagnostics: reachable without the app password specifically so it can be
-    # opened in a browser when the app is misbehaving. Reveals no secrets.
-    "/api/kb/diagnose",
+    "/api/health", "/docs", "/redoc", "/",
 ])
 
 # Destructive / knowledge-base-mutating routes. These change what every future
@@ -253,10 +253,7 @@ async def api_key_middleware(request: Request, call_next):
     destructive knowledge-base operations.
 
     Fails CLOSED in production: if API_KEY is unset there, every API request is
-    refused rather than served openly. A missing env var on a redeploy used to
-    silently turn the whole app public with no signal that it had happened --
-    the safe direction for that failure is 'nobody gets in', not 'everybody
-    does'.
+    refused rather than served openly.
     """
     if (
         not _is_api_request(request)
@@ -275,11 +272,9 @@ async def api_key_middleware(request: Request, call_next):
                 status_code=503,
                 content={"detail": "Server is not configured for access. Contact the administrator."},
             )
-        # Development only: no key configured, allow through.
         return await call_next(request)
 
     supplied = request.headers.get("x-api-key", "")
-    # compare_digest avoids leaking the key's prefix through response timing.
     if not secrets.compare_digest(supplied, settings.api_key):
         return JSONResponse(
             status_code=401,
@@ -305,21 +300,16 @@ async def api_key_middleware(request: Request, call_next):
 
 
 # ── Rate Limiting ──
-# In-memory per-IP fixed-window limiter for the expensive LLM-backed POST
-# endpoints. No auth is required to use this app (see api_key_middleware
-# above — api_key is unset by default), so without this, anyone who finds
-# the URL could script repeated calls against paid Anthropic/OpenAI/Gemini
-# keys. Same in-memory-per-instance tradeoff as job_store.py: fine for a
-# single Render instance, would need a shared store (e.g. Redis) if this
-# ever scales to multiple instances.
+# In-memory per-IP fixed-window limiter for expensive or mutating endpoints.
+# The API is authenticated in production, but the limiter still caps accidental
+# or scripted spend by an authenticated client. This is per-process and should
+# move to a shared store such as Redis before horizontal scaling.
 _RATE_LIMIT_WINDOW = 60.0  # seconds
 _RATE_LIMIT_MAX = 20       # requests per window per IP
 _RATE_LIMITED_PREFIXES = (
     "/api/action-package",
     "/api/draft-policy",
     "/api/chat",
-    # KB writes are cheap to call but mutate what every future generation is
-    # grounded in, so they're limited for data integrity rather than cost.
     "/api/kb",
 )
 _rate_limit_buckets: dict[str, deque] = defaultdict(deque)
@@ -329,21 +319,12 @@ _rate_limit_lock = asyncio.Lock()
 def _client_ip(request: Request) -> str:
     """Best available client address for rate limiting.
 
-    X-Forwarded-For is set by the platform's proxy, but it is also just a
-    request header: anyone can send one. Trusting it unconditionally meant a
-    caller could put a different value on every request and never hit a rate
-    limit at all -- so the control that exists to cap spend on a paid API was
-    bypassable by anyone who thought to try.
-
-    It is honoured only when the deployment says it sits behind a proxy that
-    rewrites the header (TRUST_PROXY, on by default because this runs behind
-    exactly such a platform). Set TRUST_PROXY=false when the app is exposed
-    directly.
+    X-Forwarded-For is honoured only when the deployment says it sits behind a
+    trusted proxy that rewrites that header.
     """
     if settings.trust_proxy:
         forwarded = request.headers.get("x-forwarded-for", "")
         if forwarded:
-            # Left-most entry is the original client; the proxy appends itself.
             return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
@@ -353,7 +334,7 @@ async def rate_limit_middleware(request: Request, call_next):
     _limited = (
         request.method == "POST"
         and any(request.url.path.startswith(p) for p in _RATE_LIMITED_PREFIXES)
-    ) or request.url.path == "/api/kb/diagnose"  # public + makes outbound calls
+    ) or request.url.path == "/api/kb/diagnose"
     if _limited:
         ip = _client_ip(request)
         now = time.monotonic()
@@ -373,9 +354,6 @@ async def rate_limit_middleware(request: Request, call_next):
 
 
 # ── Security Headers ──
-# TLS is terminated by the platform, but the app still has to tell browsers to
-# enforce it and to refuse being framed. The CSP matches how the app actually
-# loads: same-origin bundles, Google Fonts, and API/LLM calls to our own origin.
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
@@ -385,17 +363,7 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; "
-        # No 'unsafe-inline' for scripts: the built page loads one module from
-        # our own origin and contains no inline script, so allowing inline
-        # execution bought nothing and removed the main protection CSP offers.
-        # Styles still need it -- Radix and the animation layer insert rules at
-        # runtime, and blocking that breaks the interface rather than hardening
-        # it.
         "script-src 'self'; "
-        # PDF text extraction runs in a web worker, and pdf.js instantiates it
-        # from a blob. Without these two, uploading a PDF fails -- which is
-        # exactly what happened when this header was first added and the
-        # library was still being pulled from a CDN.
         "worker-src 'self' blob:; "
         "child-src 'self' blob:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
@@ -482,8 +450,6 @@ def _build_policy_dict(data: dict, industry: Optional[str] = None) -> dict:
     ]
     return {
         "policy_title": data.get("policy_title", "Drafted Policy"),
-        # Threaded through so the export can pick sector-appropriate
-        # disclaimers instead of defaulting to healthcare wording.
         "industry": industry,
         "effective_date": data.get("effective_date"),
         "version": data.get("version", "1.0"),
@@ -503,13 +469,7 @@ def _build_policy_dict(data: dict, industry: Optional[str] = None) -> dict:
 
 @app.post("/api/draft-policy-stream")
 async def draft_policy_stream_endpoint(request: DraftPolicyRequest):
-    """SSE version of /api/draft-policy — streams text as it's generated so the
-    UI can show live progress instead of a blank spinner for the full ~1-2 min.
-
-    NOTE: tied directly to this HTTP request/response — if the client
-    disconnects (tab closed, navigation, mobile backgrounding the request),
-    generation stops with it. Use /api/draft-policy/start for a version that
-    survives the client going away."""
+    """SSE version of /api/draft-policy tied to the current HTTP connection."""
     import json as _json
     from app.services.draft_policy_service import draft_policy_stream, parse_draft_response, attach_attribution
 
@@ -548,12 +508,6 @@ async def draft_policy_stream_endpoint(request: DraftPolicyRequest):
 # ---------------------------------------------------------------------------
 # Draft background-job endpoints
 # ---------------------------------------------------------------------------
-# Same pattern as the action-package job endpoints below: the draft runs as a
-# server-side background task keyed by job_id, so it survives the client
-# tabbing away, backgrounding the app, or losing the connection. The client
-# reconnects with the job_id to pick up the live partial text or the finished
-# result, whichever is ready.
-
 _draft_running_tasks: dict[str, asyncio.Task] = {}
 
 
@@ -585,10 +539,7 @@ async def _run_draft_job(job_id: str, request: DraftPolicyRequest) -> None:
 
 @app.post("/api/draft-policy/start")
 async def start_draft_job(request: DraftPolicyRequest, http_request: Request):
-    """Kick off a draft as a background task. Returns a job_id immediately.
-
-    Use GET /api/draft-policy/stream/{job_id} to subscribe to live updates,
-    or GET /api/draft-policy/status/{job_id} for a one-shot snapshot."""
+    """Kick off a draft as a background task. Returns a job_id immediately."""
     from app.services.draft_job_store import get_draft_job_store
 
     store = get_draft_job_store()
@@ -601,15 +552,19 @@ async def start_draft_job(request: DraftPolicyRequest, http_request: Request):
 
 @app.post("/api/draft-policy/cancel/{job_id}")
 async def cancel_draft_job(job_id: str, http_request: Request):
-    """Cancel an in-flight draft job. Safe to call even if it already finished (no-op)."""
+    """Cancel a draft only after proving the caller owns that job."""
     from app.services.draft_job_store import get_draft_job_store
+
+    store = get_draft_job_store()
+    owner = client_id(http_request)
+    job = await store.get(job_id, owner=owner)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
 
     task = _draft_running_tasks.get(job_id)
     if task and not task.done():
         task.cancel()
-    store = get_draft_job_store()
-    job = await store.get(job_id, owner=client_id(http_request))
-    if job is not None and job.status == "running":
+    if job.status == "running":
         await store.mark_error(job_id, "Cancelled by user")
     return {"cancelled": True}
 
@@ -635,8 +590,7 @@ async def get_draft_job_status(job_id: str, http_request: Request):
 
 @app.get("/api/draft-policy/stream/{job_id}")
 async def stream_draft_job(job_id: str, http_request: Request):
-    """SSE stream of draft job updates. Sends a frame whenever the job version
-    changes, then closes once the job is complete or errored."""
+    """SSE stream of draft job updates for the owning client."""
     import json as _json
     from app.services.draft_job_store import get_draft_job_store
 
@@ -652,9 +606,9 @@ async def stream_draft_job(job_id: str, http_request: Request):
         iterations = 0
         while iterations < max_iterations:
             iterations += 1
-            current = await store.get(job_id)
+            current = await store.get(job_id, owner=owner)
             if current is None:
-                yield f"data: {_json.dumps({'status': 'error', 'error': 'Job expired'})}\n\n"
+                yield f"data: {_json.dumps({'status': 'error', 'error': 'Job expired or access revoked'})}\n\n"
                 return
             if current.version != last_version:
                 last_version = current.version
@@ -683,11 +637,7 @@ async def stream_draft_job(job_id: str, http_request: Request):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def compliance_chat(request: ChatRequest):
-    """
-    Chat with the compliance AI assistant.
-    Works in both analysis context (post-gap-analysis) and draft context (post-policy-draft).
-    Free via Gemini API — stateless, no conversation stored server-side.
-    """
+    """Chat with the compliance AI assistant. Stateless on the server."""
     from app.services.chat_service import chat
 
     try:
@@ -706,8 +656,6 @@ async def compliance_chat(request: ChatRequest):
 
 
 # ── Serve React frontend static files in production ──
-# In development the Vite dev server serves the frontend; mounting these
-# routes would shadow the live source and cause stale-bundle bugs.
 _STATIC_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
 
 if settings.is_production and os.path.isdir(_STATIC_DIR):
