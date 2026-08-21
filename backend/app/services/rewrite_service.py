@@ -153,6 +153,18 @@ async def generate_rewritten_policy(
     retrieval_context: Optional[RetrievalContext] = None,
     industry: Optional[str] = None,
 ) -> RewrittenPolicy:
+    # Production promises source-grounded output. Fix All Gaps must obey the
+    # same fail-closed rule as analysis and drafting rather than quietly
+    # falling back to model memory when retrieval is unavailable.
+    if settings.require_grounding and (
+        retrieval_context is None or not retrieval_context.get_all_sources()
+    ):
+        from app.services.orchestrator import GroundingUnavailableError
+        raise GroundingUnavailableError(
+            "Regulatory source verification is temporarily unavailable, so this "
+            "policy rewrite was not generated. Please try again shortly."
+        )
+
     provider = get_provider()
     gap_summary = _build_gap_context(gap_analysis)
 
