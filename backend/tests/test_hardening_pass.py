@@ -84,9 +84,18 @@ class _UnauthorizedStore:
         return None
 
 
+def _request(path: str) -> Request:
+    return Request({
+        "type": "http",
+        "method": "POST",
+        "path": path,
+        "headers": [(b"x-client-id", b"attacker-session")],
+    })
+
+
 @pytest.mark.asyncio
 async def test_action_package_cancel_authorizes_before_touching_running_task(monkeypatch):
-    """Knowing a job id must not be sufficient to cancel another client's job."""
+    """Knowing an analysis job id must not cancel another client's task."""
     import app.routers.action_package as module
 
     job_id = "victim-job"
@@ -94,23 +103,46 @@ async def test_action_package_cancel_authorizes_before_touching_running_task(mon
     module._running_tasks[job_id] = task
     monkeypatch.setattr(module, "get_job_store", lambda: _UnauthorizedStore())
 
-    request = Request({
-        "type": "http",
-        "method": "POST",
-        "path": f"/api/action-package/cancel/{job_id}",
-        "headers": [(b"x-client-id", b"attacker-session")],
-    })
-
     try:
         with pytest.raises(HTTPException) as exc:
-            await module.cancel_action_package_job(job_id, request)
+            await module.cancel_action_package_job(
+                job_id, _request(f"/api/action-package/cancel/{job_id}")
+            )
         assert exc.value.status_code == 404
         assert task.cancel_called is False
     finally:
         module._running_tasks.pop(job_id, None)
 
 
+@pytest.mark.asyncio
+async def test_draft_cancel_authorizes_before_touching_running_task(monkeypatch):
+    """Draft jobs have the same ownership invariant as analysis jobs."""
+    import app.main as module
+    import app.services.draft_job_store as store_module
+
+    job_id = "victim-draft"
+    task = _FakeTask()
+    module._draft_running_tasks[job_id] = task
+    monkeypatch.setattr(store_module, "get_draft_job_store", lambda: _UnauthorizedStore())
+
+    try:
+        with pytest.raises(HTTPException) as exc:
+            await module.cancel_draft_job(
+                job_id, _request(f"/api/draft-policy/cancel/{job_id}")
+            )
+        assert exc.value.status_code == 404
+        assert task.cancel_called is False
+    finally:
+        module._draft_running_tasks.pop(job_id, None)
+
+
 def test_production_image_requires_request_level_grounding():
     repo_root = Path(__file__).resolve().parents[2]
     dockerfile = (repo_root / "Dockerfile").read_text(encoding="utf-8")
     assert "ENV REQUIRE_GROUNDING=true" in dockerfile
+
+
+def test_diagnostics_are_not_anonymous_api_surface():
+    import app.main as main
+
+    assert "/api/kb/diagnose" not in main._PUBLIC_PATHS
