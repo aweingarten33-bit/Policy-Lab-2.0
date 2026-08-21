@@ -88,24 +88,32 @@ def test_unwritable_target_degrades_without_raising(baked_dir):
         assert sd.restore_baked_knowledge_base() == 0
 
 
-def test_build_script_does_not_fail_the_build_by_default():
-    """A transient eCFR outage must not block shipping unrelated fixes."""
-    import subprocess, sys
-    result = subprocess.run(
-        [sys.executable, "scripts/build_knowledge_base.py"],
-        capture_output=True, text=True, timeout=300,
-        env={**os.environ, "KB_PERSIST_DIR": tempfile.mkdtemp()},
-    )
-    assert result.returncode == 0
-
-
+# The build downloads every configured CFR part and embeds the result. On a
+# machine with network access that is minutes of real work, and this file used
+# to do it three separate times -- which is most of why the CI job ran for
+# eighteen minutes, and why one test tripped a five-minute subprocess timeout
+# that had never been hit locally, where there is no eCFR egress and the build
+# finishes in seconds.
+#
+# Each mode is built once per session and shared. The assertions below are
+# about the build's *outcome*, so they do not each need their own build.
 def _run_build(*flags):
     import subprocess, sys
     return subprocess.run(
         [sys.executable, "scripts/build_knowledge_base.py", *flags],
-        capture_output=True, text=True, timeout=900,
+        capture_output=True, text=True, timeout=1800,
         env={**os.environ, "KB_PERSIST_DIR": tempfile.mkdtemp()},
     )
+
+
+@pytest.fixture(scope="session")
+def default_build():
+    return _run_build()
+
+
+@pytest.fixture(scope="session")
+def strict_build():
+    return _run_build("--require-success")
 
 
 def _regulatory_chunks(stdout):
@@ -114,8 +122,12 @@ def _regulatory_chunks(stdout):
     return int(match.group(1)) if match else 0
 
 
-def test_a_normal_build_never_fails_and_reports_what_it_got():
+def test_a_normal_build_never_fails_and_reports_what_it_got(default_build):
     """A default build ships whatever it could load and says which.
+
+    A transient eCFR outage must not block shipping unrelated fixes, and the
+    output must state the regulatory count rather than implying a complete
+    corpus.
 
     Written to hold with or without network access. It previously asserted the
     offline outcome specifically, which passed on a machine with no eCFR egress
@@ -123,17 +135,14 @@ def test_a_normal_build_never_fails_and_reports_what_it_got():
     download -- the test encoding its author's environment rather than the
     behaviour.
     """
-    result = _run_build()
-    assert result.returncode == 0, result.stderr
-    assert "SUCCESS" in result.stdout
-    # Either way it must state the regulatory count rather than imply a
-    # complete corpus.
-    assert "regulatory" in result.stdout
-    if _regulatory_chunks(result.stdout) == 0:
-        assert "guidance-only grounding" in result.stderr
+    assert default_build.returncode == 0, default_build.stderr
+    assert "SUCCESS" in default_build.stdout
+    assert "regulatory" in default_build.stdout
+    if _regulatory_chunks(default_build.stdout) == 0:
+        assert "guidance-only grounding" in default_build.stderr
 
 
-def test_strict_mode_requires_the_regulations_not_merely_content():
+def test_strict_mode_requires_the_regulations_not_merely_content(strict_build):
     """The gate has to check the thing it exists to protect.
 
     Strict mode used to fail only when the total chunk count was zero. The
@@ -141,19 +150,18 @@ def test_strict_mode_requires_the_regulations_not_merely_content():
     a build in which eCFR was unreachable and not one regulation downloaded
     would have passed. The switch protected against nothing.
     """
-    result = _run_build("--require-success")
-    regulatory = _regulatory_chunks(result.stdout)
+    regulatory = _regulatory_chunks(strict_build.stdout)
 
     if regulatory > 0:
         # eCFR was reachable: a strict build is exactly what should succeed.
-        assert result.returncode == 0, result.stderr
+        assert strict_build.returncode == 0, strict_build.stderr
     else:
-        assert result.returncode == 1, result.stdout
-        assert "FAILED" in result.stderr
-        assert "no regulatory text was downloaded" in result.stderr
+        assert strict_build.returncode == 1, strict_build.stdout
+        assert "FAILED" in strict_build.stderr
+        assert "no regulatory text was downloaded" in strict_build.stderr
         # The failure must still report the partial success, or it is harder
         # to act on.
-        assert "chunks of bundled guidance loaded" in result.stderr
+        assert "chunks of bundled guidance loaded" in strict_build.stderr
 
 
 class TestReleaseBuildIsStrict:
