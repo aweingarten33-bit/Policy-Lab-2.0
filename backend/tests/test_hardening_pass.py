@@ -28,6 +28,7 @@ def _package(*evidence_statuses, missing=0, status=PackageStatus.complete):
         gap_analysis=SimpleNamespace(gap_table=rows),
         unverified_claim_count=999,
         verification_overall="stale summary",
+        error_message=None,
     )
 
 
@@ -66,6 +67,63 @@ class TestPackageVerificationReconciliation:
         reconcile_package_verification(package)
         assert package.unverified_claim_count == 0
         assert "All 2 finding(s) completed" in package.verification_overall
+
+
+class _CaptureStore:
+    def __init__(self):
+        self.package = None
+        self.completed = False
+        self.error = None
+
+    async def update_package(self, job_id, package):
+        self.package = package
+
+    async def mark_complete(self, job_id):
+        self.completed = True
+
+    async def mark_error(self, job_id, error):
+        self.error = error
+
+
+class _OnePackageOrchestrator:
+    def __init__(self, package):
+        self.package = package
+
+    async def generate_full_package_stream(self, **kwargs):
+        yield self.package
+
+
+@pytest.mark.asyncio
+async def test_background_job_path_reconciles_the_final_package(monkeypatch):
+    """The API path used by the frontend must actually run the integrity guard."""
+    import app.routers.action_package as module
+
+    package = _package(
+        VerificationStatus.verified,
+        VerificationStatus.unverified,
+    )
+    store = _CaptureStore()
+    orchestrator = _OnePackageOrchestrator(package)
+
+    monkeypatch.setattr(module, "get_job_store", lambda: store)
+    monkeypatch.setattr(module, "get_orchestrator", lambda: orchestrator)
+
+    request = SimpleNamespace(
+        text="x" * 100,
+        file_name="policy.txt",
+        industry="healthcare",
+        jurisdiction="NY",
+        outputs=["gap_analysis"],
+        enable_live_research=False,
+    )
+
+    await module._run_action_package_job("job-1", request)
+
+    assert store.completed is True
+    assert store.error is None
+    assert store.package is package
+    assert store.package.unverified_claim_count == 1
+    assert "1 finding(s)" in store.package.verification_overall
 
 
 class _FakeTask:
