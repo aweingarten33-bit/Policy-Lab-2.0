@@ -73,8 +73,17 @@ class Settings(BaseSettings):
     openai_api_key: str = ""         # platform.openai.com — paid
 
     # ── Model Configuration ──
-    llm_max_tokens: int = 12000        # gap analysis
-    llm_max_tokens_long: int = 12000   # rewrite, action plan, board summary, etc.
+    #
+    # A ceiling, not a target -- the model takes as long as what it actually
+    # writes, so this does not by itself set the pace. What it does set is how
+    # long a runaway generation can go on before being cut off, and being cut
+    # off mid-JSON fails the whole analysis.
+    #
+    # The schema caps every field and allows at most 6 findings, which puts a
+    # maximum-length valid response near 3,000 tokens. 6,000 leaves generous
+    # headroom over that while halving the worst case.
+    llm_max_tokens: int = 6000         # gap analysis
+    llm_max_tokens_long: int = 12000   # policy drafting — a full document, legitimately longer
 
     # ── App Settings ──
     # Locked to the production domain + local dev by default. Frontend and
