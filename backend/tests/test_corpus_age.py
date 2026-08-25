@@ -123,3 +123,42 @@ class TestDiagnoseReporting:
 
         step = self._corpus_step(monkeypatch)
         assert "Live .gov research" in step["detail"]
+
+
+class TestCorpusDateAfterTheDatesWereSeparated:
+    """The date read must be the one eCFR ingestion now writes.
+
+    eCFR chunks no longer set effective_date: eCFR serves the text in force as
+    of a date, which is not the date the provision took effect, and writing the
+    fetch date there asserted something the source never said. The date the
+    corpus's age is measured by is last_verified_date — when the text was last
+    confirmed against the publisher.
+    """
+
+    def test_the_last_verified_date_is_what_is_reported(self, store):
+        ingest_source_document(
+            source_name="45 CFR 164",
+            text="A covered entity must designate a privacy official. " * 40,
+            category=SourceCategory.federal_regulation,
+            jurisdiction=Jurisdiction.federal,
+            effective_date=None,
+            retrieved_date="2026-08-25",
+            last_verified_date="2026-08-25",
+            source_type=SourceType.retrieved_source,
+        )
+        assert store.get_corpus_date() == "2026-08-25"
+
+    def test_an_older_corpus_still_reports_its_age(self, store):
+        """Chunks embedded before the split carry only effective_date. Falling
+        back to it keeps a pre-existing baked corpus reporting an age instead of
+        silently going dateless — which would read as 'no corpus' on a health
+        check rather than 'an old one'."""
+        ingest_source_document(
+            source_name="45 CFR 164 (legacy)",
+            text="A covered entity must designate a privacy official. " * 40,
+            category=SourceCategory.federal_regulation,
+            jurisdiction=Jurisdiction.federal,
+            effective_date="2025-01-15",
+            source_type=SourceType.retrieved_source,
+        )
+        assert store.get_corpus_date() == "2025-01-15"

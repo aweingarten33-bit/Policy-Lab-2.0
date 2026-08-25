@@ -28,6 +28,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -36,7 +37,7 @@ import httpx
 from app.config import settings
 from app.services.retrieval.models import (
     SourceChunk, SourceMetadata, SourceType, SourceCategory, Jurisdiction,
-    RetrievalResult, RetrievalContext,
+    RetrievalResult, RetrievalContext, SourceStatus, resolve_source_status,
 )
 
 from app.services.retrieval.sanitize import sanitize_source_text, wrap_untrusted_sources
@@ -170,6 +171,58 @@ CURATED_SOURCES = {
 }
 
 
+# ── Source-status classification for live results ──
+#
+# A search engine returning a page is not evidence about that page's legal
+# standing. Federal Register carries proposed rules and final rules on the same
+# domain; agency sites keep archived and superseded guidance alongside current
+# guidance. Marking every live result current -- which is what this code used to
+# do -- meant a January NPRM and a codified regulation arrived at the verifier
+# looking identical, and an "unverified" claim could be promoted by a document
+# that is not law and may never become law.
+#
+# So status is read from the document itself, deterministically, and anything
+# these patterns cannot place stays STATUS_UNKNOWN. Unknown is the safe answer,
+# not a gap to be filled with an optimistic guess.
+
+_PROPOSED_MARKERS = re.compile(
+    r"\b(proposed\s+rule|notice\s+of\s+proposed\s+rulemaking|NPRM|advance\s+notice"
+    r"|request\s+for\s+comment|comment\s+period|proposed\s+regulation|draft\s+guidance"
+    r"|would\s+require|if\s+finalized|when\s+finalized)\b",
+    re.IGNORECASE,
+)
+_SUPERSEDED_MARKERS = re.compile(
+    r"\b(superseded|rescinded|withdrawn|revoked|no\s+longer\s+in\s+effect"
+    r"|replaced\s+by|has\s+been\s+replaced)\b",
+    re.IGNORECASE,
+)
+_HISTORICAL_MARKERS = re.compile(
+    r"(/archive|/archives|archived\s+content|historical\s+document"
+    r"|this\s+page\s+is\s+(?:no\s+longer|not)\s+(?:being\s+)?(?:updated|maintained)"
+    r"|for\s+historical\s+(?:reference|purposes))",
+    re.IGNORECASE,
+)
+# The one live source whose standing IS established by where it lives: eCFR's
+# /current/ tree is the codified text in force.
+_CURRENT_URL = re.compile(r"^https://(?:www\.)?ecfr\.gov/current/", re.IGNORECASE)
+
+
+def classify_source_status(url: str, title: str, snippet: str) -> SourceStatus:
+    """Decide a live result's standing from the document, or admit not knowing."""
+    url = url or ""
+    haystack = f"{title or ''}\n{(snippet or '')[:4000]}"
+
+    if _HISTORICAL_MARKERS.search(url) or _HISTORICAL_MARKERS.search(haystack):
+        return SourceStatus.historical
+    if _SUPERSEDED_MARKERS.search(haystack):
+        return SourceStatus.superseded
+    if _PROPOSED_MARKERS.search(haystack):
+        return SourceStatus.proposed
+    if _CURRENT_URL.match(url):
+        return SourceStatus.current_verified
+    return SourceStatus.status_unknown
+
+
 class LiveResearchResult:
     """A single result from live research."""
     def __init__(
@@ -179,31 +232,50 @@ class LiveResearchResult:
         snippet: str,
         source_key: str,
         source_name: str,
-        date: Optional[str] = None,
+        published_date: Optional[str] = None,
     ):
         self.title = title
         self.url = url
         self.snippet = snippet
         self.source_key = source_key
         self.source_name = source_name
-        self.date = date
+        # Deliberately named for what it is. This was `date`, and it was passed
+        # straight into SourceMetadata.effective_date -- so the day a page was
+        # published became "the date this rule took effect", and for the
+        # DuckDuckGo path it was a date scraped out of a snippet with no stated
+        # meaning at all.
+        self.published_date = published_date
+
+    @property
+    def status(self) -> SourceStatus:
+        return classify_source_status(self.url, self.title, self.snippet)
 
     def to_retrieval_result(self, query: str) -> RetrievalResult:
         """Convert to a RetrievalResult for integration with the pipeline."""
         source_info = CURATED_SOURCES.get(self.source_key, {})
         category = source_info.get("category", SourceCategory.federal_regulation)
         authority = source_info.get("authority", "Unknown")
+        status = self.status
 
         metadata = SourceMetadata(
             source_name=self.source_name,
             source_type=SourceType.live_research,
             category=category,
             jurisdiction=Jurisdiction.federal,
-            effective_date=self.date,
+            # No effective date. A live page rarely states when the provision it
+            # discusses took effect, and we must not manufacture one from the
+            # dates we do have.
+            effective_date=None,
+            publication_date=self.published_date,
+            retrieved_date=datetime.now().date().isoformat(),
+            last_verified_date=None,
+            source_status=status,
             citation=f"{authority} — {self.title}",
             url=self.url,
             authority=authority,
-            is_current=True,
+            # Derived from the document's own standing, never from the fact
+            # that a search returned it.
+            is_current=status is SourceStatus.current_verified,
             chunk_index=0,
             total_chunks=1,
             collection=category.value,
@@ -220,6 +292,121 @@ class LiveResearchResult:
             score=0.6,  # Live research starts at a moderate confidence
             query=query,
         )
+
+
+# ── Routing: when a live search is actually justified ──
+
+
+@dataclass(frozen=True)
+class ResearchDecision:
+    """Whether to search, and the reason — so the choice is auditable in logs."""
+    should_search: bool
+    reason: str
+
+
+# How much current, authoritative, on-point material counts as the knowledge
+# base covering the question. Below this, the corpus is thin enough that a
+# search is worth its latency and cost.
+MIN_AUTHORITATIVE_SOURCES = 3
+
+
+def _is_authoritative(result: RetrievalResult) -> bool:
+    """Primary law and agency guidance. Templates and examples are not authority."""
+    return result.chunk.metadata.category in {
+        SourceCategory.federal_regulation,
+        SourceCategory.federal_guidance,
+        SourceCategory.ocr_guidance,
+        SourceCategory.state_law,
+        SourceCategory.enforcement_action,
+    }
+
+
+def decide_live_research(
+    context: RetrievalContext,
+    needs_freshness: bool = False,
+    jurisdiction: Optional[str] = None,
+) -> ResearchDecision:
+    """Decide whether this request needs a live web search.
+
+    This used to be ``return True``: every generation step performed a live web
+    search on top of knowledge-base retrieval, whether or not the corpus already
+    answered the question. That cost a search per step and, worse, pulled
+    undated web pages into the evidence pool for questions the codified CFR text
+    already covered completely -- so a weaker source competed with a stronger one
+    for no reason.
+
+    Ordinary code, not a planning agent. Each condition below is a fact about
+    the retrieved context that can be checked directly, and a decision a model
+    would have to be trusted to make correctly on every request is instead the
+    same on every request.
+
+    A search runs when, and only when, one of these holds:
+      1. The user asked for current or recent developments.
+      2. The knowledge base returned too little authoritative material.
+      3. A jurisdiction was requested and nothing for it came back.
+      4. Every authoritative source retrieved is stale or of unknown standing.
+      5. Two sources give conflicting versions of the same provision.
+    """
+    sources = context.get_all_sources() if context else []
+    authoritative = [r for r in sources if _is_authoritative(r)]
+
+    # 1 — the user explicitly wants current developments.
+    if needs_freshness:
+        return ResearchDecision(True, "current/recent developments were explicitly requested")
+
+    # 2 — the corpus does not cover the question.
+    if len(authoritative) < MIN_AUTHORITATIVE_SOURCES:
+        return ResearchDecision(
+            True,
+            f"knowledge base returned only {len(authoritative)} authoritative source(s), "
+            f"below the {MIN_AUTHORITATIVE_SOURCES} needed for coverage",
+        )
+
+    # 3 — a jurisdiction was named and nothing for it came back. State law is
+    # not in the corpus at all, so this is the case live research exists for.
+    if jurisdiction:
+        state = str(jurisdiction).strip().upper()[:2]
+        has_state = any(
+            r.chunk.metadata.jurisdiction.value.upper() == state
+            for r in sources
+        )
+        if not has_state:
+            return ResearchDecision(
+                True, f"jurisdiction {jurisdiction} was requested but no {jurisdiction} source was retrieved"
+            )
+
+    # 4 — nothing retrieved is established as currently in force. Verification
+    # would fail everything closed; a search is the only way to do better.
+    current = [
+        r for r in authoritative
+        if resolve_source_status(r.chunk.metadata) is SourceStatus.current_verified
+    ]
+    if not current:
+        return ResearchDecision(
+            True, "no retrieved authoritative source has an established current status"
+        )
+
+    # 5 — the same provision retrieved at two different versions. Which one
+    # governs cannot be settled from inside the corpus.
+    versions: Dict[str, set] = {}
+    for r in current:
+        meta = r.chunk.metadata
+        if not meta.citation:
+            continue
+        stamp = meta.effective_date or meta.last_verified_date or meta.retrieved_date
+        if stamp:
+            versions.setdefault(meta.citation.strip().lower(), set()).add(stamp)
+    conflicted = [c for c, stamps in versions.items() if len(stamps) > 1]
+    if conflicted:
+        return ResearchDecision(
+            True, f"conflicting versions retrieved for {conflicted[0]} — resolving against the publisher"
+        )
+
+    return ResearchDecision(
+        False,
+        f"knowledge base covers this request ({len(current)} current authoritative source(s)); "
+        f"no search needed",
+    )
 
 
 class LiveResearchService:
@@ -395,16 +582,14 @@ class LiveResearchService:
         needs_freshness: bool,
         jurisdiction: Optional[str] = None,
     ) -> bool:
-        """
-        Always True. Every generation does a live web search on top of KB
-        retrieval, unconditionally -- not just when the KB looks thin.
-        Kept as a method (instead of inlining `True` at every call site) so
-        the "why" stays documented in one place and any future exception
-        has one spot to go.
-        """
-        return True
-
-        return False
+        """Whether this request justifies a live search. See decide_live_research."""
+        decision = decide_live_research(context, needs_freshness, jurisdiction)
+        logger.info(
+            "Live research %s — %s",
+            "ON" if decision.should_search else "SKIPPED",
+            decision.reason,
+        )
+        return decision.should_search
 
     def _select_sources(
         self,
@@ -540,6 +725,8 @@ class LiveResearchService:
                 snippet = raw[:LIVE_RESEARCH_MAX_PAGE_CHARS]
             else:
                 snippet = summary
+            # Tavily's published_date is a publication date and is carried as
+            # one. It is not evidence of when anything took legal effect.
             published = (item.get("published_date") or "").strip() or None
 
             results.append(LiveResearchResult(
@@ -548,7 +735,7 @@ class LiveResearchService:
                 snippet=snippet,
                 source_key=source_key,
                 source_name=source_config["name"],
-                date=published,
+                published_date=published,
             ))
 
         return results
@@ -612,17 +799,22 @@ class LiveResearchService:
             elif not _is_gov_url(url):
                 continue
 
-            # Try to extract date from snippet
-            date_match = re.search(r'(\w+ \d{1,2},? \d{4})', clean_snippet)
-            date = date_match.group(1) if date_match else None
-
+            # No date is taken from the snippet.
+            #
+            # This used to regex the first date-shaped string out of the search
+            # summary and store it as the source's effective date. That string
+            # is as likely to be the date of a settlement being described, a
+            # comment deadline, or the day the page was last touched as it is to
+            # be anything about the provision -- and once stored it was
+            # indistinguishable from a date the source actually stated. An
+            # unknown date must stay unknown.
             results.append(LiveResearchResult(
                 title=clean_title,
                 url=url,
                 snippet=clean_snippet,
                 source_key=source_key,
                 source_name=source_config["name"],
-                date=date,
+                published_date=None,
             ))
 
         return results
@@ -672,9 +864,13 @@ class LiveResearchService:
             parts.append("")
             parts.append("═══ LIVE RESEARCH RESULTS ═══")
             parts.append(
-                "The following results were obtained from controlled live research on curated regulatory sources. "
-                "These results are current but should be verified against primary source documents. "
-                "They are clearly distinct from the curated knowledge base results above."
+                "The following results were obtained from controlled live research on curated "
+                "regulatory sources. Each one carries a Source Status. Only CURRENT_VERIFIED "
+                "may be relied on for a statement about what the law requires today; PROPOSED, "
+                "SUPERSEDED, HISTORICAL and STATUS_UNKNOWN may be mentioned as context but must "
+                "never be written as a present legal requirement, and must never be given a "
+                "compliance deadline. They are clearly distinct from the curated knowledge base "
+                "results above."
             )
             parts.append("")
 
@@ -689,8 +885,19 @@ class LiveResearchService:
                     parts.append(f"Citation: {meta.citation}")
                 if meta.url:
                     parts.append(f"URL: {meta.url}")
+                if meta.publication_date:
+                    parts.append(f"Publication Date: {meta.publication_date}")
                 if meta.effective_date:
-                    parts.append(f"Date: {meta.effective_date}")
+                    parts.append(f"Effective Date (stated by the source): {meta.effective_date}")
+                else:
+                    parts.append("Effective Date: NOT STATED BY THIS SOURCE — do not infer one")
+                status = resolve_source_status(meta)
+                parts.append(f"Source Status: {status.value}")
+                if status is not SourceStatus.current_verified:
+                    parts.append(
+                        "NOTE: this source is NOT established as current law. Anything taken "
+                        "from it must be described as context, never as a present requirement."
+                    )
                 parts.append(f"Authority: {meta.authority}")
                 parts.append("")
                 # Fetched from a remote page -- the most plausibly

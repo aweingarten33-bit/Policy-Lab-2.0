@@ -280,7 +280,7 @@ class ChromaStore:
         return any(v < 0 for v in self.get_all_stats().values())
 
     def get_corpus_date(self) -> Optional[str]:
-        """The most recent effective_date across stored regulation chunks.
+        """The most recent date a stored regulation was confirmed against eCFR.
 
         The corpus is built into the image, so it is exactly as current as the
         last rebuild. Nothing surfaced that date, which meant a knowledge base
@@ -305,9 +305,24 @@ class ChromaStore:
             logger.warning(f"Could not read corpus dates: {e}")
             return None
 
+        # last_verified_date first. The question this answers is "how old is
+        # the text we are checking claims against", and that is the date we
+        # last confirmed it with the publisher.
+        #
+        # effective_date is kept as the last fallback, not the first choice: it
+        # used to receive the fetch date, so corpora built before the dates were
+        # separated still carry a usable value there. New builds leave it unset,
+        # because eCFR tells us the text in force on a date, not the date the
+        # provision took effect.
         latest: Optional[str] = None
         for meta in (sample.get("metadatas") or []):
-            date = (meta or {}).get("effective_date") or ""
+            meta = meta or {}
+            date = (
+                meta.get("last_verified_date")
+                or meta.get("retrieved_date")
+                or meta.get("effective_date")
+                or ""
+            )
             if date and (latest is None or date > latest):
                 latest = date
         return latest

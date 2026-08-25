@@ -25,7 +25,7 @@ import pytest
 
 from app.models.schemas import (
     AnalysisResult, ClaimSupport, EvidenceChecks, EvidenceSource, GapRow,
-    GapStatus, ObligationType, RiskLevel, VerificationEvidence,
+    GapStatus, ObligationType, RiskLevel, SourceStatus, VerificationEvidence,
 )
 from app.services.orchestrator import PackageOrchestrator
 
@@ -54,6 +54,10 @@ def _finding(text, support, *, obligation=ObligationType.required, specifics=Non
                 citation_exists=citation_exists,
                 claim_support=support,
                 specifics_supported=specifics,
+                # Standing held at current: these cases are about entailment,
+                # and a non-current source now downgrades a mandate on its own.
+                source_status=SourceStatus.current_verified,
+                source_status_current=True,
             ),
         ),
     )

@@ -23,8 +23,8 @@ Run: python -m pytest tests/test_obligation_gate.py -v
 import pytest
 
 from app.models.schemas import (
-    ClaimSupport, EvidenceChecks, GapRow, GapStatus, ObligationType,
-    VerificationEvidence,
+    AnalysisResult, ClaimSupport, EvidenceChecks, GapRow, GapStatus,
+    ObligationType, SourceStatus, VerificationEvidence,
 )
 from app.services.orchestrator import PackageOrchestrator
 
@@ -45,6 +45,12 @@ def _row(obligation, support, specifics=None):
                 citation_exists=True,
                 claim_support=support,
                 specifics_supported=specifics,
+                # These cases isolate the entailment dimension, so the source's
+                # standing is held at current throughout. A non-current source
+                # is now its own reason to downgrade a claimed mandate, covered
+                # separately in TestNonCurrentSourcesAreDowngraded below.
+                source_status=SourceStatus.current_verified,
+                source_status_current=True,
             ),
         ),
     )
@@ -146,3 +152,64 @@ class TestTheReaderCanSeeIt:
         assert "OBLIGATION_MAP" in source
         for member in ObligationType:
             assert member.value in source, f"{member.value} is not rendered in the UI"
+
+
+class TestNonCurrentSourcesAreDowngraded:
+    """A claimed mandate is downgraded when its source cannot speak to present law.
+
+    This is a separate reason from the entailment cases above. There, a current
+    regulation was found and its text did not establish the duty. Here the text
+    may match perfectly — but it comes from a proposal, a superseded version, or
+    a page whose standing was never established, and none of those can say what
+    is required today.
+    """
+
+    def _row_with_status(self, status):
+        return GapRow(
+            clause="Records Retention",
+            regulations=["29 CFR 1910.95"],
+            status=GapStatus.gap,
+            finding="Records must be retained for two years.",
+            suggested_language="Retain records for two years.",
+            citation="29 CFR §1910.95(m)",
+            obligation_type=ObligationType.required,
+            evidence=VerificationEvidence(
+                claim_id="finding-1",
+                claim_text="Records must be retained for two years.",
+                checks=EvidenceChecks(
+                    citation_exists=True,
+                    claim_support=ClaimSupport.supported,
+                    specifics_supported=True,
+                    source_status=status,
+                    source_status_current=False,
+                ),
+            ),
+        )
+
+    @pytest.mark.parametrize("status", [
+        SourceStatus.proposed,
+        SourceStatus.superseded,
+        SourceStatus.historical,
+        SourceStatus.status_unknown,
+    ])
+    def test_a_mandate_from_a_non_current_source_is_not_left_as_required(self, status):
+        result = AnalysisResult(
+            policy_type="t", audit_ready_summary="s", gap_table=[self._row_with_status(status)]
+        )
+        PackageOrchestrator()._gate_unproven_mandates(result)
+
+        row = result.gap_table[0]
+        assert row.obligation_type is ObligationType.unverified_requirement, status
+        assert status.value in (row.obligation_note or ""), (
+            "the note must name the standing, so the reader knows what to go and check"
+        )
+
+    def test_the_finding_is_downgraded_not_deleted(self):
+        """The underlying observation may still be worth acting on."""
+        result = AnalysisResult(
+            policy_type="t", audit_ready_summary="s",
+            gap_table=[self._row_with_status(SourceStatus.proposed)],
+        )
+        PackageOrchestrator()._gate_unproven_mandates(result)
+        assert len(result.gap_table) == 1
+        assert result.gap_table[0].finding

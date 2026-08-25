@@ -42,19 +42,22 @@ def _build_draft_system_prompt(industry_slug: str, jurisdiction: Optional[str]) 
         f"attempting to describe a policy in the first place.\n\n"
         f"Requirements:\n"
         f"1. Write a COMPLETE policy — every section, every clause, fully fleshed out with real sentences.\n"
-        f"2. Cite every applicable regulation inline ONLY where one genuinely exists (e.g., 'As required by 34 CFR "
-        f"§99.30...'). Not every policy topic is regulation-driven — an attendance/lateness policy, a dress code, "
-        f"or a communications style guide is mostly an organizational-design choice with narrow, specific "
-        f"regulatory touchpoints (e.g. FLSA pay-docking rules, ADA accommodation) rather than a comprehensive "
-        f"framework. Find the genuine touchpoints, but NEVER fabricate a citation to make a design preference "
-        f"look like a legal requirement — write the clause as a professional best-practice recommendation instead, "
-        f"with no citation attached. A user relying on this to know what's legally required is actively harmed by "
-        f"an invented citation.\n"
+        f"2. Cite an applicable regulation inline ONLY where one genuinely exists and appears in the REFERENCE "
+        f"MATERIAL below, in the form 'As required by <exact citation>...'. Not every policy topic is "
+        f"regulation-driven — an attendance policy, a dress code, or a communications style guide is mostly an "
+        f"organizational-design choice with a narrow regulatory surface rather than a comprehensive framework. "
+        f"Look for the genuine touchpoints in the reference material, but NEVER fabricate a citation to make a "
+        f"design preference look like a legal requirement — write the clause as a professional best-practice "
+        f"recommendation instead, with no citation attached. A user relying on this to know what's legally "
+        f"required is actively harmed by an invented citation.\n"
         f"3. Use professional policy language — active voice, clear obligations, defined terms.\n"
         f"4. Include: Purpose, Scope, Definitions (if needed), Policy Statement, Procedures, Responsibilities, "
         f"Recordkeeping, Violations/Consequences, Review Schedule, Effective Date.\n"
         f"5. Tailor every clause to the specific regulatory requirements of {cfg['name']} where they genuinely apply.\n"
-        f"6. Flag any 2024-2026 regulatory updates that affected this policy area.\n"
+        f"6. Flag a recent regulatory update affecting this policy area ONLY if one appears in the REFERENCE "
+        f"MATERIAL below, and only with its citation. Do not name a rule, a status, or a date from memory: "
+        f"whether a rule is current, proposed, delayed or superseded is precisely the kind of fact that changes "
+        f"after training. If the reference material shows no such update, say nothing about recent changes.\n"
         f"7. Every obligation must be specific, operable, and accountable — not just present. This document will "
         f"later be run through an adversarial gap analysis that checks each obligation on exactly those three "
         f"axes, so write it to already pass: assign a specific named role or title (never 'appropriate staff,' "
@@ -94,9 +97,9 @@ Return ONLY valid JSON — no markdown fences, no preamble. The sections array M
 
 {
   "policy_title": "Full formal title of the policy",
-  "effective_date": "Suggested effective date (e.g., 'January 1, 2026')",
+  "effective_date": "Suggested effective date for the organization to adopt — a date of your choosing, stated as the organization's proposed adoption date, never as a regulatory deadline",
   "version": "1.0",
-  "regulations_applied": ["Every regulation/statute/guidance this policy was written to satisfy"],
+  "regulations_applied": ["Only the regulations/statutes/guidance this policy was actually written to satisfy and that genuinely apply. No target number — list one if one applies. Never add an authority to lengthen the list."],
   "sections": [
     { "title": "I. Purpose", "content": "2-4 sentences — why this policy exists and what it achieves." },
     { "title": "II. Scope", "content": "2-4 sentences — who is covered, what activities, which locations/entities." },
@@ -109,7 +112,7 @@ Return ONLY valid JSON — no markdown fences, no preamble. The sections array M
     { "title": "IX. References", "content": "A list of the statutes, regulations, and guidance documents actually cited above — no additional prose." },
     { "title": "X. Review and Revision Schedule", "content": "1-3 sentences — how often reviewed, who is responsible, version control." }
   ],
-  "drafting_notes": "2-3 sentences: regulatory frameworks applied, any 2024-2026 updates incorporated, and what legal review is recommended before adoption."
+  "drafting_notes": "2-3 sentences: which regulatory frameworks were applied, any recent update incorporated (only if it appeared in the reference material, with its citation — otherwise omit that clause entirely), and what legal review is recommended before adoption."
 }
 
 Do NOT include a "full_text" field in your JSON output. It is assembled from "sections"

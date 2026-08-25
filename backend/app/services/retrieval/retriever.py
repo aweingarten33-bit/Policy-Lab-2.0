@@ -18,7 +18,7 @@ from typing import Optional, List, Dict, Any
 
 from app.services.retrieval.models import (
     SourceChunk, SourceMetadata, SourceType, SourceCategory, Jurisdiction,
-    RetrievalResult, RetrievalContext,
+    RetrievalResult, RetrievalContext, SourceStatus, resolve_source_status,
 )
 from app.services.retrieval.store import get_store
 from app.services.retrieval.sanitize import sanitize_source_text, wrap_untrusted_sources
@@ -386,7 +386,27 @@ class ComplianceRetriever:
 
         allowed = self._allowed_citations(industry)
         if allowed:
-            clauses.append({"citation": {"$in": allowed}})
+            # Filter on part_citation, not citation.
+            #
+            # eCFR content is now stored per section ("45 CFR § 164.404"), so a
+            # filter comparing `citation` against a list of part-level strings
+            # would match nothing. part_citation carries the part for exactly
+            # this purpose.
+            #
+            # The empty-string arm matters as much as the list: sources that are
+            # not CFR parts have no part_citation, and OIG/HCCA compliance-
+            # program guidance is the main one. Under the old `citation` filter
+            # those chunks could never match either, so selecting any industry
+            # silently excluded every guidance document from retrieval -- the
+            # material that defines the seven elements of an effective
+            # compliance program, absent from every healthcare analysis that
+            # named an industry.
+            clauses.append({
+                "$or": [
+                    {"part_citation": {"$in": allowed}},
+                    {"part_citation": ""},
+                ]
+            })
 
         if not clauses:
             return None
@@ -411,13 +431,26 @@ class ComplianceRetriever:
         except ValueError:
             source_type = SourceType.retrieved_source
 
+        # Chunks embedded before source_status existed store "" for it. Left as
+        # None so resolve_source_status() derives the standing, rather than
+        # coercing an absent value into a claim about it.
+        try:
+            source_status = SourceStatus(meta_dict.get("source_status") or "") or None
+        except ValueError:
+            source_status = None
+
         return SourceMetadata(
             source_name=meta_dict.get("source_name", "Unknown"),
             source_type=source_type,
             category=category,
             jurisdiction=jurisdiction,
             effective_date=meta_dict.get("effective_date") or None,
+            publication_date=meta_dict.get("publication_date") or None,
+            retrieved_date=meta_dict.get("retrieved_date") or None,
+            last_verified_date=meta_dict.get("last_verified_date") or None,
+            source_status=source_status,
             citation=meta_dict.get("citation") or None,
+            part_citation=meta_dict.get("part_citation") or None,
             url=meta_dict.get("url") or None,
             section=meta_dict.get("section") or None,
             authority=meta_dict.get("authority") or None,
@@ -455,8 +488,22 @@ class ComplianceRetriever:
                 lines.append(f"Citation: {meta.citation}")
             if meta.authority:
                 lines.append(f"Authority: {meta.authority}")
+            # Each date is labelled for what it actually is. A single "Date:"
+            # line let the model read a publication or download date as the
+            # date the rule took effect and then say so in a finding.
             if meta.effective_date:
-                lines.append(f"Effective Date: {meta.effective_date}")
+                lines.append(f"Effective Date (stated by the source): {meta.effective_date}")
+            if meta.publication_date:
+                lines.append(f"Publication Date: {meta.publication_date}")
+            if meta.last_verified_date:
+                lines.append(f"Text Last Confirmed Against Publisher: {meta.last_verified_date}")
+            status = resolve_source_status(meta)
+            lines.append(f"Source Status: {status.value}")
+            if status is not SourceStatus.current_verified:
+                lines.append(
+                    "NOTE: this source's standing as current law is not established. "
+                    "Do not state anything from it as a present legal requirement."
+                )
             if meta.jurisdiction:
                 lines.append(f"Jurisdiction: {meta.jurisdiction.value}")
             if meta.url:

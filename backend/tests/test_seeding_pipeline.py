@@ -169,3 +169,72 @@ class TestEndToEndStorage:
         )
         assert results, "stored chunks were not retrievable"
         assert "privacy official" in results[0]["results"]["documents"][0][0]
+
+
+class TestSeedAndRefreshShareOneIngestPath:
+    """The nightly refresh must not undo what seeding got right.
+
+    These were separate copies of the same logic. A fix applied to seeding was
+    silently reverted the following night when the refresh re-ingested the same
+    parts under the old scheme — which is the worst kind of regression, because
+    it passes every test at deploy time and appears hours later.
+    """
+
+    def test_the_refresh_calls_the_shared_helper(self):
+        import inspect
+        from app.services.retrieval import scheduler
+
+        source = inspect.getsource(scheduler.refresh_ecfr_knowledge_base)
+        assert "ingest_cfr_part_sections" in source
+        assert "ingest_source_document" not in source, (
+            "the refresh has its own ingest again — the two paths will drift"
+        )
+
+    def test_the_shared_helper_is_the_one_seeding_uses(self):
+        import inspect
+        from app.services.retrieval import seed_data
+
+        source = inspect.getsource(seed_data._async_seed)
+        assert "ingest_cfr_part_sections" in source
+
+
+class TestChunkIdsAreADeletableNamespace:
+    """The refresh clears a part's previous version by id prefix before writing
+    the new one. Ids derived from the source name meant it searched for a prefix
+    that had never been written, deleted nothing, and let superseded regulatory
+    text accumulate beside the fresh copy."""
+
+    def test_a_parts_chunks_share_its_prefix(self, tmp_path, monkeypatch):
+        from app.services.retrieval import section_store as section_module
+        from app.services.retrieval import store as store_module
+        from app.services.retrieval.ecfr_client import parts_to_source_chunks
+        from app.services.retrieval.models import SourceCategory
+        from app.services.retrieval.seed_data import ingest_cfr_part_sections
+
+        fresh = store_module.ChromaStore(persist_dir=str(tmp_path / "kb"))
+        monkeypatch.setattr(store_module, "_store", fresh)
+        monkeypatch.setattr(
+            section_module, "_section_store",
+            section_module.SectionStore(persist_dir=str(tmp_path / "kb")),
+        )
+
+        chunks = parts_to_source_chunks({
+            "title": 45, "part": 164, "label": "45 CFR Part 164",
+            "fetched_date": "2026-08-25",
+            "sections": [{
+                "section": "164.404", "heading": "Notification to individuals.",
+                "text": "A covered entity shall notify each individual. " * 20,
+                "citation": "45 CFR § 164.404",
+            }],
+        }, SourceCategory.federal_regulation)
+
+        ingested = ingest_cfr_part_sections(
+            chunks, title=45, part=164,
+            category=SourceCategory.federal_regulation, fetched_date="2026-08-25",
+        )
+        assert ingested > 0
+
+        removed = fresh.delete_by_prefix("federal_regulation", "ecfr_45_164_")
+        assert removed == ingested, (
+            "the refresh's delete prefix does not match the ids seeding writes"
+        )

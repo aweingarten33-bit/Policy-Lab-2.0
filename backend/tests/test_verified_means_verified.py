@@ -81,11 +81,21 @@ class TestCitationMatchIsNotVerification:
 
 class TestOnlyClaimSupportPromotes:
     def _evidence(self, verifier, citation_exists=True, with_excerpt=True):
-        from app.models.schemas import VerificationEvidence, EvidenceChecks, EvidenceSource
+        from app.models.schemas import (
+            VerificationEvidence, EvidenceChecks, EvidenceSource, SourceStatus,
+        )
         return VerificationEvidence(
             claim_id="c1",
             claim_text="Notification must be sent within 30 days of discovery.",
-            checks=EvidenceChecks(citation_exists=citation_exists),
+            # These cases are about the citation and excerpt conditions, so the
+            # source's standing is held at "current" throughout. Standing is now
+            # a separate precondition for `verified` and is exercised on its own
+            # in TestSourceStatusGatesVerification below.
+            checks=EvidenceChecks(
+                citation_exists=citation_exists,
+                source_status=SourceStatus.current_verified,
+                source_status_current=True,
+            ),
             source=EvidenceSource(
                 excerpt="A covered entity must send notification within 30 days of discovery."
                 if with_excerpt else None
@@ -138,9 +148,13 @@ class TestAbsentEvidenceIsNotPartialSupport:
 
     def _evidence(self, **checks):
         from app.models.schemas import (
-            EvidenceChecks, EvidenceSource, VerificationEvidence,
+            EvidenceChecks, EvidenceSource, SourceStatus, VerificationEvidence,
         )
         excerpt = checks.pop("excerpt", None)
+        # Current standing by default: these cases isolate the citation and
+        # excerpt conditions.
+        checks.setdefault("source_status", SourceStatus.current_verified)
+        checks.setdefault("source_status_current", True)
         return VerificationEvidence(
             claim_id="c", claim_text="45 CFR 164.530 requires annual training.",
             checks=EvidenceChecks(**checks),

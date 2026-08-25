@@ -184,8 +184,13 @@ def test_noncurrent_source_cannot_verify_present_requirement():
         ctx,
     )
     assert ev.checks.citation_exists is False
-    assert ev.status is VerificationStatus.unverified
-    assert "non-current" in ev.reason
+    # A superseded source now reports cannot_determine rather than unverified.
+    # The two are both fail-closed, but they say different things: unverified
+    # means a current source did not support the claim, while this means no
+    # conclusion about present law is available from this material at all.
+    assert ev.status is VerificationStatus.cannot_determine
+    assert ev.checks.source_status_current is False
+    assert "SUPERSEDED" in ev.reason
 
 
 def test_percent_money_age_ratio_and_distance_are_checked():

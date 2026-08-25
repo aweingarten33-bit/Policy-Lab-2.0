@@ -29,7 +29,22 @@ from datetime import datetime
 #
 # app.models.schemas imports nothing from this package, so importing it here
 # creates no cycle.
-from app.models.schemas import SourceType, VerificationStatus  # noqa: F401
+#
+# SourceAttribution was duplicated the same way, and that one was worse: both
+# classes were exported under one name, verification.py built the retrieval
+# copy while orchestrator.py annotated the schemas copy, and the two drifted
+# (only the schemas copy documented retrieved_text as evidence-display data).
+# Pydantic accepted either at runtime, so the mismatch never raised -- it just
+# meant "the SourceAttribution" was two different models depending on the
+# import line. There is now one.
+from app.models.schemas import (  # noqa: F401
+    PRESENT_DUTY_STATUSES,
+    SourceAttribution,
+    SourceStatus,
+    SourceType,
+    VerificationStatus,
+    can_support_present_duty,
+)
 
 
 class SourceCategory(str, Enum):
@@ -73,15 +88,73 @@ class SourceMetadata(BaseModel):
     source_type: SourceType = Field(SourceType.retrieved_source, description="Where this came from")
     category: SourceCategory = Field(..., description="Source category for collection routing")
     jurisdiction: Jurisdiction = Field(Jurisdiction.federal, description="Federal or state-specific")
-    effective_date: Optional[str] = Field(None, description="When this source became effective")
     citation: Optional[str] = Field(None, description="Formal citation (e.g., '45 CFR §164.530(b)')")
+    # The part-level citation ("45 CFR Part 164") kept alongside the
+    # section-level one, because retrieval scopes an industry to the parts that
+    # govern it while verification needs the exact section. Collapsing the two
+    # meant one of the jobs was always done with the wrong granularity.
+    part_citation: Optional[str] = Field(
+        None, description="Part-level citation used for industry scoping, when the source has one"
+    )
     url: Optional[str] = Field(None, description="Source URL if available")
     section: Optional[str] = Field(None, description="Section within the source document")
     authority: Optional[str] = Field(None, description="Issuing authority (e.g., 'HHS OCR', 'CMS')")
-    is_current: bool = Field(True, description="Whether this is the current version")
+
+    # ── Dates: four distinct questions, never one field ──
+    # These used to be a single `effective_date`, which received whatever date
+    # was to hand: the day the corpus was downloaded, or a publication date
+    # scraped out of a search-result snippet. A reader (and the verifier) then
+    # read that as "the date this rule took effect".
+    effective_date: Optional[str] = Field(
+        None, description="When the provision took legal effect — only when the source states it"
+    )
+    publication_date: Optional[str] = Field(
+        None, description="When the document was published. Never treated as an effective date."
+    )
+    retrieved_date: Optional[str] = Field(
+        None, description="When this text was fetched into the knowledge base"
+    )
+    last_verified_date: Optional[str] = Field(
+        None, description="When the text was last confirmed against the authoritative publisher"
+    )
+
+    # ── Standing ──
+    source_status: Optional[SourceStatus] = Field(
+        None,
+        description=(
+            "Standing relative to present-day law. None means 'not explicitly "
+            "recorded' — resolve_source_status() derives it rather than assuming "
+            "current. Only CURRENT_VERIFIED can support a present-duty claim."
+        ),
+    )
+    is_current: bool = Field(
+        True,
+        description="Legacy flag kept for corpora ingested before source_status existed",
+    )
     chunk_index: int = Field(0, description="Index of this chunk within the source document")
     total_chunks: int = Field(1, description="Total chunks from this source document")
     collection: str = Field(..., description="Which collection this chunk belongs to")
+
+
+def resolve_source_status(meta: "SourceMetadata") -> SourceStatus:
+    """The standing of a chunk's source, deriving it when it was not recorded.
+
+    Chunks embedded before ``source_status`` existed carry no value for it, and
+    treating those as unknown would fail-close the entire baked corpus. They do
+    carry ``is_current``, which for curated ingestion was set truthfully from a
+    dated authoritative snapshot, so that is the fallback.
+
+    Live research is the case this exists for and gets no such benefit: a
+    search engine returning a page says nothing about whether the page states
+    current law, so an unlabelled live result resolves to STATUS_UNKNOWN.
+    """
+    if meta.source_status is not None:
+        return meta.source_status
+    if meta.source_type == SourceType.live_research:
+        return SourceStatus.status_unknown
+    if not meta.is_current:
+        return SourceStatus.superseded
+    return SourceStatus.current_verified
 
 
 # ── Source Chunk ──
@@ -100,51 +173,6 @@ class RetrievalResult(BaseModel):
     chunk: SourceChunk = Field(..., description="The retrieved source chunk")
     score: float = Field(..., description="Relevance score (0-1, higher = more relevant)")
     query: str = Field(..., description="The query that retrieved this chunk")
-
-
-# ── Source Attribution ──
-
-class SourceAttribution(BaseModel):
-    """
-    Attribution for a single claim or finding.
-    Every major output in the compliance action package carries one of these.
-    """
-    source_type: SourceType = Field(
-        SourceType.model_knowledge,
-        description="Where this information came from"
-    )
-    verification_status: VerificationStatus = Field(
-        VerificationStatus.unverified,
-        description="Whether this claim has been verified against source material"
-    )
-    source_name: Optional[str] = Field(
-        None,
-        description="Name of the source document (if retrieved/verified)"
-    )
-    source_citation: Optional[str] = Field(
-        None,
-        description="Formal citation (e.g., '45 CFR §164.530(b)')"
-    )
-    source_url: Optional[str] = Field(
-        None,
-        description="URL to the source material"
-    )
-    source_date: Optional[str] = Field(
-        None,
-        description="Date of the source material"
-    )
-    retrieved_text: Optional[str] = Field(
-        None,
-        description="The actual retrieved text that supports this claim (for verification)"
-    )
-    confidence: float = Field(
-        0.5,
-        description="Confidence in this attribution (0-1)"
-    )
-    warning: Optional[str] = Field(
-        None,
-        description="Warning message if the claim cannot be verified"
-    )
 
 
 # ── Retrieval Context ──
@@ -257,8 +285,17 @@ class VerificationReport(BaseModel):
     total_claims: int = Field(0, description="Total claims checked")
     verified_claims: int = Field(0, description="Claims with supporting evidence")
     partially_verified_claims: int = Field(0, description="Claims with partial support")
-    unverified_claims: int = Field(0, description="Claims with no supporting evidence")
+    unverified_claims: int = Field(
+        0, description="Claims not confirmed — no support found, or source standing unknown"
+    )
     contradicted_claims: int = Field(0, description="Claims contradicted by source material")
+    cannot_determine_claims: int = Field(
+        0,
+        description=(
+            "Subset of unverified_claims where the source's standing (proposed, "
+            "superseded, historical, unknown) made a present-duty conclusion impossible"
+        ),
+    )
     claim_details: List[ClaimVerification] = Field(default_factory=list)
     overall_status: VerificationStatus = Field(
         VerificationStatus.unverified,

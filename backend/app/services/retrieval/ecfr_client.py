@@ -28,6 +28,7 @@ import httpx
 
 from app.services.retrieval.models import (
     SourceChunk, SourceMetadata, SourceType, SourceCategory, Jurisdiction,
+    SourceStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -249,7 +250,10 @@ class ECFRClient:
                     sections.append({
                         "section": identifier or f"{title} CFR {part}",
                         "heading": heading or parent_heading,
-                        "text": full_text[:3000],  # cap per section
+                        # Not truncated. See _parse_ecfr_xml for why the old
+                        # 3,000-character cap here was a correctness bug rather
+                        # than a size control.
+                        "text": full_text,
                         "citation": f"{title} CFR § {identifier}" if identifier else f"{title} CFR Part {part}",
                     })
 
@@ -335,7 +339,21 @@ class ECFRClient:
             sections.append({
                 "section": clean_section,
                 "heading": subject,
-                "text": full_text[:3000],
+                # Full section text, deliberately untruncated.
+                #
+                # This used to be full_text[:3000]. CFR sections routinely run
+                # far longer than that -- §164.308 and §164.512 are several
+                # times it -- and the cut was silent, so the corpus looked
+                # complete while missing the back half of the longest and most
+                # heavily cited provisions. Verification then could not find a
+                # subsection that had simply been thrown away, and reported the
+                # claim unverifiable as though the regulation were at fault.
+                #
+                # Size is handled where it belongs instead: ingestion chunks
+                # this for embedding, and the complete text goes to the
+                # authoritative section store so verification can still resolve
+                # the whole cited scope.
+                "text": full_text,
                 "citation": f"{title} CFR § {clean_section}" if clean_section else f"{title} CFR Part {part}",
             })
 
@@ -386,7 +404,8 @@ def parts_to_source_chunks(part_data: Dict, category: SourceCategory) -> List[So
             continue
 
         heading = section.get("heading", "")
-        citation = section.get("citation", f"{title} CFR Part {part}")
+        part_citation = f"{title} CFR Part {part}"
+        citation = section.get("citation", part_citation)
         section_id = section.get("section", "")
 
         metadata = SourceMetadata(
@@ -398,8 +417,21 @@ def parts_to_source_chunks(part_data: Dict, category: SourceCategory) -> List[So
             source_type=SourceType.retrieved_source,
             category=category,
             jurisdiction=Jurisdiction.federal,
-            effective_date=fetched_date,
+            # `fetched_date` used to be written into effective_date, which said
+            # the provision took effect the day we downloaded it. eCFR serves
+            # the text in force *as of* a date; it does not tell us when that
+            # text became effective. The date we actually know is the date we
+            # confirmed the text against the publisher, so it is recorded as
+            # that and effective_date is left unset rather than invented.
+            effective_date=None,
+            retrieved_date=fetched_date,
+            last_verified_date=fetched_date,
+            # eCFR's point-in-time endpoint returns the codified text in force
+            # on the requested date. That is a real, checkable basis for
+            # calling it current -- unlike a web page a search engine returned.
+            source_status=SourceStatus.current_verified,
             citation=citation,
+            part_citation=part_citation,
             url=f"https://www.ecfr.gov/current/title-{title}/part-{part}" + (
                 f"#p-{section_id}" if section_id else ""
             ),
