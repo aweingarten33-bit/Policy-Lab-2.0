@@ -137,6 +137,21 @@ class Settings(BaseSettings):
     # of very long ones cannot dominate the build.
     kb_max_embed_chars_per_section: int = 6000
 
+    # How many non-law sources may accompany the regulations in one retrieval.
+    #
+    # Agency guidance is written in the same register as a policy, so it scores
+    # as "similar" to almost any policy put in front of it -- on a breach
+    # notification policy the OIG compliance-program guidance took the top three
+    # slots while the controlling CFR sections came fourth. Ordering law first
+    # fixes precedence; this bounds volume, so a block of general
+    # compliance-program prose cannot sit alongside the regulation on a policy
+    # it has nothing to say about.
+    #
+    # Small on purpose. Enough to be useful where guidance genuinely governs,
+    # too little to crowd out the law where it does not. Raise it only if
+    # guidance is demonstrably being missed on compliance-program policies.
+    kb_max_guidance_chunks: int = 2
+
     # Whether a running container may download and embed the corpus itself.
     #
     # Seeding needs roughly twice the memory of serving. On a small instance

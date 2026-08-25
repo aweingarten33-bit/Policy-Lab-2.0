@@ -20,10 +20,43 @@ from app.services.retrieval.models import (
     SourceChunk, SourceMetadata, SourceType, SourceCategory, Jurisdiction,
     RetrievalResult, RetrievalContext, SourceStatus, resolve_source_status,
 )
+from app.config import settings
 from app.services.retrieval.store import get_store
 from app.services.retrieval.sanitize import sanitize_source_text, wrap_untrusted_sources
 
 logger = logging.getLogger(__name__)
+
+
+# ── Authority tiers ──
+#
+# What governs, versus what merely discusses what governs. Retrieval ranks by
+# tier first and similarity only within a tier, so a regulation is never
+# displaced by a guidance document that happens to score higher.
+#
+# The tiers mirror the distinction verification already enforces: only codified
+# law can establish a legal requirement (see _LEGALLY_BINDING_CATEGORIES in
+# verification.py). Retrieval now orders by the same rule, so what the model is
+# shown first and what it is allowed to treat as binding no longer disagree.
+_TIER_LAW = 0          # codified, enforceable, and the answer to "what is required"
+_TIER_AGENCY = 1       # what a regulator says about the law — persuasive, not binding
+_TIER_REFERENCE = 2    # drafting material: templates, clause libraries, examples
+
+_AUTHORITY_TIERS = {
+    SourceCategory.federal_regulation: _TIER_LAW,
+    SourceCategory.state_law: _TIER_LAW,
+    SourceCategory.federal_guidance: _TIER_AGENCY,
+    SourceCategory.ocr_guidance: _TIER_AGENCY,
+    SourceCategory.enforcement_action: _TIER_AGENCY,
+    SourceCategory.requirement_pack: _TIER_AGENCY,
+    SourceCategory.policy_template: _TIER_REFERENCE,
+    SourceCategory.policy_clause_library: _TIER_REFERENCE,
+    SourceCategory.example_policy: _TIER_REFERENCE,
+}
+
+
+def _authority_tier(category) -> int:
+    """Tier for a category. Anything unrecognised sorts last, never first."""
+    return _AUTHORITY_TIERS.get(category, _TIER_REFERENCE)
 
 
 _STATE_NAMES = {
@@ -218,8 +251,24 @@ class ComplianceRetriever:
                     logger.warning(f"Failed to parse result {chunk_id}: {e}")
                     continue
 
-        # Sort by relevance score
-        retrieved_chunks.sort(key=lambda r: r.score, reverse=True)
+        # Codified law first, always. Similarity decides order only within a
+        # tier, never across them.
+        #
+        # Ordering was purely by score, and guidance prose beat regulatory text
+        # on nearly every healthcare policy: on a breach-notification policy the
+        # OIG General Compliance Program Guidance took the top three slots at
+        # ~0.66 while the actual CFR sections came fourth through sixth at
+        # ~0.44. Guidance is written in the same register as a policy, so it
+        # reads as "similar" to almost any policy; a regulation is written in
+        # the register of a regulation. Semantic similarity cannot tell the
+        # difference between the document that governs and the document that
+        # merely sounds like the question.
+        #
+        # The model reads its context top-down, so this is why guidance kept
+        # being cited on policies it has nothing to say about while the
+        # controlling regulation went unmentioned.
+        retrieved_chunks.sort(key=lambda r: (_authority_tier(r.chunk.metadata.category), -r.score))
+        retrieved_chunks = self._cap_supporting_material(retrieved_chunks)
 
         # Take top results (limit total to avoid context bloat)
         max_total = 15
@@ -414,6 +463,41 @@ class ComplianceRetriever:
             return clauses[0]
         return {"$and": clauses}
 
+    def _cap_supporting_material(self, results: List[RetrievalResult]) -> List[RetrievalResult]:
+        """Let guidance in only after the law, and only a little of it.
+
+        Ordering alone is not enough. Three guidance chunks sitting below three
+        regulations still put a large block of compliance-program prose in front
+        of the model on a policy about something else entirely, and it gets
+        cited. Guidance earns a small, fixed allowance -- enough to be useful on
+        the policies it genuinely governs, too little to crowd out the
+        regulation on the ones it does not.
+
+        The allowance is not a relevance judgement and does not try to be one.
+        It is a budget, applied the same way every time.
+        """
+        allowance = settings.kb_max_guidance_chunks
+        kept: List[RetrievalResult] = []
+        guidance_used = 0
+
+        for result in results:
+            if _authority_tier(result.chunk.metadata.category) == _TIER_LAW:
+                kept.append(result)
+                continue
+            if guidance_used >= allowance:
+                continue
+            kept.append(result)
+            guidance_used += 1
+
+        dropped = len(results) - len(kept)
+        if dropped:
+            logger.info(
+                f"Retrieval: kept {guidance_used} supporting source(s) behind "
+                f"{sum(1 for r in kept if _authority_tier(r.chunk.metadata.category) == _TIER_LAW)} "
+                f"authority source(s); dropped {dropped} beyond the allowance"
+            )
+        return kept
+
     def _parse_metadata(self, meta_dict: Dict[str, Any], collection_name: str) -> SourceMetadata:
         """Parse a metadata dict from ChromaDB into a SourceMetadata object."""
         try:
@@ -475,6 +559,17 @@ class ComplianceRetriever:
             "The following was retrieved from the curated compliance knowledge base.",
             "You MUST cite these sources when they support your findings.",
             "You MUST NOT invent citations that are not present below.",
+            "",
+            "Sources are listed in order of authority, not relevance. Codified law "
+            "comes first and is what a finding should cite. Agency guidance follows "
+            "it and is context: cite guidance only where the finding is genuinely "
+            "about it, never as the authority for a legal requirement, and never in "
+            "place of a regulation that governs the same point.",
+            "",
+            "Being retrieved is not a reason to cite something. A source that has "
+            "nothing to say about this policy should not appear in your output at "
+            "all — retrieval casts a wide net and it is your job to ignore what "
+            "does not apply.",
             "",
         ]
 
