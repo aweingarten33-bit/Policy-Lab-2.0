@@ -114,7 +114,17 @@ function extractErrorDetail(errorData: any, fallback: string): string {
 // ── Source Attribution Types (Phase 3) ──
 
 export type SourceType = "model_knowledge" | "retrieved_source" | "live_research" | "verified_source";
-export type VerificationStatus = "verified" | "partially_verified" | "unverified" | "contradicted";
+// "cannot_determine" is distinct from "unverified": there, a current source
+// was checked and did not support the claim; here, the source's own standing
+// (proposed, superseded, historical, unknown) makes any conclusion about
+// present law impossible. Both are fail-closed, but they tell the reader
+// different things about what to go and check.
+export type VerificationStatus =
+  | "verified"
+  | "partially_verified"
+  | "unverified"
+  | "contradicted"
+  | "cannot_determine";
 
 export interface SourceAttribution {
   source_type: SourceType;
@@ -548,6 +558,7 @@ export function getVerificationIcon(status: VerificationStatus): string {
     partially_verified: "🔶",
     unverified: "⚠️",
     contradicted: "❌",
+    cannot_determine: "❔",
   };
   return icons[status] || "⚠️";
 }

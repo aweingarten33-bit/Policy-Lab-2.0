@@ -47,8 +47,7 @@ async def refresh_ecfr_knowledge_base():
     try:
         from app.services.retrieval.ecfr_client import get_ecfr_client, parts_to_source_chunks, ECFR_TARGETS
         from app.services.retrieval.store import get_store
-        from app.services.retrieval.ingestion import ingest_source_document
-        from app.services.retrieval.models import Jurisdiction, SourceType
+        from app.services.retrieval.seed_data import ingest_cfr_part_sections
 
         store = get_store()
         client = get_ecfr_client()
@@ -83,22 +82,18 @@ async def refresh_ecfr_knowledge_base():
                     # regulatory text stayed retrievable alongside the fresh copy.
                     logger.error(f"Refresh: could not clear old chunks for {label}: {e}", exc_info=True)
 
-                # Ingest fresh content
+                # Ingest fresh content through the SAME path the initial seed
+                # uses. These were separate copies of the ingest logic, and the
+                # copies drifted -- so a correctness fix applied to seeding was
+                # undone the following night when the refresh re-ingested the
+                # same parts under the old scheme.
                 fetched_date = part_data.get("fetched_date", datetime.utcnow().date().isoformat())
-                # Same signature mismatch that silently broke initial seeding
-                # (see seed_data.py). It broke the nightly refresh identically,
-                # so even a knowledge base that somehow got populated could
-                # never be updated.
-                n = ingest_source_document(
-                    source_name=f"{label} [eCFR {fetched_date}]",
-                    text="\n\n".join(c.text for c in chunks),
+                n = ingest_cfr_part_sections(
+                    chunks,
+                    title=title,
+                    part=part,
                     category=category,
-                    jurisdiction=Jurisdiction.federal,
-                    citation=f"{title} CFR Part {part}",
-                    url=f"https://www.ecfr.gov/current/title-{title}/part-{part}",
-                    authority="eCFR — Electronic Code of Federal Regulations",
-                    effective_date=fetched_date,
-                    source_type=SourceType.retrieved_source,
+                    fetched_date=fetched_date,
                 )
                 total_chunks += n
                 total_sources += 1

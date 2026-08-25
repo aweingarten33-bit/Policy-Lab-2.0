@@ -28,6 +28,45 @@ class GapStatus(str, Enum):
     missing = "missing"
 
 
+# ── Four-axis classification ──
+# The four axes are presence, specificity, operability and accountability.
+#
+# The prompt used to define the bands as: partial when 1-2 axes pass, gap when
+# 0-1 pass. One passing axis therefore satisfied both definitions, and zero
+# passing axes satisfied both "gap" and "missing" -- so for two of the five
+# possible scores the correct label was whichever the model happened to pick.
+# Severity, remediation priority and the compliance score all key off status,
+# so the ambiguity propagated straight into the numbers a reader acts on.
+#
+# The bands below partition 0-4 exactly once each, and the mapping lives in
+# code so it is the same on every request rather than a instruction the model
+# may or may not follow.
+AXIS_COUNT = 4
+
+
+def classify_from_axes(axes_passed: int, topic_absent: bool = False) -> GapStatus:
+    """Map the number of passing axes to exactly one status.
+
+        4 → compliant, 3 or 2 → partial, 1 → gap, 0 → missing.
+
+    ``topic_absent`` is a shortcut, not a second rule: presence is itself one
+    of the four axes, so an obligation the policy never addresses scores zero
+    and lands on ``missing`` either way. The flag exists so a caller that knows
+    the topic is absent need not also compute the axes.
+    """
+    if topic_absent:
+        return GapStatus.missing
+    if not isinstance(axes_passed, int) or axes_passed < 0 or axes_passed > AXIS_COUNT:
+        raise ValueError(f"axes_passed must be an integer 0..{AXIS_COUNT}, got {axes_passed!r}")
+    if axes_passed == AXIS_COUNT:
+        return GapStatus.compliant
+    if axes_passed >= 2:
+        return GapStatus.partial
+    if axes_passed == 1:
+        return GapStatus.gap
+    return GapStatus.missing
+
+
 class RiskLevel(str, Enum):
     critical = "critical"
     high = "high"
@@ -72,6 +111,39 @@ class VerificationStatus(str, Enum):
     partially_verified = "partially_verified"  # Some support found, not exact match
     unverified = "unverified"                  # No supporting source found
     contradicted = "contradicted"              # Source material contradicts the claim
+    # The check could not be completed because the source's own standing is
+    # unknown or non-current. Distinct from `unverified`: there, the source was
+    # current and simply did not support the claim; here, no conclusion about
+    # present law is possible from this material at all. Both are fail-closed --
+    # neither may be presented as a confirmed legal requirement.
+    cannot_determine = "cannot_determine"
+
+
+class SourceStatus(str, Enum):
+    """Standing of a source relative to present-day law.
+
+    Verification previously had one bit for this (``is_current``), defaulted to
+    True, and live search results set it to True purely because a search engine
+    returned them. A proposed rule, a superseded version and an undated page all
+    looked identical to a currently-in-force regulation.
+
+    Only ``current_verified`` may support a claim about a present legal duty.
+    """
+    current_verified = "CURRENT_VERIFIED"  # in force now, and we know that from the source
+    proposed = "PROPOSED"                  # NPRM / draft — not law yet, may never be
+    superseded = "SUPERSEDED"              # replaced by a later version
+    historical = "HISTORICAL"              # archived / of record only
+    status_unknown = "STATUS_UNKNOWN"      # standing not established — the safe default
+
+
+# The single set of source standings that can support a statement about what
+# the law requires today. Everything else fails closed.
+PRESENT_DUTY_STATUSES = frozenset({SourceStatus.current_verified})
+
+
+def can_support_present_duty(status: "SourceStatus") -> bool:
+    """True only for a source whose standing is established as currently in force."""
+    return status in PRESENT_DUTY_STATUSES
 
 
 # ── Source Attribution Model ──
@@ -152,6 +224,26 @@ class EvidenceSource(BaseModel):
     excerpt: Optional[str] = Field(
         None, description="The exact passage. This is the source of truth for the check."
     )
+    # Dates are kept apart rather than collapsed into one "date" field. A
+    # publication date is when a document appeared; an effective date is when a
+    # rule started binding anyone. Treating the first as the second is how a
+    # newly published article *about* a rule made the rule look newly effective.
+    publication_date: Optional[str] = Field(
+        None, description="When the document was published. Never an effective date."
+    )
+    effective_date: Optional[str] = Field(
+        None, description="When the provision took legal effect, when the source states it"
+    )
+    retrieved_date: Optional[str] = Field(
+        None, description="When this text was fetched into the knowledge base"
+    )
+    last_verified_date: Optional[str] = Field(
+        None, description="When the text was last confirmed against the authoritative publisher"
+    )
+    status: SourceStatus = Field(
+        SourceStatus.status_unknown,
+        description="Standing of this source relative to present-day law",
+    )
 
 
 class EvidenceChecks(BaseModel):
@@ -168,6 +260,27 @@ class EvidenceChecks(BaseModel):
     )
     claim_support: ClaimSupport = Field(
         ClaimSupport.not_checked, description="Whether the excerpt entails the claim"
+    )
+    source_status: SourceStatus = Field(
+        SourceStatus.status_unknown,
+        description="Standing of the source the claim was checked against",
+    )
+    source_status_current: bool = Field(
+        False,
+        description=(
+            "The source's standing is established as currently in force. Required "
+            "for `verified`: a proposed, superseded, historical or unknown-status "
+            "source can never confirm a present legal duty."
+        ),
+    )
+    source_is_binding_law: bool = Field(
+        False,
+        description=(
+            "The matched source is codified law (a regulation or statute) rather "
+            "than agency guidance. Required before a claim asserting a legal "
+            "MANDATE can be verified: guidance can show what an agency expects, "
+            "but it does not create a legal obligation."
+        ),
     )
 
 
@@ -210,6 +323,17 @@ class GapRow(BaseModel):
     clause: str = Field(..., description="Policy section or topic area")
     regulations: List[str] = Field(default_factory=list, description="Applicable regulation citations")
     status: GapStatus = Field(..., description="Compliance status")
+    axes_passed: Optional[int] = Field(
+        None,
+        ge=0,
+        le=AXIS_COUNT,
+        description=(
+            "How many of the four axes (presence, specificity, operability, "
+            "accountability) this obligation passes. When present, `status` is "
+            "derived from it by classify_from_axes() rather than taken from the "
+            "model, so the banding is identical on every request."
+        ),
+    )
     risk_level: Optional[RiskLevel] = Field(None, description="Risk level for OCR/audit context")
     current_state: Optional[str] = Field(
         None,

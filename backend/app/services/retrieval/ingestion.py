@@ -16,6 +16,7 @@ from typing import Optional, List, Dict, Any
 
 from app.services.retrieval.models import (
     SourceChunk, SourceMetadata, SourceType, SourceCategory, Jurisdiction,
+    SourceStatus,
 )
 from app.services.retrieval.store import get_store
 
@@ -90,6 +91,12 @@ def ingest_source_document(
     section: Optional[str] = None,
     is_current: bool = True,
     source_type: SourceType = SourceType.retrieved_source,
+    part_citation: Optional[str] = None,
+    publication_date: Optional[str] = None,
+    retrieved_date: Optional[str] = None,
+    last_verified_date: Optional[str] = None,
+    source_status: Optional[SourceStatus] = None,
+    id_prefix: Optional[str] = None,
 ) -> int:
     """
     Ingest a single source document into the vector store.
@@ -104,11 +111,18 @@ def ingest_source_document(
         jurisdiction: Federal or state-specific
         citation: Formal citation string
         url: Source URL
-        effective_date: When this source became effective
+        effective_date: When the provision took legal effect, if the source states it
         authority: Issuing authority
         section: Section within the document
         is_current: Whether this is the current version
         source_type: Type of source
+        part_citation: Part-level citation, used for industry scoping at retrieval
+        publication_date: When the document was published (never an effective date)
+        retrieved_date: When the text was fetched
+        last_verified_date: When the text was last confirmed against its publisher
+        source_status: Standing relative to present-day law
+        id_prefix: Explicit chunk-id namespace, so a group of documents can be
+            deleted together later (see the nightly eCFR refresh)
 
     Returns:
         Number of chunks created
@@ -126,7 +140,13 @@ def ingest_source_document(
     documents = []
     metadatas = []
 
-    base_id = re.sub(r'[^a-zA-Z0-9]', '_', source_name)[:50]
+    # An explicit prefix lets a caller give a whole group of documents one
+    # deletable namespace. The nightly refresh needs that: it clears a CFR
+    # part's previous version by id prefix before ingesting the new one, and
+    # with ids derived from the source name it was searching for a prefix that
+    # had never been written, deleting nothing and letting superseded text
+    # accumulate beside the fresh copy.
+    base_id = id_prefix or re.sub(r'[^a-zA-Z0-9]', '_', source_name)[:50]
 
     for i, chunk_text in enumerate(chunks):
         chunk_id = f"{base_id}_chunk_{i}_{uuid.uuid4().hex[:8]}"
@@ -137,7 +157,12 @@ def ingest_source_document(
             category=category,
             jurisdiction=jurisdiction,
             effective_date=effective_date,
+            publication_date=publication_date,
+            retrieved_date=retrieved_date,
+            last_verified_date=last_verified_date,
+            source_status=source_status,
             citation=citation,
+            part_citation=part_citation,
             url=url,
             section=section or (f"Chunk {i+1}" if len(chunks) > 1 else None),
             authority=authority,

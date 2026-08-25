@@ -297,7 +297,38 @@ class PackageOrchestrator:
                 continue
 
             support = evidence.checks.claim_support
-            if support is ClaimSupport.contradicted:
+
+            # A mandate matched only to agency guidance is reclassified as
+            # guidance, not as an unverified requirement. Both stop it being
+            # presented as law, but "this is agency guidance" is the true
+            # answer and a more useful one: the reader learns what the finding
+            # actually is, rather than that a check failed.
+            if (
+                evidence.checks.citation_exists
+                and not evidence.checks.source_is_binding_law
+                and evidence.checks.source_status_current
+            ):
+                row.obligation_type = ObligationType.guidance
+                row.obligation_note = (
+                    "Reclassified from a legal requirement: the cited source is agency "
+                    "guidance, not codified law. It shows what a regulator expects — it "
+                    "does not by itself create a legal obligation. Cite the underlying "
+                    "regulation or statute if one imposes this duty."
+                )
+                downgraded += 1
+                continue
+
+            if not evidence.checks.source_status_current:
+                # The source exists but is a proposal, an older version, or of
+                # unestablished standing. A finding may still be worth acting
+                # on; it cannot be presented as current law.
+                reason = (
+                    "The matching source is not established as the current, in-force text "
+                    f"(status: {evidence.checks.source_status.value}). It cannot establish "
+                    "what is required today — check the current provision before treating "
+                    "this as a legal obligation."
+                )
+            elif support is ClaimSupport.contradicted:
                 reason = (
                     "The cited source appears to contradict this requirement. Treat it as "
                     "a proposed internal standard, not a regulatory obligation, and check "
@@ -689,8 +720,8 @@ class PackageOrchestrator:
             self._flag_unsupported_specifics(package.gap_analysis, retrieval_ctx)
             package.unverified_claim_count = sum(
                 1 for row in package.gap_analysis.gap_table
-                if row.evidence
-                and row.evidence.status is VerificationStatus.unverified
+                if row.evidence is None
+                or row.evidence.status is not VerificationStatus.verified
             )
             logger.info(f"[{package_id}] Verification pass complete")
         except Exception as e:
@@ -703,7 +734,10 @@ class PackageOrchestrator:
         package.kb_source_urls = all_kb_source_urls if all_kb_source_urls else None
         package.source_snippets = list(all_source_snippets.values()) if all_source_snippets else None
         package.live_research_used = any_live_research
-        package.unverified_claim_count = total_unverified
+        # Deliberately NOT reassigned from total_unverified here. That count
+        # comes from the attribution pass that ran before the evidence checks,
+        # and overwriting the post-verification count with it discarded the
+        # stricter number the checks had just produced.
         package.status = PackageStatus.complete
         logger.info(f"[{package_id}] Streaming package complete: {len(package.completed_outputs)}/1 outputs")
         yield package

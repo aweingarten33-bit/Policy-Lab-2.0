@@ -75,7 +75,12 @@ Return ONLY valid JSON:
   ]
 }
 
-Do not include original_text or full_text fields. Use 6-10 focused sections.
+Do not include original_text or full_text fields.
+
+Use as many sections as the policy actually needs and no more — at most 12.
+There is no minimum: a narrow policy that is complete in four sections is
+finished at four. Do not split a section in two, or add a section with nothing
+specific in it, to reach a count.
 """
 
 

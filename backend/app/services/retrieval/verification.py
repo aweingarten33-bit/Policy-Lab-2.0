@@ -18,10 +18,14 @@ from app.services.retrieval.models import (
     RetrievalContext,
     SourceAttribution,
     SourceCategory,
+    SourceStatus,
     SourceType,
     VerificationReport,
     VerificationStatus,
+    can_support_present_duty,
+    resolve_source_status,
 )
+from app.services.retrieval.section_store import get_section_store
 from app.services.retrieval.store import get_store
 
 logger = logging.getLogger(__name__)
@@ -111,6 +115,26 @@ _THRESHOLD_REGEX = re.compile(
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z(])")
 
+# A claim about when something took, or takes, legal effect. Kept apart from
+# every other kind of date a document carries, because that separation is the
+# whole point: a publication date, a download date and a date mentioned in
+# passing are not commencement dates, and a claim that one of them is has to be
+# checked against a source that actually says so.
+_EFFECTIVE_DATE_CLAIM_RE = re.compile(
+    r"\b(?:took\s+effect|takes\s+effect|became\s+effective|becomes\s+effective"
+    r"|effective\s+(?:date|as\s+of|on|from)|in\s+force\s+(?:as\s+of|from|since)"
+    r"|applies?\s+(?:as\s+of|from)|commenc(?:ed|es|ing))\b",
+    re.IGNORECASE,
+)
+# Dates in the forms these documents and models actually write them.
+_DATE_RE = re.compile(
+    r"\b(?:\d{4}-\d{2}-\d{2}"
+    r"|(?:January|February|March|April|May|June|July|August|September|October"
+    r"|November|December)\s+\d{1,2},?\s+\d{4}"
+    r"|\d{1,2}/\d{1,2}/\d{2,4})\b",
+    re.IGNORECASE,
+)
+
 _MANDATORY_CLAIM_RE = re.compile(
     r"\b(must|shall|required|requires|requirement|mandatory|prohibited|may\s+not|cannot|must\s+not)\b",
     re.IGNORECASE,
@@ -130,6 +154,54 @@ _NON_AUTHORITATIVE_CATEGORIES = {
     SourceCategory.policy_clause_library,
     SourceCategory.policy_template,
     SourceCategory.example_policy,
+}
+
+# Codified law. Only these can establish that something is legally REQUIRED.
+#
+# Everything outside this set is authoritative about what an agency says, and
+# not about what the law compels. That distinction was missing, and the gap was
+# reachable: an OIG General Compliance Program Guidance passage whose own words
+# are "This guidance does not create any new law or legal obligations" verified
+# a finding that read "the Compliance Officer is required by law not to report
+# to finance." The modality check did not catch it, because that check only
+# fires on affirmatively permissive wording ("may", "should") -- a disclaimer is
+# neither permissive nor mandatory, so it sailed through.
+#
+# Guidance is still fully usable, and still verifiable. What it cannot do is
+# carry a claim that presents itself as black-letter law.
+_LEGALLY_BINDING_CATEGORIES = {
+    SourceCategory.federal_regulation,
+    SourceCategory.state_law,
+}
+
+_GUIDANCE_NOT_LAW_NOTE = (
+    "The cited source is agency guidance, not codified law. Guidance shows what a "
+    "regulator expects and is strong evidence of good practice, but it does not "
+    "itself create a legal obligation — so this cannot be confirmed as a legal "
+    "requirement. Cite the underlying regulation or statute if one imposes the duty."
+)
+
+# Why a source of each non-current standing cannot settle a present-day duty.
+# Written for a compliance officer reading the finding, not for a log.
+_STATUS_REASONS = {
+    SourceStatus.proposed: (
+        "The matching source is a PROPOSED rule, not a final one. A proposal can be "
+        "changed, delayed or withdrawn, and it imposes no obligation unless and until "
+        "a final rule takes effect — so it cannot establish a current requirement."
+    ),
+    SourceStatus.superseded: (
+        "The matching source has been SUPERSEDED by a later version, so it cannot "
+        "establish what is required now. Check the current text of the provision."
+    ),
+    SourceStatus.historical: (
+        "The matching source is HISTORICAL/archived material. It is a record of what "
+        "was once published, not a statement of current law."
+    ),
+    SourceStatus.status_unknown: (
+        "The standing of the matching source could not be established — it is not "
+        "confirmed to be the current, in-force text. A requirement cannot be verified "
+        "against a source whose currency is unknown."
+    ),
 }
 
 
@@ -203,8 +275,18 @@ class VerificationService:
         claim_verifications = self.verify_citations(section_text, retrieval_context)
         verified = sum(v.verification_status == VerificationStatus.verified for v in claim_verifications)
         partially = sum(v.verification_status == VerificationStatus.partially_verified for v in claim_verifications)
-        unverified = sum(v.verification_status == VerificationStatus.unverified for v in claim_verifications)
         contradicted = sum(v.verification_status == VerificationStatus.contradicted for v in claim_verifications)
+        cannot_determine = sum(
+            v.verification_status == VerificationStatus.cannot_determine for v in claim_verifications
+        )
+        # `cannot_determine` is counted into unverified for the aggregate. Both
+        # mean "not confirmed", and every caller that reads unverified_claims
+        # treats it as "needs independent review" -- which is exactly right for
+        # a claim whose source standing could not be established. The per-claim
+        # detail keeps the distinction.
+        unverified = sum(
+            v.verification_status == VerificationStatus.unverified for v in claim_verifications
+        ) + cannot_determine
 
         if contradicted:
             overall = VerificationStatus.contradicted
@@ -212,7 +294,13 @@ class VerificationService:
             overall = VerificationStatus.unverified
         elif partially or (unverified and verified):
             overall = VerificationStatus.partially_verified
-        elif verified:
+        elif verified and verified == len(claim_verifications):
+            # A roll-up, not a verdict. This is the only place outside
+            # apply_claim_support that names VerificationStatus.verified, and it
+            # is reachable only when every underlying claim is already verified
+            # -- each of which had to pass apply_claim_support to get there.
+            # The equality is explicit so the aggregate can never be greener
+            # than its parts.
             overall = VerificationStatus.verified
         else:
             overall = VerificationStatus.unverified
@@ -224,6 +312,7 @@ class VerificationService:
             partially_verified_claims=partially,
             unverified_claims=unverified,
             contradicted_claims=contradicted,
+            cannot_determine_claims=cannot_determine,
             claim_details=claim_verifications,
             overall_status=overall,
         )
@@ -238,27 +327,38 @@ class VerificationService:
             match = self._find_source_for_citation(citation, retrieval_context)
             if match is not None:
                 meta = match.chunk.metadata
-                current = bool(getattr(meta, "is_current", True))
-                scope_text = self._source_scope_text(citation, meta.citation or "", match.chunk.text)
+                source_status = resolve_source_status(meta)
+                scope_text = self._source_scope_text(
+                    citation, meta.citation or "", match.chunk.text, allow_full_text=True
+                )
                 scope_ok = bool(scope_text)
-                status = (
-                    VerificationStatus.partially_verified
-                    if current and scope_ok
-                    else VerificationStatus.unverified
-                )
-                warning = (
-                    "The cited authority was located, but the claim itself has not yet been "
-                    "tested against the cited passage."
-                    if status == VerificationStatus.partially_verified
-                    else "The cited authority could not be verified at the exact current citation scope."
-                )
+
+                if not can_support_present_duty(source_status):
+                    status = VerificationStatus.cannot_determine
+                    warning = _STATUS_REASONS[source_status]
+                elif scope_ok:
+                    status = VerificationStatus.partially_verified
+                    warning = (
+                        "The cited authority was located, but the claim itself has not yet been "
+                        "tested against the cited passage."
+                    )
+                else:
+                    status = VerificationStatus.unverified
+                    warning = "The cited authority could not be verified at the exact current citation scope."
+
                 return SourceAttribution(
                     source_type=meta.source_type,
                     verification_status=status,
                     source_name=meta.source_name,
                     source_citation=meta.citation,
                     source_url=meta.url,
-                    source_date=meta.effective_date,
+                    # The date of the version checked — not a publication date
+                    # dressed up as one. See _evidence_source.
+                    source_date=(
+                        getattr(meta, "last_verified_date", None)
+                        or meta.effective_date
+                        or getattr(meta, "retrieved_date", None)
+                    ),
                     retrieved_text=self._select_excerpt(claim_text, scope_text or match.chunk.text, citation=citation)[:500],
                     confidence=match.score,
                     warning=warning,
@@ -288,10 +388,22 @@ class VerificationService:
                         continue
                     if not stored_citation or not self._citations_match(citation, stored_citation):
                         continue
-                    if str(meta_dict.get("is_current", "true")).lower() in {"false", "0", "no"}:
+                    # Same standing gate as the in-context path. A stored chunk
+                    # from before source_status existed carries only is_current,
+                    # which is what the fallback below reads.
+                    stored_status = meta_dict.get("source_status") or ""
+                    if stored_status:
+                        try:
+                            if not can_support_present_duty(SourceStatus(stored_status)):
+                                continue
+                        except ValueError:
+                            continue
+                    elif str(meta_dict.get("is_current", "true")).lower() in {"false", "0", "no"}:
                         continue
                     doc_text = results["documents"][0][i] if results.get("documents") else ""
-                    scope_text = self._source_scope_text(citation, stored_citation, doc_text)
+                    scope_text = self._source_scope_text(
+                        citation, stored_citation, doc_text, allow_full_text=True
+                    )
                     if not scope_text:
                         continue
                     distance = results["distances"][0][i] if results.get("distances") else 1.0
@@ -302,7 +414,12 @@ class VerificationService:
                         source_name=meta_dict.get("source_name", ""),
                         source_citation=stored_citation,
                         source_url=meta_dict.get("url") or None,
-                        source_date=meta_dict.get("effective_date") or None,
+                        source_date=(
+                            meta_dict.get("last_verified_date")
+                            or meta_dict.get("effective_date")
+                            or meta_dict.get("retrieved_date")
+                            or None
+                        ),
                         retrieved_text=self._select_excerpt(claim_text, scope_text, citation=citation)[:500],
                         confidence=score,
                         warning="Citation located in authoritative material; substantive claim support is still pending.",
@@ -353,23 +470,30 @@ class VerificationService:
             return evidence
 
         meta = match.chunk.metadata
-        if not getattr(meta, "is_current", True):
-            evidence.source = EvidenceSource(
-                name=meta.source_name,
-                url=meta.url,
-                version_date=meta.effective_date,
-                excerpt=self._select_excerpt(claim_text, match.chunk.text, citation=citation),
+        status = resolve_source_status(meta)
+        evidence.checks.source_status = status
+        evidence.checks.source_status_current = can_support_present_duty(status)
+        evidence.checks.source_is_binding_law = meta.category in _LEGALLY_BINDING_CATEGORIES
+
+        if not can_support_present_duty(status):
+            # A source whose standing is proposed, superseded, historical or
+            # simply unknown cannot establish what the law requires today. This
+            # is not "no support found" -- it is that no conclusion about
+            # present law is available from this material, which is a different
+            # thing to tell a reader.
+            evidence.source = self._evidence_source(
+                meta, self._select_excerpt(claim_text, match.chunk.text, citation=citation), status
             )
-            evidence.reason = "The matching source is marked non-current, so it cannot verify a present legal requirement."
+            evidence.status = VerificationStatus.cannot_determine
+            evidence.reason = _STATUS_REASONS[status]
             return evidence
 
-        scope_text = self._source_scope_text(citation, meta.citation or "", match.chunk.text)
+        scope_text = self._source_scope_text(
+            citation, meta.citation or "", match.chunk.text, allow_full_text=True
+        )
         if not scope_text:
-            evidence.source = EvidenceSource(
-                name=meta.source_name,
-                url=meta.url,
-                version_date=meta.effective_date,
-                excerpt=self._select_excerpt(claim_text, match.chunk.text, citation=citation),
+            evidence.source = self._evidence_source(
+                meta, self._select_excerpt(claim_text, match.chunk.text, citation=citation), status
             )
             evidence.reason = (
                 "The regulation section was located, but the exact subsection cited by the "
@@ -379,12 +503,7 @@ class VerificationService:
 
         evidence.checks.citation_exists = True
         excerpt = self._select_excerpt(claim_text, scope_text, citation=citation)
-        evidence.source = EvidenceSource(
-            name=meta.source_name,
-            url=meta.url,
-            version_date=meta.effective_date,
-            excerpt=excerpt,
-        )
+        evidence.source = self._evidence_source(meta, excerpt, status)
 
         # IMPORTANT: concrete facts are checked only against the matched cited
         # authority/scope, never against the pooled retrieval context. A number
@@ -409,19 +528,110 @@ class VerificationService:
         )
         return evidence
 
+    @staticmethod
+    def _evidence_source(meta, excerpt: str, status: SourceStatus):
+        """Build an EvidenceSource carrying each date as the date it actually is."""
+        from app.models.schemas import EvidenceSource
+
+        return EvidenceSource(
+            name=meta.source_name,
+            url=meta.url,
+            # What version was checked: the last time the text was confirmed
+            # against its publisher, falling back through the other dates. The
+            # publication date is last because it is the weakest answer to
+            # "which version is this".
+            version_date=(
+                getattr(meta, "last_verified_date", None)
+                or meta.effective_date
+                or getattr(meta, "retrieved_date", None)
+                or getattr(meta, "publication_date", None)
+            ),
+            excerpt=excerpt,
+            publication_date=getattr(meta, "publication_date", None),
+            effective_date=meta.effective_date,
+            retrieved_date=getattr(meta, "retrieved_date", None),
+            last_verified_date=getattr(meta, "last_verified_date", None),
+            status=status,
+        )
+
     def apply_claim_support(self, evidence, support, note: str = ""):
         """Fold the semantic entailment result into an evidence record.
 
-        This is the only path to ``verified``. It is additionally guarded by a
-        deterministic modality check so a classifier cannot promote a mandatory
-        claim from an excerpt that is clearly only permissive/recommendatory.
+        This is the only path to ``verified``. It is guarded by two
+        deterministic checks that a classifier cannot talk its way past:
+
+          * modality — a claim asserting a mandate cannot be promoted from an
+            excerpt that is clearly only permissive or recommendatory;
+          * standing — the source must be established as currently in force. A
+            proposed, superseded, historical or unknown-status source can never
+            confirm a present legal duty, however well its text matches.
         """
         from app.models.schemas import ClaimSupport
 
+        # Standing gate. A non-current source can never carry a claim UP: no
+        # amount of textual support from a proposed, superseded, historical or
+        # unknown-standing document tells you what the law requires today.
+        #
+        # It does not interfere with the downward results. "This excerpt does
+        # not say that" and "this excerpt says the opposite" are observations
+        # about the text itself and remain true whatever the document's
+        # standing, and they are more informative to a reader than a blanket
+        # cannot-determine, so they keep their own meaning.
+        if (
+            not evidence.checks.source_status_current
+            and support in (ClaimSupport.supported, ClaimSupport.partially_supported)
+            # Only when a source was actually matched. With no located passage
+            # there is no standing to judge, and the "no authoritative passage
+            # was located" branch below is both true and more useful than
+            # blaming the source's currency for a citation that does not exist.
+            and evidence.source.excerpt
+        ):
+            evidence.checks.claim_support = support
+            evidence.status = VerificationStatus.cannot_determine
+            evidence.reason = _STATUS_REASONS.get(
+                evidence.checks.source_status, _STATUS_REASONS[SourceStatus.status_unknown]
+            )
+            return evidence
+
+        # Effective-date gate. Same shape as the modality gate: a deterministic
+        # check the classifier cannot overrule, because "the source discusses
+        # this and carries a date" is exactly the pattern that makes a
+        # publication date read as a commencement date.
+        if support in (ClaimSupport.supported, ClaimSupport.partially_supported):
+            bad_date = self._unsupported_effective_date(evidence.claim_text, evidence)
+            if bad_date:
+                support = ClaimSupport.not_supported
+                note = (
+                    f"The claim states {bad_date} as an effective date, but the cited source "
+                    f"does not give an effective date and that date does not appear in the "
+                    f"cited passage. A publication or retrieval date is not an effective date."
+                )
+
         excerpt = evidence.source.excerpt or ""
+        asserts_mandate = self._claim_asserts_mandate(evidence.claim_text)
+
+        # Document-class gate. A claim that presents itself as law has to be
+        # matched to law. This is checked on the source's category rather than
+        # on its wording, because wording is exactly what failed: agency
+        # guidance quotes statutes, paraphrases requirements and uses "must"
+        # freely while disclaiming that it creates any obligation of its own.
+        if (
+            asserts_mandate
+            and support in (ClaimSupport.supported, ClaimSupport.partially_supported)
+            and not evidence.checks.source_is_binding_law
+            # Only when a source was actually located and its class is therefore
+            # known. With no matched authority there is no document class to
+            # judge, and the "no authoritative passage was located" branch below
+            # is the accurate answer.
+            and evidence.checks.citation_exists
+            and evidence.source.excerpt
+        ):
+            support = ClaimSupport.not_supported
+            note = note or _GUIDANCE_NOT_LAW_NOTE
+
         if (
             support == ClaimSupport.supported
-            and self._claim_asserts_mandate(evidence.claim_text)
+            and asserts_mandate
             and self._excerpt_is_clearly_permissive(excerpt)
         ):
             support = ClaimSupport.not_supported
@@ -440,6 +650,10 @@ class VerificationService:
             and evidence.checks.citation_exists
             and evidence.checks.specifics_supported is not False
             and evidence.source.excerpt
+            # Restated here rather than relying on the early return above, so
+            # the conjunction that produces `verified` names every condition it
+            # depends on and cannot be weakened by an edit elsewhere.
+            and evidence.checks.source_status_current
         ):
             evidence.status = VerificationStatus.verified
             evidence.reason = note or (
@@ -462,7 +676,13 @@ class VerificationService:
             )
         else:
             evidence.status = VerificationStatus.partially_verified
-            evidence.reason = note or "The cited passage bears on the claim but does not fully establish it."
+            # An already-recorded reason wins over the generic one. When the
+            # concrete-fact check failed, it named the exact figure the source
+            # does not state -- which is the whole finding -- and overwriting
+            # that with "bears on the claim" threw away the useful half.
+            evidence.reason = note or evidence.reason or (
+                "The cited passage bears on the claim but does not fully establish it."
+            )
         return evidence
 
     def check_unsupported_specifics(
@@ -574,8 +794,10 @@ class VerificationService:
             meta = result.chunk.metadata
             if not meta.citation or not self._citations_match(citation, meta.citation):
                 continue
-            scope_ok = bool(self._source_scope_text(citation, meta.citation, result.chunk.text))
-            current = bool(getattr(meta, "is_current", True))
+            scope_ok = bool(self._source_scope_text(
+                citation, meta.citation, result.chunk.text, allow_full_text=True
+            ))
+            current = can_support_present_duty(resolve_source_status(meta))
             exact = self._normalize_generic_citation(citation) == self._normalize_generic_citation(meta.citation)
             candidates.append((current, scope_ok, exact, result.score, result))
 
@@ -591,8 +813,25 @@ class VerificationService:
         meta = result.chunk.metadata
         return meta.category not in _NON_AUTHORITATIVE_CATEGORIES
 
-    def _source_scope_text(self, claimed: str, stored: str, source_text: str) -> str:
-        """Return text for the exact citation scope, or empty when scope is absent."""
+    def _source_scope_text(
+        self,
+        claimed: str,
+        stored: str,
+        source_text: str,
+        *,
+        allow_full_text: bool = False,
+    ) -> str:
+        """Return text for the exact citation scope, or empty when scope is absent.
+
+        ``allow_full_text`` lets the search fall back to the complete stored
+        section when the retrieved chunk does not contain the cited subsection.
+        That fallback is the point of the authoritative section store: a chunk
+        is an ~800-character window chosen for embedding quality, so the
+        paragraph that decides a claim is very often in the *next* chunk. Before
+        it existed, "the subsection is not in this window" and "the regulation
+        does not contain this subsection" were the same answer, and the second
+        is what got reported.
+        """
         claimed_key = self._citation_key(claimed)
         stored_key = self._citation_key(stored)
         if claimed_key is None:
@@ -611,6 +850,27 @@ class VerificationService:
             if ssubs and tuple(ssubs[: len(subs)]) == tuple(subs):
                 return source_text
 
+        found = self._locate_subsection(source_text, subs)
+        if found:
+            return found
+
+        if allow_full_text:
+            full_text = self._authoritative_full_text(claimed)
+            if full_text and full_text != source_text:
+                return self._locate_subsection(full_text, subs)
+
+        return ""
+
+    @staticmethod
+    def _locate_subsection(source_text: str, subs) -> str:
+        """Text around a nested subsection marker chain, or "" if absent.
+
+        Returns a generous window rather than the paragraph alone: a duty is
+        frequently stated in the lead-in and qualified in the paragraph, and
+        both have to be visible for the support check to be fair.
+        """
+        if not source_text:
+            return ""
         lower = source_text.lower()
         pos = 0
         first_pos = None
@@ -626,6 +886,16 @@ class VerificationService:
         start = max(0, (first_pos or 0) - 150)
         end = min(len(source_text), pos + 2200)
         return source_text[start:end]
+
+    @staticmethod
+    def _authoritative_full_text(citation: str) -> str:
+        """The complete stored text of a cited section, or "" if not held."""
+        try:
+            return get_section_store().get_text(citation) or ""
+        except Exception as e:
+            # Verification must degrade to the retrieved chunk, never fail.
+            logger.warning("Authoritative section lookup failed for %r: %s", citation, e)
+            return ""
 
     def _select_excerpt(
         self,
@@ -856,6 +1126,39 @@ class VerificationService:
     @staticmethod
     def _claim_asserts_mandate(text: str) -> bool:
         return bool(_MANDATORY_CLAIM_RE.search(text or ""))
+
+    @staticmethod
+    def _unsupported_effective_date(claim: str, evidence) -> Optional[str]:
+        """The date a claim asserts as an effective date, if nothing establishes it.
+
+        Returns the offending date, or None when the claim makes no
+        effective-date assertion or the source does establish it.
+
+        A source may carry several dates -- when it was published, when we
+        downloaded it, when we last confirmed it -- and only one of them is an
+        answer to "when did this take effect". Two things can settle that: the
+        source's own stated effective_date, or the date appearing in the cited
+        passage. A publication date is neither, however close it looks.
+        """
+        if not claim or not _EFFECTIVE_DATE_CLAIM_RE.search(claim):
+            return None
+
+        claimed = _DATE_RE.findall(claim)
+        if not claimed:
+            return None
+
+        source = evidence.source
+        stated = (getattr(source, "effective_date", None) or "").strip()
+        excerpt = source.excerpt or ""
+
+        for date_text in claimed:
+            normalized = date_text.strip().lower()
+            if stated and normalized in stated.strip().lower():
+                continue
+            if _DATE_RE.search(excerpt) and normalized in excerpt.lower():
+                continue
+            return date_text
+        return None
 
     @staticmethod
     def _excerpt_is_clearly_permissive(text: str) -> bool:

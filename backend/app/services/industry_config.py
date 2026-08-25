@@ -40,43 +40,47 @@ INDUSTRIES: dict = {
             "A user will provide a hospital compliance or privacy policy. Your job:\n\n"
             "1. Read the policy carefully and identify the exact policy type.\n"
             "2. Automatically identify EVERY federal and state regulation, statute, guidance document, and enforcement "
-            "standard that applies — do not ask, do not limit yourself. Cast the widest possible net. Think: HIPAA Privacy Rule, "
-            "HIPAA Security Rule, HITECH, OIG General Compliance Program Guidance (November 2023 GCPG — first comprehensive "
-            "update since 2008, now emphasizing the 7 elements with greater specificity, data analytics, proactive annual risk "
-            "assessments, and multiple reporting channels), False Claims Act, Anti-Kickback Statute, Stark Law, CMS Conditions of "
-            "Participation, 42 CFR Part 2, state breach notification laws, FTC regulations where applicable, Joint Commission "
-            "standards, NIST CSF where relevant, and anything else that touches this policy area.\n"
-            "3. Check each regulation against the actual policy text — including all 7 OIG compliance program elements: "
-            "(1) Written Policies & Procedures, (2) Compliance Leadership & Oversight (Compliance Officer must NOT report to "
-            "legal or finance), (3) Training & Education (role-specific, risk-focused), (4) Effective Lines of Communication "
-            "(multiple reporting channels — hotline-only is insufficient), (5) Enforcing Standards with consequences AND "
-            "incentives, (6) Risk Assessment, Auditing & Monitoring (annual risk assessments, data analytics), "
-            "(7) Responding to Detected Offenses & Corrective Action.\n"
+            "standard that applies — do not ask, do not limit yourself. Cast the widest possible net across the "
+            "authorities listed below and anything else that genuinely touches this policy area.\n"
+            "3. Check each regulation against the actual policy text, including the OIG compliance program elements. "
+            "Take the elements, their numbering and their content from the OIG guidance in the retrieved reference "
+            "material — that guidance is loaded for exactly this purpose. Do not recite them from memory.\n"
             "4. Identify every gap, missing element, vague language, and non-compliant clause.\n"
             "5. For every gap, write the exact policy language that should replace or be added.\n\n"
             "Be ruthless. Do not soften findings. A compliance officer needs to know exactly what would fail an OCR audit, "
             "OIG investigation, or CMS survey today.\n\n"
-            "CRITICAL ENFORCEMENT CONTEXT (2024–2025): The DOJ recorded its largest healthcare fraud takedown in history "
-            "($14.6B, 324 defendants). HHS now deploys the Health Care Fraud Data Fusion Center — AI/ML analysis of billions "
-            "of claims in real-time across state lines. OIG is publishing Industry-Specific CPGs starting with Nursing Facilities "
-            "(Nov 2024) with Hospitals, Medicare Advantage, and Clinical Laboratories expected in 2025. "
-            "Flag every gap in this heightened enforcement context. Also flag HHS OCR Right of Access enforcement trends "
-            "(2021–2025 settlement patterns) and any 2024–2026 guidance updates relevant to this policy type."
+            # The enforcement briefing that used to sit here -- a dollar figure,
+            # a defendant count, which guidance was published when, which was
+            # "expected" next year -- was current law and current facts written
+            # into a generic instruction. All of it ages, none of it was
+            # checkable against a source, and the model repeated it as fact
+            # while the product claimed every statement was grounded. Anything
+            # of that kind must now arrive through retrieval, with a citation,
+            # or not at all.
+            "ENFORCEMENT CONTEXT: Write findings for an environment of active enforcement — assume a regulator "
+            "will look. But state a specific enforcement fact (a settlement, a penalty amount, a case count, an "
+            "initiative, a publication date, a rule's current status) ONLY when it appears in the retrieved "
+            "reference material, and cite it. Do not supply enforcement statistics, guidance publication dates, "
+            "or the status of any rule from memory: those change, you cannot check them here, and a confident "
+            "wrong one is worse for the reader than none."
         ),
         "regulations": [
             "HIPAA Privacy Rule (45 CFR Part 164 Subpart E)",
             "HIPAA Security Rule (45 CFR Part 164 Subpart C)",
             "HIPAA Breach Notification Rule (45 CFR Part 164 Subpart D)",
             "HITECH Act (Pub. L. 111-5)",
-            "OIG General Compliance Program Guidance (GCPG, Nov 2023) — 7 Elements",
-            "OIG Industry-Specific CPG: Nursing Facilities (Nov 2024)",
+            # Named without publication dates. This list scopes WHICH
+            # authorities to consider; the dates and contents belong to the
+            # retrieved documents, which carry their own.
+            "OIG General Compliance Program Guidance (GCPG)",
+            "OIG Industry-Specific Compliance Program Guidance",
             "False Claims Act (31 U.S.C. §3729)",
             "Anti-Kickback Statute (42 U.S.C. §1320a-7b(b))",
             "Stark Law (42 U.S.C. §1395nn)",
             "CMS Conditions of Participation (42 CFR Part 482)",
             "42 CFR Part 2 (Substance Abuse Confidentiality)",
-            "HHS OCR Right of Access Enforcement (2021–2025 settlements)",
-            "NIST Cybersecurity Framework 2.0",
+            "HHS OCR Right of Access enforcement",
+            "NIST Cybersecurity Framework",
             "Joint Commission Standards",
         ],
         "state_addendum": (
@@ -117,21 +121,30 @@ INDUSTRIES: dict = {
             "(referral-source relationships are a top OIG enforcement focus in home health), False Claims Act "
             "(upcoding, medically unnecessary visits, PDGM billing fraud), OASIS data integrity requirements, "
             "state home health agency licensure, and caregiver/aide background check and training mandates.\n"
+            # The timeframes that used to be written into this instruction --
+            # the initial-assessment window, the annual in-service hours, the
+            # supervisory-visit cadence -- are real regulatory numbers, and
+            # putting them here taught the model the answer before it read the
+            # source. It would then state them with a citation whether or not
+            # the retrieved text said so, which is the single most harmful
+            # error this product can make. The topics stay; the numbers come
+            # from the regulation.
             "3. For Medicare-certified agencies: verify the policy addresses OASIS-driven care planning, the "
-            "initial assessment timeframes (within 48 hours of referral or the physician-ordered start-of-care date, "
-            "whichever is later), physician plan of care (485) signature and recertification cycles, and QAPI "
-            "program requirements (data-driven, agency-wide, at least annual review).\n"
-            "4. For aide/caregiver-facing policies: verify competency evaluation, 12-hour annual in-service training, "
-            "RN supervisory visit cadence (14-day for Medicare patients receiving aide services), and background "
-            "check compliance against state requirements.\n"
+            "initial assessment timeframe, physician plan-of-care signature and recertification cycles, and QAPI "
+            "program requirements. Take every interval and deadline from the retrieved regulatory text and cite "
+            "it; where the policy states a period the source does not, say so rather than confirming it.\n"
+            "4. For aide/caregiver-facing policies: verify competency evaluation, in-service training "
+            "requirements, RN supervisory visit cadence, and background check compliance against state "
+            "requirements — again taking each frequency and duration from the source, never from memory.\n"
             "5. Check each regulation against the actual policy text.\n"
             "6. Identify every gap, missing element, vague language, or non-compliant clause.\n"
             "7. For every gap, write the exact policy language that should replace or be added.\n\n"
             "Be specific. An HHA administrator needs to know exactly what would fail a state survey, a CMS "
             "Conditions of Participation deficiency citation, or an OIG program integrity audit today.\n\n"
-            "Flag any 2024–2026 updates to the Home Health CoPs, Patient-Driven Groupings Model (PDGM) payment "
-            "changes, Home Health Value-Based Purchasing (HHVBP, expanded nationally in 2023) requirements, "
-            "OASIS-E updates, or OIG Work Plan items targeting home health fraud and program integrity."
+            "Flag a recent change to the Home Health CoPs, the Patient-Driven Groupings Model, Home Health "
+            "Value-Based Purchasing, OASIS, or the OIG Work Plan ONLY where the retrieved reference material "
+            "shows one, and cite it. Do not state when any of these changed, or what their current status is, "
+            "from memory."
         ),
         "regulations": [
             "42 CFR Part 484 — Home Health Agency Conditions of Participation",
@@ -192,7 +205,7 @@ INDUSTRIES: dict = {
             "1. Read the policy and identify the exact policy type and pharmacy setting.\n"
             "2. Identify EVERY federal and state requirement that applies. Key frameworks: the "
             "Controlled Substances Act and DEA regulations (21 CFR Parts 1300-1306) covering "
-            "registration, biennial inventory, recordkeeping, prescription requirements, partial "
+            "registration, periodic inventory, recordkeeping, prescription requirements, partial "
             "fills, transfers, and DEA Form 222/CSOS ordering; theft and significant loss reporting "
             "on DEA Form 106; corresponding responsibility for the validity of prescriptions; "
             "USP <795>/<797>/<800> standards for non-sterile, sterile, and hazardous drug "

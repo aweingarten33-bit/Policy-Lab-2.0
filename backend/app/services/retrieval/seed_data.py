@@ -19,7 +19,7 @@ from typing import Dict
 from app.services.retrieval.ecfr_client import get_ecfr_client, ECFR_TARGETS
 from app.config import settings
 from app.services.retrieval.ingestion import ingest_source_document
-from app.services.retrieval.models import Jurisdiction, SourceType
+from app.services.retrieval.models import Jurisdiction, SourceStatus, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,7 @@ async def _seed_guidance() -> Dict[str, int]:
 
     client = get_guidance_client()
     results: Dict[str, int] = {}
+    today = date.today().isoformat()
 
     logger.info(f"Seeding compliance guidance ({len(GUIDANCE_DOCUMENTS)} documents)...")
 
@@ -112,7 +113,17 @@ async def _seed_guidance() -> Dict[str, int]:
                     citation=doc.citation,
                     url=fetched["url"],
                     authority=doc.authority,
-                    effective_date=doc.published,
+                    # `doc.published` is the date the guidance was published.
+                    # It was previously written into effective_date, which is a
+                    # different fact and one these documents do not state --
+                    # guidance is not a rule with a commencement date.
+                    publication_date=doc.published,
+                    retrieved_date=today,
+                    last_verified_date=today,
+                    # These are the current, in-force editions of the OIG/HCCA
+                    # guidance, shipped with the repo and superseded only when
+                    # the agency issues a replacement.
+                    source_status=SourceStatus.current_verified,
                     section=section["heading"],
                     source_type=SourceType.retrieved_source,
                 )
@@ -127,10 +138,105 @@ async def _seed_guidance() -> Dict[str, int]:
     return results
 
 
+def ingest_cfr_part_sections(
+    chunks,
+    *,
+    title: int,
+    part: int,
+    category,
+    fetched_date: str,
+) -> int:
+    """Ingest one CFR part, one section at a time, and keep the full text.
+
+    Shared by the initial seed and the nightly refresh. They previously had
+    separate copies of this, and the copies disagreed -- so a fix applied to
+    seeding was quietly undone the next night when the refresh re-ingested the
+    same parts the old way.
+
+    Each section is its own document under its own section-level citation, so
+    a finding citing §164.404 can be matched against it. The part-level
+    citation rides along in part_citation, which is what industry scoping
+    filters on. The complete untruncated section text also goes to the
+    authoritative section store, so verification can resolve a subsection the
+    retrieval chunks do not happen to contain.
+
+    Returns the number of embedded chunks created.
+    """
+    from app.services.retrieval.section_store import get_section_store
+
+    part_citation = f"{title} CFR Part {part}"
+    total = 0
+    bounded = 0
+    authoritative = []
+    max_embed = settings.kb_max_embed_chars_per_section
+
+    for chunk in chunks:
+        meta = chunk.metadata
+
+        # Two destinations, deliberately different.
+        #
+        # The vector store gets a bounded slice: it exists to FIND the section,
+        # and embedding cost is linear in characters. The section store gets the
+        # complete text: it exists to CHECK a claim, and a claim must be
+        # checkable against the whole provision.
+        #
+        # This is not the old truncation returning. That cut the text before
+        # anything else saw it, so a subsection past the cut was gone from the
+        # system entirely. Here nothing is discarded, the bound is recorded, and
+        # verification resolves the full scope from the section store regardless.
+        embed_text = chunk.text
+        if len(embed_text) > max_embed:
+            embed_text = embed_text[:max_embed]
+            bounded += 1
+
+        total += ingest_source_document(
+            source_name=meta.source_name,
+            text=embed_text,
+            category=category,
+            jurisdiction=Jurisdiction.federal,
+            citation=meta.citation,
+            part_citation=part_citation,
+            url=meta.url,
+            authority=meta.authority,
+            section=meta.section,
+            retrieved_date=fetched_date,
+            last_verified_date=fetched_date,
+            source_status=meta.source_status,
+            source_type=SourceType.retrieved_source,
+            # One namespace per part, so the nightly refresh can clear the
+            # previous version of exactly this part before writing the new one.
+            id_prefix=f"ecfr_{title}_{part}",
+        )
+        authoritative.append({
+            "citation": meta.citation,
+            "part_citation": part_citation,
+            "source_name": meta.source_name,
+            "authority": meta.authority,
+            "url": meta.url,
+            "full_text": chunk.text,
+            "retrieved_date": fetched_date,
+            "last_verified_date": fetched_date,
+            "source_status": meta.source_status.value if meta.source_status else None,
+        })
+
+    stored = get_section_store().put_many(authoritative)
+    logger.info(
+        f"  {part_citation}: {total} chunks embedded, {stored} full sections stored"
+        + (
+            f" ({bounded} section(s) longer than {max_embed} chars were indexed on their "
+            f"first {max_embed} chars; their complete text is in the section store and "
+            f"remains fully available to verification)"
+            if bounded else ""
+        )
+    )
+    return total
+
+
 async def _async_seed() -> Dict[str, int]:
     """Async implementation: fetch eCFR and ingest into ChromaDB."""
     from app.services.retrieval.store import get_store
     from app.services.retrieval.ecfr_client import parts_to_source_chunks
+    from app.services.retrieval.section_store import get_section_store
 
     import time
 
@@ -192,28 +298,19 @@ async def _async_seed() -> Dict[str, int]:
                 results[label] = 0
                 continue
 
-            # Ingest as a single document (ingestion module handles chunking)
-            combined_text = "\n\n".join(c.text for c in chunks)
-
-            # This call used to pass `store=` and `title=` (neither is a
-            # parameter), a `source_type` string that is not a SourceType
-            # member, and then read `.get("chunks_added")` off what is
-            # actually an int. Every CFR part therefore raised TypeError
-            # inside the loop's except-block, which logged "Failed to seed"
-            # and recorded 0 -- indistinguishable from eCFR having no
-            # content. Downloading and parsing had already succeeded; the
-            # results were being thrown away at the last step.
-            n = ingest_source_document(
-                source_name=f"{label} [eCFR {today}]",
-                text=combined_text,
-                category=category,
-                jurisdiction=Jurisdiction.federal,
-                citation=f"{title} CFR Part {part}",
-                url=f"https://www.ecfr.gov/current/title-{title}/part-{part}",
-                authority="eCFR — Electronic Code of Federal Regulations (current, in-force text)",
-                effective_date=today,
-                source_type=SourceType.retrieved_source,
+            # Ingested one SECTION at a time, not as one concatenated part.
+            #
+            # This used to join every section of a part into a single document
+            # and ingest it under the part-level citation "45 CFR Part 164".
+            # That threw away the per-section citations the parser had just
+            # produced, and verification matches a finding's citation against
+            # the stored one: a claim citing "45 CFR §164.404(c)" was compared
+            # against "45 CFR Part 164", the citation keys did not match, and
+            # no eCFR chunk could support any section-level claim at all.
+            n = ingest_cfr_part_sections(
+                chunks, title=title, part=part, category=category, fetched_date=today
             )
+
             results[label] = n
             logger.info(f"  ✓ {label}: {n} chunks from eCFR")
 

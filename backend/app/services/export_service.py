@@ -122,6 +122,7 @@ VERIFICATION_STATUS_LABELS = {
     VerificationStatus.partially_verified: "Partially Verified",
     VerificationStatus.unverified: "Unverified",
     VerificationStatus.contradicted: "Contradicted",
+    VerificationStatus.cannot_determine: "Cannot Determine",
 }
 
 VERIFICATION_STATUS_COLORS = {
@@ -129,7 +130,21 @@ VERIFICATION_STATUS_COLORS = {
     VerificationStatus.partially_verified: COLOR_STATUS_PARTIAL,
     VerificationStatus.unverified: COLOR_STATUS_UNVERIFIED,
     VerificationStatus.contradicted: COLOR_STATUS_CONTRADICTED,
+    # Shares the unverified colour deliberately. Both mean "do not rely on
+    # this"; the label carries the difference between them.
+    VerificationStatus.cannot_determine: COLOR_STATUS_UNVERIFIED,
 }
+
+
+# Everything that is not a confirmed claim. cannot_determine belongs here: a
+# claim whose source standing could not be established is exactly as unsafe to
+# rely on as one with no supporting source, and counting it in neither column
+# made it vanish from the report's own tally.
+_NOT_CONFIRMED_STATUSES = (
+    VerificationStatus.unverified,
+    VerificationStatus.contradicted,
+    VerificationStatus.cannot_determine,
+)
 
 
 def _set_cell_shading(cell, color_hex: str):
@@ -429,6 +444,7 @@ def _add_source_legend(doc):
         (VerificationStatus.partially_verified, "Partially Verified — Some supporting evidence found, but not an exact match"),
         (VerificationStatus.unverified, "Unverified — No supporting evidence found in the source material. Requires independent review."),
         (VerificationStatus.contradicted, "Contradicted — Source material contradicts this claim. Do not rely on it."),
+        (VerificationStatus.cannot_determine, "Cannot Determine — The matching source is a proposal, an older version, archived material, or of unestablished standing, so it cannot show what the law requires today. Check the current text of the provision."),
     ]
 
     for status, description in verif_items:
@@ -1264,27 +1280,27 @@ def _build_verification_summary_section(doc: Document, package: ComplianceAction
     output_verification = []
     if package.gap_analysis and package.gap_analysis.source_attributions:
         verified = sum(1 for a in package.gap_analysis.source_attributions if a.verification_status == VerificationStatus.verified)
-        unverified = sum(1 for a in package.gap_analysis.source_attributions if a.verification_status in (VerificationStatus.unverified, VerificationStatus.contradicted))
+        unverified = sum(1 for a in package.gap_analysis.source_attributions if a.verification_status in _NOT_CONFIRMED_STATUSES)
         output_verification.append(("Gap Analysis", len(package.gap_analysis.source_attributions), verified, unverified, package.gap_analysis.live_research_used))
 
     if package.rewritten_policy and package.rewritten_policy.source_attributions:
         verified = sum(1 for a in package.rewritten_policy.source_attributions if a.verification_status == VerificationStatus.verified)
-        unverified = sum(1 for a in package.rewritten_policy.source_attributions if a.verification_status in (VerificationStatus.unverified, VerificationStatus.contradicted))
+        unverified = sum(1 for a in package.rewritten_policy.source_attributions if a.verification_status in _NOT_CONFIRMED_STATUSES)
         output_verification.append(("Rewritten Policy", len(package.rewritten_policy.source_attributions), verified, unverified, package.rewritten_policy.live_research_used))
 
     if package.remediation_plan and package.remediation_plan.source_attributions:
         verified = sum(1 for a in package.remediation_plan.source_attributions if a.verification_status == VerificationStatus.verified)
-        unverified = sum(1 for a in package.remediation_plan.source_attributions if a.verification_status in (VerificationStatus.unverified, VerificationStatus.contradicted))
+        unverified = sum(1 for a in package.remediation_plan.source_attributions if a.verification_status in _NOT_CONFIRMED_STATUSES)
         output_verification.append(("Remediation Plan", len(package.remediation_plan.source_attributions), verified, unverified, package.remediation_plan.live_research_used))
 
     if package.board_summary and package.board_summary.source_attributions:
         verified = sum(1 for a in package.board_summary.source_attributions if a.verification_status == VerificationStatus.verified)
-        unverified = sum(1 for a in package.board_summary.source_attributions if a.verification_status in (VerificationStatus.unverified, VerificationStatus.contradicted))
+        unverified = sum(1 for a in package.board_summary.source_attributions if a.verification_status in _NOT_CONFIRMED_STATUSES)
         output_verification.append(("Board Summary", len(package.board_summary.source_attributions), verified, unverified, package.board_summary.live_research_used))
 
     if package.implementation_checklist and package.implementation_checklist.source_attributions:
         verified = sum(1 for a in package.implementation_checklist.source_attributions if a.verification_status == VerificationStatus.verified)
-        unverified = sum(1 for a in package.implementation_checklist.source_attributions if a.verification_status in (VerificationStatus.unverified, VerificationStatus.contradicted))
+        unverified = sum(1 for a in package.implementation_checklist.source_attributions if a.verification_status in _NOT_CONFIRMED_STATUSES)
         output_verification.append(("Checklist", len(package.implementation_checklist.source_attributions), verified, unverified, package.implementation_checklist.live_research_used))
 
     if output_verification:

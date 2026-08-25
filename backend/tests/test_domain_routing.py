@@ -89,7 +89,25 @@ class TestIndustryScoping:
     def test_the_filter_is_flat_with_one_clause(self, retriever):
         only_industry = retriever._build_metadata_filter(None, "healthcare")
         assert "$and" not in only_industry
-        assert "citation" in only_industry
+        assert "$or" in only_industry
+
+    def test_scoping_filters_on_the_part_not_the_section(self, retriever):
+        """eCFR content is stored per section, so a filter comparing `citation`
+        against part-level strings would match nothing at all."""
+        clause = retriever._build_metadata_filter(None, "healthcare")
+        assert any("part_citation" in c for c in clause["$or"])
+        assert not any("citation" in c and "part_citation" not in c for c in clause["$or"])
+
+    def test_guidance_without_a_part_is_not_filtered_out(self, retriever):
+        """OIG/HCCA compliance-program guidance has no CFR part, so it must be
+        admitted by the empty-part arm.
+
+        Under the old `citation` filter it was excluded from every retrieval
+        where an industry was named -- which is every real request -- so the
+        material defining the seven elements of an effective compliance program
+        never reached a healthcare analysis."""
+        clause = retriever._build_metadata_filter(None, "healthcare")
+        assert {"part_citation": ""} in clause["$or"]
 
 
 class TestEmploymentBaselineSurvivedTheNarrowing:

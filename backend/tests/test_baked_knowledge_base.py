@@ -111,11 +111,6 @@ def default_build():
     return _run_build()
 
 
-@pytest.fixture(scope="session")
-def strict_build():
-    return _run_build("--require-success")
-
-
 def _regulatory_chunks(stdout):
     """How many chunks came from eCFR, per the build's own report."""
     match = re.search(r"\((\d+) of them regulatory text from eCFR\)", stdout)
@@ -142,26 +137,70 @@ def test_a_normal_build_never_fails_and_reports_what_it_got(default_build):
         assert "guidance-only grounding" in default_build.stderr
 
 
-def test_strict_mode_requires_the_regulations_not_merely_content(strict_build):
+class TestStrictModeRequiresTheRegulations:
     """The gate has to check the thing it exists to protect.
 
     Strict mode used to fail only when the total chunk count was zero. The
     bundled guidance always loads from disk, so the total is never zero -- and
     a build in which eCFR was unreachable and not one regulation downloaded
     would have passed. The switch protected against nothing.
-    """
-    regulatory = _regulatory_chunks(strict_build.stdout)
 
-    if regulatory > 0:
-        # eCFR was reachable: a strict build is exactly what should succeed.
-        assert strict_build.returncode == 0, strict_build.stderr
-    else:
-        assert strict_build.returncode == 1, strict_build.stdout
-        assert "FAILED" in strict_build.stderr
-        assert "no regulatory text was downloaded" in strict_build.stderr
+    Driven by stubbing the build's return values rather than by running a second
+    real build. The gate is a decision about two numbers, and running the whole
+    download-and-embed a second time to observe it doubled the CI job for no
+    additional coverage -- which is most of why that job started timing out.
+    Stubbing also lets the eCFR-unreachable branch be tested on a machine where
+    eCFR IS reachable; it previously could only be observed by luck.
+    """
+
+    def _main(self, monkeypatch, total, regulatory, strict=True):
+        import io
+        import contextlib
+        import importlib.util
+        import pathlib
+        import sys
+
+        path = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "build_knowledge_base.py"
+        spec = importlib.util.spec_from_file_location("build_kb_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        async def _fake_build():
+            return total, regulatory
+
+        monkeypatch.setattr(module, "_build", _fake_build)
+        monkeypatch.setattr(
+            sys, "argv",
+            ["build_knowledge_base.py"] + (["--require-success"] if strict else []),
+        )
+
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = module.main()
+        return code, out.getvalue(), err.getvalue()
+
+    def test_regulations_downloaded_passes(self, monkeypatch):
+        code, out, _ = self._main(monkeypatch, total=5000, regulatory=4500)
+        assert code == 0
+        assert "SUCCESS" in out
+
+    def test_guidance_only_fails_the_strict_build(self, monkeypatch):
+        """The case the gate exists for: guidance loaded, no regulations."""
+        code, out, err = self._main(monkeypatch, total=500, regulatory=0)
+        assert code == 1, out
+        assert "FAILED" in err
+        assert "no regulatory text was downloaded" in err
         # The failure must still report the partial success, or it is harder
         # to act on.
-        assert "chunks of bundled guidance loaded" in strict_build.stderr
+        assert "chunks of bundled guidance loaded" in err
+
+    def test_guidance_only_ships_when_the_gate_is_off(self, monkeypatch):
+        """Without --require-success the same build must ship, with a warning.
+        An eCFR outage should not block an unrelated fix."""
+        code, out, err = self._main(monkeypatch, total=500, regulatory=0, strict=False)
+        assert code == 0
+        assert "SUCCESS" in out
+        assert "guidance-only grounding" in err
 
 
 class TestReleaseBuildIsStrict:

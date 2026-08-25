@@ -71,6 +71,13 @@ def reconcile_package_verification(
                     "A concrete figure, threshold, deadline, percentage, amount, age, ratio, "
                     "or distance in this requirement was not confirmed at the cited source scope."
                 )
+            elif evidence.status is VerificationStatus.cannot_determine:
+                reason = (
+                    "The matching source is a proposal, an older version, archived material, "
+                    "or of unestablished standing, so it cannot show what the law requires "
+                    "today. Check the current text of the provision before treating this as "
+                    "a legal requirement."
+                )
             elif evidence.status is VerificationStatus.partially_verified:
                 reason = (
                     "The authority was only partially verified or the cited passage did not "

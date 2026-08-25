@@ -332,6 +332,10 @@ const EVIDENCE_STYLE: Record<string, { label: string; color: string; bg: string 
   partially_verified: { label: "Partially verified",      color: "hsl(38 85% 38%)",  bg: "hsl(38 85% 52% / 0.12)" },
   unverified:         { label: "Not verified",            color: "hsl(25 90% 40%)",  bg: "hsl(25 90% 50% / 0.12)" },
   contradicted:       { label: "Source disagrees",        color: "hsl(0 72% 45%)",   bg: "hsl(0 72% 51% / 0.12)" },
+  // The source was found but is a proposal, an older version, an archived page,
+  // or something whose standing could not be established — so it cannot say
+  // what the law requires today, whatever its text happens to match.
+  cannot_determine:   { label: "Source not current",      color: "hsl(210 45% 38%)", bg: "hsl(210 45% 50% / 0.12)" },
 };
 
 function EvidencePanel({ evidence }: { evidence: VerificationEvidence }) {
