@@ -166,13 +166,32 @@ def ingest_cfr_part_sections(
 
     part_citation = f"{title} CFR Part {part}"
     total = 0
+    bounded = 0
     authoritative = []
+    max_embed = settings.kb_max_embed_chars_per_section
 
     for chunk in chunks:
         meta = chunk.metadata
+
+        # Two destinations, deliberately different.
+        #
+        # The vector store gets a bounded slice: it exists to FIND the section,
+        # and embedding cost is linear in characters. The section store gets the
+        # complete text: it exists to CHECK a claim, and a claim must be
+        # checkable against the whole provision.
+        #
+        # This is not the old truncation returning. That cut the text before
+        # anything else saw it, so a subsection past the cut was gone from the
+        # system entirely. Here nothing is discarded, the bound is recorded, and
+        # verification resolves the full scope from the section store regardless.
+        embed_text = chunk.text
+        if len(embed_text) > max_embed:
+            embed_text = embed_text[:max_embed]
+            bounded += 1
+
         total += ingest_source_document(
             source_name=meta.source_name,
-            text=chunk.text,
+            text=embed_text,
             category=category,
             jurisdiction=Jurisdiction.federal,
             citation=meta.citation,
@@ -203,6 +222,12 @@ def ingest_cfr_part_sections(
     stored = get_section_store().put_many(authoritative)
     logger.info(
         f"  {part_citation}: {total} chunks embedded, {stored} full sections stored"
+        + (
+            f" ({bounded} section(s) longer than {max_embed} chars were indexed on their "
+            f"first {max_embed} chars; their complete text is in the section store and "
+            f"remains fully available to verification)"
+            if bounded else ""
+        )
     )
     return total
 

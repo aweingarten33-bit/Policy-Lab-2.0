@@ -156,6 +156,31 @@ _NON_AUTHORITATIVE_CATEGORIES = {
     SourceCategory.example_policy,
 }
 
+# Codified law. Only these can establish that something is legally REQUIRED.
+#
+# Everything outside this set is authoritative about what an agency says, and
+# not about what the law compels. That distinction was missing, and the gap was
+# reachable: an OIG General Compliance Program Guidance passage whose own words
+# are "This guidance does not create any new law or legal obligations" verified
+# a finding that read "the Compliance Officer is required by law not to report
+# to finance." The modality check did not catch it, because that check only
+# fires on affirmatively permissive wording ("may", "should") -- a disclaimer is
+# neither permissive nor mandatory, so it sailed through.
+#
+# Guidance is still fully usable, and still verifiable. What it cannot do is
+# carry a claim that presents itself as black-letter law.
+_LEGALLY_BINDING_CATEGORIES = {
+    SourceCategory.federal_regulation,
+    SourceCategory.state_law,
+}
+
+_GUIDANCE_NOT_LAW_NOTE = (
+    "The cited source is agency guidance, not codified law. Guidance shows what a "
+    "regulator expects and is strong evidence of good practice, but it does not "
+    "itself create a legal obligation — so this cannot be confirmed as a legal "
+    "requirement. Cite the underlying regulation or statute if one imposes the duty."
+)
+
 # Why a source of each non-current standing cannot settle a present-day duty.
 # Written for a compliance officer reading the finding, not for a log.
 _STATUS_REASONS = {
@@ -448,6 +473,7 @@ class VerificationService:
         status = resolve_source_status(meta)
         evidence.checks.source_status = status
         evidence.checks.source_status_current = can_support_present_duty(status)
+        evidence.checks.source_is_binding_law = meta.category in _LEGALLY_BINDING_CATEGORIES
 
         if not can_support_present_duty(status):
             # A source whose standing is proposed, superseded, historical or
@@ -582,9 +608,30 @@ class VerificationService:
                 )
 
         excerpt = evidence.source.excerpt or ""
+        asserts_mandate = self._claim_asserts_mandate(evidence.claim_text)
+
+        # Document-class gate. A claim that presents itself as law has to be
+        # matched to law. This is checked on the source's category rather than
+        # on its wording, because wording is exactly what failed: agency
+        # guidance quotes statutes, paraphrases requirements and uses "must"
+        # freely while disclaiming that it creates any obligation of its own.
+        if (
+            asserts_mandate
+            and support in (ClaimSupport.supported, ClaimSupport.partially_supported)
+            and not evidence.checks.source_is_binding_law
+            # Only when a source was actually located and its class is therefore
+            # known. With no matched authority there is no document class to
+            # judge, and the "no authoritative passage was located" branch below
+            # is the accurate answer.
+            and evidence.checks.citation_exists
+            and evidence.source.excerpt
+        ):
+            support = ClaimSupport.not_supported
+            note = note or _GUIDANCE_NOT_LAW_NOTE
+
         if (
             support == ClaimSupport.supported
-            and self._claim_asserts_mandate(evidence.claim_text)
+            and asserts_mandate
             and self._excerpt_is_clearly_permissive(excerpt)
         ):
             support = ClaimSupport.not_supported

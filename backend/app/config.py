@@ -111,6 +111,23 @@ class Settings(BaseSettings):
     # container's budget; raise it on a bigger instance for faster seeding.
     kb_embed_batch_size: int = 32
 
+    # Upper bound on how much of a single regulatory section is EMBEDDED for
+    # retrieval. The complete section text is always kept, in the authoritative
+    # section store, and verification reads from there — so this bounds index
+    # size and build time, and never bounds what a claim can be checked against.
+    #
+    # That distinction is the whole point, and it is what the old
+    # `full_text[:3000]` in the eCFR parser got wrong: that cut discarded the
+    # text outright, so a subsection past it could not be verified at all.
+    #
+    # Embedding cost is linear in characters (~100ms per 800-character chunk on
+    # a small instance). Removing the old cap made every long section embed in
+    # full, which roughly doubled corpus build time and pushed the CI job past
+    # its 25-minute limit. 6,000 is twice the old cap: long enough that the vast
+    # majority of CFR sections are indexed whole, bounded enough that a handful
+    # of very long ones cannot dominate the build.
+    kb_max_embed_chars_per_section: int = 6000
+
     # Whether a running container may download and embed the corpus itself.
     #
     # Seeding needs roughly twice the memory of serving. On a small instance

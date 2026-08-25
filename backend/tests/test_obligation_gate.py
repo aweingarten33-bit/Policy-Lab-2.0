@@ -51,6 +51,10 @@ def _row(obligation, support, specifics=None):
                 # separately in TestNonCurrentSourcesAreDowngraded below.
                 source_status=SourceStatus.current_verified,
                 source_status_current=True,
+                # These fixtures cite CFR sections, i.e. codified law. Document
+                # class is its own precondition, exercised separately in
+                # TestGuidanceCannotEstablishLaw.
+                source_is_binding_law=True,
             ),
         ),
     )

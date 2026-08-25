@@ -57,7 +57,9 @@ def _finding(text, support, *, obligation=ObligationType.required, specifics=Non
                 # Standing held at current: these cases are about entailment,
                 # and a non-current source now downgrades a mandate on its own.
                 source_status=SourceStatus.current_verified,
+                # CFR citations throughout: codified law.
                 source_status_current=True,
+                source_is_binding_law=True,
             ),
         ),
     )

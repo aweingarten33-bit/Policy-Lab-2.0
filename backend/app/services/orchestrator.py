@@ -297,6 +297,27 @@ class PackageOrchestrator:
                 continue
 
             support = evidence.checks.claim_support
+
+            # A mandate matched only to agency guidance is reclassified as
+            # guidance, not as an unverified requirement. Both stop it being
+            # presented as law, but "this is agency guidance" is the true
+            # answer and a more useful one: the reader learns what the finding
+            # actually is, rather than that a check failed.
+            if (
+                evidence.checks.citation_exists
+                and not evidence.checks.source_is_binding_law
+                and evidence.checks.source_status_current
+            ):
+                row.obligation_type = ObligationType.guidance
+                row.obligation_note = (
+                    "Reclassified from a legal requirement: the cited source is agency "
+                    "guidance, not codified law. It shows what a regulator expects — it "
+                    "does not by itself create a legal obligation. Cite the underlying "
+                    "regulation or statute if one imposes this duty."
+                )
+                downgraded += 1
+                continue
+
             if not evidence.checks.source_status_current:
                 # The source exists but is a proposal, an older version, or of
                 # unestablished standing. A finding may still be worth acting

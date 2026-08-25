@@ -95,6 +95,7 @@ class TestOnlyClaimSupportPromotes:
                 citation_exists=citation_exists,
                 source_status=SourceStatus.current_verified,
                 source_status_current=True,
+                source_is_binding_law=True,
             ),
             source=EvidenceSource(
                 excerpt="A covered entity must send notification within 30 days of discovery."
@@ -155,6 +156,7 @@ class TestAbsentEvidenceIsNotPartialSupport:
         # excerpt conditions.
         checks.setdefault("source_status", SourceStatus.current_verified)
         checks.setdefault("source_status_current", True)
+        checks.setdefault("source_is_binding_law", True)
         return VerificationEvidence(
             claim_id="c", claim_text="45 CFR 164.530 requires annual training.",
             checks=EvidenceChecks(**checks),

@@ -273,6 +273,15 @@ class EvidenceChecks(BaseModel):
             "source can never confirm a present legal duty."
         ),
     )
+    source_is_binding_law: bool = Field(
+        False,
+        description=(
+            "The matched source is codified law (a regulation or statute) rather "
+            "than agency guidance. Required before a claim asserting a legal "
+            "MANDATE can be verified: guidance can show what an agency expects, "
+            "but it does not create a legal obligation."
+        ),
+    )
 
 
 class VerificationEvidence(BaseModel):
