@@ -208,3 +208,93 @@ class TestTheOutputWasTrimmed:
         from app.services.llm_service import RESPONSE_SCHEMA
         assert "EMPTY gap_table is a valid" in RESPONSE_SCHEMA
         assert "Never pad output to meet a count" in RESPONSE_SCHEMA
+
+
+class TestInterimSnapshotsDoNotStickALabel:
+    """A label applied to a half-finished snapshot must not become permanent.
+
+    reconcile_package_verification() downgrades any finding still claiming
+    `required` whose evidence does not fully verify. It runs on every package
+    the server emits — and streaming emits many more of them, all from before
+    the verification pass has run, when no finding has evidence yet.
+
+    If it acted on those, the first snapshot would downgrade every finding to
+    `unverified_requirement`, and because the check only looks at rows that are
+    still `required`, verification could never put them back. Every finding
+    would read "unverified requirement" forever, including the correct ones.
+
+    It is guarded against by an early return on non-complete packages. That
+    guard predates streaming and is easy to remove while tidying, so the
+    consequence is pinned here.
+    """
+
+    def _row(self, evidence=None):
+        from app.models.schemas import GapRow, GapStatus, ObligationType
+        return GapRow(
+            clause="Breach notification content",
+            regulations=["45 CFR § 164.404"],
+            status=GapStatus.gap,
+            finding="The policy does not state what a notification must contain.",
+            suggested_language="Each notification shall include a description.",
+            citation="45 CFR § 164.404(c)",
+            obligation_type=ObligationType.required,
+            evidence=evidence,
+        )
+
+    def _package(self, row, status):
+        from datetime import datetime
+        from app.models.schemas import AnalysisResult, ComplianceActionPackage
+        return ComplianceActionPackage(
+            package_id="p", created_at=datetime.now().isoformat(), policy_type="t",
+            gap_analysis=AnalysisResult(
+                policy_type="t", audit_ready_summary="s", gap_table=[row]
+            ),
+            status=status, completed_outputs=[],
+        )
+
+    def _verified_evidence(self):
+        from app.models.schemas import (
+            ClaimSupport, EvidenceChecks, EvidenceSource, SourceStatus,
+            VerificationEvidence, VerificationStatus,
+        )
+        return VerificationEvidence(
+            claim_id="c1", claim_text="f", status=VerificationStatus.verified,
+            source=EvidenceSource(excerpt="A covered entity shall notify each individual."),
+            checks=EvidenceChecks(
+                citation_exists=True, claim_support=ClaimSupport.supported,
+                specifics_supported=True, source_status=SourceStatus.current_verified,
+                source_status_current=True, source_is_binding_law=True,
+            ),
+        )
+
+    def test_an_interim_snapshot_leaves_the_label_alone(self):
+        from app.models.schemas import ObligationType, PackageStatus
+        from app.services.package_integrity import reconcile_package_verification
+
+        row = self._row()  # no evidence yet — verification has not run
+        reconcile_package_verification(self._package(row, PackageStatus.analyzing))
+        assert row.obligation_type is ObligationType.required
+
+    def test_a_verified_finding_survives_many_interim_snapshots(self):
+        """The streaming case: one snapshot per finding, all before verification."""
+        from app.models.schemas import ObligationType, PackageStatus
+        from app.services.package_integrity import reconcile_package_verification
+
+        row = self._row()
+        for _ in range(10):
+            reconcile_package_verification(self._package(row, PackageStatus.analyzing))
+
+        row.evidence = self._verified_evidence()
+        reconcile_package_verification(self._package(row, PackageStatus.complete))
+        assert row.obligation_type is ObligationType.required, (
+            "an early snapshot stuck a downgrade that verification could not undo"
+        )
+
+    def test_the_final_package_still_fails_closed(self):
+        """The guard must not become a way to skip the check entirely."""
+        from app.models.schemas import ObligationType, PackageStatus
+        from app.services.package_integrity import reconcile_package_verification
+
+        row = self._row()  # complete, and still no evidence
+        reconcile_package_verification(self._package(row, PackageStatus.complete))
+        assert row.obligation_type is ObligationType.unverified_requirement
