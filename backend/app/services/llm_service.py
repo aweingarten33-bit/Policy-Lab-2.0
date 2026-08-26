@@ -275,18 +275,18 @@ failed analysis.
 {
   "policy_type": "Specific policy type — not a category. Name the subject and the function, e.g. '<Subject> Notification & Risk-Assessment Policy' rather than just 'Privacy Policy'.",
 
-  "scope": "2–3 sentences naming what was examined (the policy artifact and its stated coverage), the regulatory frameworks evaluated against it (federal, state, industry standard), and any explicit limits of this analysis (e.g., 'Did not evaluate operational implementation, only the written policy text').",
+  "scope": "2 sentences naming what was examined (the policy artifact and its stated coverage), the regulatory frameworks evaluated against it (federal, state, industry standard), and any explicit limits of this analysis (e.g., 'Did not evaluate operational implementation, only the written policy text').",
 
   "regulations_applied": ["Only the regulations/statutes/guidance you actually evaluated this policy against and that materially apply to it — fully cited with title + part. State a year only when the retrieved source states one. There is no target number: list two if two apply. Never add an authority to lengthen this list."],
 
   "last_updated_note": "A recent regulatory development materially affecting this policy area, ONLY if one appears in the retrieved source material — a new rule, a guidance update, or an NPRM. Cite the source. Omit this field entirely when the retrieved material shows no such development; do not reach into memory for one, and do not describe an enforcement trend you cannot cite.",
 
   "priority_findings": [
-    "One sentence, hard cap: the gap, its citation, and the exposure, packed into one sentence — of the form 'Policy lacks <the specific required element> required by <exact citation>, so <the concrete audit-day consequence>.' Up to 4 entries, ordered by enforcement risk. Zero is a valid answer for a policy with no high-priority items."
+    "One sentence, hard cap: the gap, its citation, and the exposure, packed into one sentence — of the form 'Policy lacks <the specific required element> required by <exact citation>, so <the concrete audit-day consequence>.' Up to 3 entries, ordered by enforcement risk. Zero is a valid answer for a policy with no high-priority items."
   ],
 
   "gap_table": [
-    // UP TO 10 objects in this array -- a ceiling, and ONLY a ceiling. There
+    // UP TO 6 objects in this array -- a ceiling, and ONLY a ceiling. There
     // is no minimum and no target. Include an obligation when it materially
     // applies to this policy and you can cite the authority for it; leave it
     // out otherwise.
@@ -318,11 +318,11 @@ failed analysis.
 
       "obligation_type": "required | guidance | best_practice | organizational_choice — apply STEP 5d. Use 'required' ONLY where the cited text uses mandatory language (shall/must) and imposes this exact duty. A provision saying an allowance 'may' be made, or a non-mandatory appendix, is 'guidance', never 'required'. A stricter internal standard is 'organizational_choice'. This field is checked against the source text after generation: a 'required' claim the source does not establish is automatically reclassified and shown to the reader as unverified, so do not use it to add emphasis.",
 
-      "current_state": "1–2 sentences, hard cap: direct quote OR close paraphrase of the EXACT policy language on this topic. If the policy is silent, write: 'Policy is silent — no provision addresses [specific obligation].' This field proves you read the actual document; it is a citation record, not analysis.",
+      "current_state": "1 sentence, hard cap: direct quote OR close paraphrase of the EXACT policy language on this topic. If the policy is silent, write: 'Policy is silent — no provision addresses [specific obligation].' This field proves you read the actual document; it is a citation record, not analysis.",
 
-      "finding": "2–3 sentences, hard cap. Name which of the four axes pass and which fail (consistent with axes_passed) and the single sharpest deficiency. If regulatory: state the audit-day exposure — what document a regulator would demand and whether it would exist. If organizational-only: say so explicitly and state the operational risk instead of inventing regulatory exposure. Do not restate current_state, do not hedge, do not pad.",
+      "finding": "2 sentences, hard cap. Name which of the four axes pass and which fail (consistent with axes_passed) and the single sharpest deficiency. If regulatory: state the audit-day exposure — what document a regulator would demand and whether it would exist. If organizational-only: say so explicitly and state the operational risk instead of inventing regulatory exposure. Do not restate current_state, do not hedge, do not pad.",
 
-      "suggested_language": "DROP-IN POLICY TEXT, 2–3 sentences, hard cap. MUST include: named role/title, specific timeframe, measurable threshold or trigger, and inline regulatory citation IF one genuinely applies — otherwise omit the citation rather than fabricate one. NEVER write 'the organization should consider.' This is clause text, not a sub-procedure — deeper reasoning belongs in finding, not here. CRITICAL — every specific number you write (deadline, retention period, notification window, training frequency, threshold) is either (a) FIXED BY THE REGULATION, in which case that exact number must appear in the retrieved source material and you cite it, or (b) AN ORGANIZATIONAL CHOICE, in which case you still pick a concrete value but write it as the organization's standard with NO citation attached ('Records are retained for seven years under this policy'), never as a legal mandate ('Records must be retained for seven years as required by...'). If the source material does not state the number, you do not know it — treat it as (b). Attaching a citation to an invented deadline tells the user the law requires something it may not, which is the most harmful error possible here.",
+      "suggested_language": "DROP-IN POLICY TEXT, 2 sentences, hard cap. MUST include: named role/title, specific timeframe, measurable threshold or trigger, and inline regulatory citation IF one genuinely applies — otherwise omit the citation rather than fabricate one. NEVER write 'the organization should consider.' This is clause text, not a sub-procedure — deeper reasoning belongs in finding, not here. CRITICAL — every specific number you write (deadline, retention period, notification window, training frequency, threshold) is either (a) FIXED BY THE REGULATION, in which case that exact number must appear in the retrieved source material and you cite it, or (b) AN ORGANIZATIONAL CHOICE, in which case you still pick a concrete value but write it as the organization's standard with NO citation attached ('Records are retained for seven years under this policy'), never as a legal mandate ('Records must be retained for seven years as required by...'). If the source material does not state the number, you do not know it — treat it as (b). Attaching a citation to an invented deadline tells the user the law requires something it may not, which is the most harmful error possible here.",
 
       "citation": "Full statutory/regulatory authority for the obligation: title + part + section + subsection (plus the issuing body and document name where the authority is guidance rather than codified text). Include a year only when the retrieved source states one. Multiple citations joined with semicolons when needed. Generic refs are rejected. If organizational-only, write exactly: 'Organizational best practice — no regulatory citation applies.' Do not fabricate a citation to avoid writing this.",
 
@@ -332,7 +332,7 @@ failed analysis.
     }
   ],
 
-  "audit_ready_summary": "4 sentences, hard cap: overall posture, severity distribution, the single highest-exposure gap, and the standing recommendation for independent legal review. Written for a compliance officer to read verbatim to their board. Flowing prose, no bullet points."
+  "audit_ready_summary": "3 sentences, hard cap: overall posture, severity distribution, the single highest-exposure gap, and the standing recommendation for independent legal review. Written for a compliance officer to read verbatim to their board. Flowing prose, no bullet points."
 }
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -386,13 +386,13 @@ OUTPUT SIZE — CEILINGS ONLY, NO MINIMUMS
 Every number below is a MAXIMUM. None of them is a target, and none of them has
 a floor. Include only what materially applies. Never pad output to meet a count.
 
-gap_table:         at most 10 rows. Highest-risk distinct obligations first.
-                   Stop at 10 even if more apply. Zero rows is a valid result
+gap_table:         at most 6 rows. Highest-risk distinct obligations first.
+                   Stop at 6 even if more apply. Zero rows is a valid result
                    for a policy with no material gaps.
-priority_findings: at most 4 entries, one sentence each. Zero is valid.
+priority_findings: at most 3 entries, one sentence each. Zero is valid.
 regulations_applied: no limit and no target — exactly the authorities that
                    materially apply.
-audit_ready_summary: at most 4 sentences of board-ready prose. Always present,
+audit_ready_summary: at most 3 sentences of board-ready prose. Always present,
                    including when nothing else is.
 
 Every row you DO return must populate: clause, regulations (≥1), axes_passed,
@@ -755,6 +755,88 @@ def _merge_results(results: list[AnalysisResult]) -> AnalysisResult:
 
 # ── Ensemble models: run these simultaneously for gap analysis ──
 _ENSEMBLE_MODELS = ["gpt-4o-mini"]
+
+
+async def analyze_policy_stream(
+    text: str,
+    file_name: Optional[str] = None,
+    industry: Optional[str] = None,
+    jurisdiction: Optional[str] = None,
+    retrieval_context: Optional[RetrievalContext] = None,
+):
+    """Yield the gap analysis as it is written, then the finished result.
+
+    Yields ``(partial_result, done)``. Each partial carries every finding
+    completed so far; the final yield has ``done=True`` and is the fully parsed
+    result, identical to what analyze_policy() returns.
+
+    The whole report is one JSON object from one model call, so before this
+    existed nothing could be shown until the last character arrived -- the first
+    finding was typically complete seconds in and then sat in a buffer for the
+    rest of the generation while the reader watched a spinner. Total time is
+    unchanged; time-to-first-finding is not.
+
+    Falls back to the non-streaming path if streaming fails before producing
+    anything, so a provider that cannot stream degrades to the old behaviour
+    rather than to no analysis.
+    """
+    from app.services.streaming_json import complete_rows, scalar_field
+
+    provider = get_provider()
+    system_prompt = _build_system_prompt(industry, jurisdiction)
+    user_message = _build_user_prompt(text, industry, jurisdiction, retrieval_context)
+
+    logger.info(
+        f"Streaming analysis — industry: {industry or 'healthcare'}, "
+        f"text length: {len(text)} chars"
+    )
+
+    buffer = ""
+    emitted = 0
+    try:
+        async for piece in provider.complete_stream(
+            system_prompt=system_prompt,
+            user_message=user_message,
+            max_tokens=settings.llm_max_tokens,
+            temperature=0.3,
+        ):
+            buffer += piece
+            rows = complete_rows(buffer)
+            if len(rows) <= emitted:
+                continue
+
+            # Only rows that survive the same construction the final parse uses.
+            # A row the schema rejects is not shown early and then corrected --
+            # it simply waits for the final result, where it is handled once.
+            try:
+                partial = _parse_llm_response(
+                    json.dumps({
+                        "policy_type": scalar_field(buffer, "policy_type") or "Analyzing…",
+                        "gap_table": rows,
+                        "audit_ready_summary": "",
+                    })
+                )
+            except ValueError:
+                continue
+
+            emitted = len(rows)
+            yield partial, False
+    except Exception as e:
+        # Nothing was shown yet, so a clean fall back to the blocking call costs
+        # the reader only the streaming benefit, not the analysis.
+        if emitted == 0:
+            logger.warning(f"Streaming analysis failed ({e}); falling back to a single call")
+            yield await analyze_policy(text, file_name, industry, jurisdiction, retrieval_context), True
+            return
+        logger.error(f"Streaming analysis broke after {emitted} finding(s): {e}", exc_info=True)
+
+    if not buffer.strip():
+        yield await analyze_policy(text, file_name, industry, jurisdiction, retrieval_context), True
+        return
+
+    result = _parse_llm_response(buffer)
+    logger.info(f"Streaming analysis complete — {len(result.gap_table)} findings")
+    yield result, True
 
 
 async def analyze_policy(

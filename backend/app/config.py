@@ -73,8 +73,17 @@ class Settings(BaseSettings):
     openai_api_key: str = ""         # platform.openai.com — paid
 
     # ── Model Configuration ──
-    llm_max_tokens: int = 12000        # gap analysis
-    llm_max_tokens_long: int = 12000   # rewrite, action plan, board summary, etc.
+    #
+    # A ceiling, not a target -- the model takes as long as what it actually
+    # writes, so this does not by itself set the pace. What it does set is how
+    # long a runaway generation can go on before being cut off, and being cut
+    # off mid-JSON fails the whole analysis.
+    #
+    # The schema caps every field and allows at most 6 findings, which puts a
+    # maximum-length valid response near 3,000 tokens. 6,000 leaves generous
+    # headroom over that while halving the worst case.
+    llm_max_tokens: int = 6000         # gap analysis
+    llm_max_tokens_long: int = 12000   # policy drafting — a full document, legitimately longer
 
     # ── App Settings ──
     # Locked to the production domain + local dev by default. Frontend and
@@ -127,6 +136,21 @@ class Settings(BaseSettings):
     # majority of CFR sections are indexed whole, bounded enough that a handful
     # of very long ones cannot dominate the build.
     kb_max_embed_chars_per_section: int = 6000
+
+    # How many non-law sources may accompany the regulations in one retrieval.
+    #
+    # Agency guidance is written in the same register as a policy, so it scores
+    # as "similar" to almost any policy put in front of it -- on a breach
+    # notification policy the OIG compliance-program guidance took the top three
+    # slots while the controlling CFR sections came fourth. Ordering law first
+    # fixes precedence; this bounds volume, so a block of general
+    # compliance-program prose cannot sit alongside the regulation on a policy
+    # it has nothing to say about.
+    #
+    # Small on purpose. Enough to be useful where guidance genuinely governs,
+    # too little to crowd out the law where it does not. Raise it only if
+    # guidance is demonstrably being missed on compliance-program policies.
+    kb_max_guidance_chunks: int = 2
 
     # Whether a running container may download and embed the corpus itself.
     #

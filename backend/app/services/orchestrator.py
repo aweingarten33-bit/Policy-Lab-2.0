@@ -38,7 +38,7 @@ from app.models.schemas import (
     RemediationPlan, BoardSummary, ImplementationChecklist,
     SourceAttribution, SourceType, VerificationStatus,
 )
-from app.services.llm_service import analyze_policy
+from app.services.llm_service import analyze_policy, analyze_policy_stream
 from app.services.retrieval.retriever import get_retriever, ComplianceRetriever
 from app.services.retrieval.verification import get_verification_service, VerificationService
 from app.services.retrieval.live_research import get_live_research_service, LiveResearchService
@@ -660,13 +660,30 @@ class PackageOrchestrator:
                 jurisdiction=jurisdiction,
                 enable_live_research=enable_live_research,
             )
-            gap_result = await analyze_policy(
+            # Findings are emitted as the model writes them. The report is a
+            # single JSON object, so waiting for it to close meant the reader
+            # watched a spinner for the whole generation while completed
+            # findings sat in a buffer. Total time is the same; the wait before
+            # anything appears is not.
+            gap_result = None
+            async for partial, done in analyze_policy_stream(
                 text=text,
                 file_name=file_name,
                 industry=industry,
                 jurisdiction=jurisdiction,
                 retrieval_context=retrieval_ctx,
-            )
+            ):
+                if done:
+                    gap_result = partial
+                    break
+                package.gap_analysis = partial
+                package.policy_type = partial.policy_type
+                package.status = PackageStatus.analyzing
+                yield package
+
+            if gap_result is None:
+                raise RuntimeError("the analysis stream ended without a final result")
+
             package.gap_analysis = gap_result
             package.policy_type = gap_result.policy_type
             attributions, sources, live_used, ver_summary = self._verify_and_attribute(
