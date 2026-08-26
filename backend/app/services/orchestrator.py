@@ -208,9 +208,14 @@ class PackageOrchestrator:
         exactly the false-positive this replaces.
         """
         from app.services.claim_support import classify_claim_support
+        from app.services.retrieval.obligation_memory import get_obligation_memory
         from app.models.schemas import ClaimSupport
 
+        memory = get_obligation_memory()
         pending = []
+        claims_by_id: Dict[str, str] = {}
+        reused = 0
+
         for idx, row in enumerate(gap_result.gap_table):
             claim = " ".join(filter(None, [row.finding, row.suggested_language])).strip()
             evidence = self.verification.build_claim_evidence(
@@ -220,42 +225,81 @@ class PackageOrchestrator:
                 retrieval_context=retrieval_ctx,
             )
             row.evidence = evidence
+            claims_by_id[evidence.claim_id] = claim
 
             # Only worth classifying if there is an excerpt to judge against and
             # the record hasn't already failed the harder, deterministic
             # specifics check -- a contradicted timeframe is settled, and a
             # semantic pass must not paper over it.
-            if (
+            if not (
                 evidence.checks.citation_exists
                 and evidence.source.excerpt
                 and evidence.checks.specifics_supported is not False
             ):
-                pending.append({
-                    "id": evidence.claim_id,
-                    "claim": claim[:1200],
-                    "citation": evidence.citation or "",
-                    "excerpt": evidence.source.excerpt or "",
-                })
+                continue
 
-        if not pending:
-            return
+            # Obligation memory sits HERE and nowhere earlier, which is the
+            # whole of its safety argument. Every deterministic check above has
+            # already run against the current corpus: the citation resolved
+            # now, the subsection exists now, the figures match now, the source
+            # is current now. Only the model's entailment verdict is reused,
+            # and only for the exact claim, citation and text that earned it.
+            #
+            # A changed regulation changes the scope text, which changes the
+            # fingerprint, which changes the key. The entry is not stale-but-
+            # reachable; it is unreachable.
+            remembered = memory.recall(
+                claim, evidence.citation or "", evidence.checks.source_fingerprint or ""
+            )
+            if remembered is not None:
+                try:
+                    support = ClaimSupport(remembered.support)
+                except ValueError:
+                    support = None
+                if support is not None:
+                    evidence.checks.reused_from_memory = True
+                    self.verification.apply_claim_support(evidence, support, remembered.note)
+                    reused += 1
+                    continue
 
-        results = await classify_claim_support(pending)
-        if not results:
-            return
+            pending.append({
+                "id": evidence.claim_id,
+                "claim": claim[:1200],
+                "citation": evidence.citation or "",
+                "excerpt": evidence.source.excerpt or "",
+            })
 
+        if pending:
+            results = await classify_claim_support(pending)
+            for row in gap_result.gap_table:
+                ev = row.evidence
+                if not ev or not results or ev.claim_id not in results:
+                    continue
+                outcome = results[ev.claim_id]
+                try:
+                    support = ClaimSupport(outcome["label"])
+                except ValueError:
+                    continue
+                if support is ClaimSupport.not_checked:
+                    continue
+                self.verification.apply_claim_support(ev, support, outcome.get("note", ""))
+
+        # Remember only what came out verified, and only what was freshly
+        # derived. remember() re-checks every precondition itself rather than
+        # trusting this call site.
+        stored = 0
         for row in gap_result.gap_table:
             ev = row.evidence
-            if not ev or ev.claim_id not in results:
+            if ev is None or ev.checks.reused_from_memory:
                 continue
-            outcome = results[ev.claim_id]
-            try:
-                support = ClaimSupport(outcome["label"])
-            except ValueError:
-                continue
-            if support is ClaimSupport.not_checked:
-                continue
-            self.verification.apply_claim_support(ev, support, outcome.get("note", ""))
+            if memory.remember(ev, claims_by_id.get(ev.claim_id, "")):
+                stored += 1
+
+        if reused or stored:
+            logger.info(
+                f"Obligation memory: {reused} verdict(s) reused, {len(pending)} model "
+                f"check(s) needed, {stored} newly remembered"
+            )
 
         self._gate_unproven_mandates(gap_result)
 

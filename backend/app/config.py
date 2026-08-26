@@ -152,6 +152,23 @@ class Settings(BaseSettings):
     # guidance is demonstrably being missed on compliance-program policies.
     kb_max_guidance_chunks: int = 2
 
+    # Reuse a verification the engine already earned.
+    #
+    # Every analysis re-derives the same regulations from scratch: re-run the
+    # same policy and the model is asked the identical question about the
+    # identical passage and paid for the identical answer. When enabled, that
+    # answer is remembered, keyed to the claim, the citation, and a content
+    # hash of the exact regulatory text it was checked against.
+    #
+    # Only the model's entailment verdict is reused. Every deterministic check
+    # -- citation resolution, subsection scope, concrete facts, source standing,
+    # binding-law class -- is re-run in full against the current corpus before
+    # the store is consulted, so a cached entry cannot carry a stale conclusion
+    # past a source that has since changed or lost its standing.
+    #
+    # Off is always safe: the full pipeline is the fallback and is unchanged.
+    obligation_memory_enabled: bool = True
+
     # Whether a running container may download and embed the corpus itself.
     #
     # Seeding needs roughly twice the memory of serving. On a small instance

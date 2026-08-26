@@ -25,6 +25,7 @@ from app.services.retrieval.models import (
     can_support_present_duty,
     resolve_source_status,
 )
+from app.services.retrieval.obligation_memory import fingerprint_text
 from app.services.retrieval.section_store import get_section_store
 from app.services.retrieval.store import get_store
 
@@ -502,6 +503,13 @@ class VerificationService:
             return evidence
 
         evidence.checks.citation_exists = True
+        # Fingerprint of the exact text this claim is being checked against --
+        # the resolved citation scope, not the whole document and not the
+        # excerpt. It identifies the version of the provision that produced the
+        # result, which is what obligation memory keys on: if the regulation
+        # changes, this changes, and a remembered verdict for the old text
+        # becomes unreachable rather than merely stale.
+        evidence.checks.source_fingerprint = fingerprint_text(scope_text)
         excerpt = self._select_excerpt(claim_text, scope_text, citation=citation)
         evidence.source = self._evidence_source(meta, excerpt, status)
 
