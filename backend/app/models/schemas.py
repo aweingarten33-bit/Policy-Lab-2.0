@@ -282,6 +282,24 @@ class EvidenceChecks(BaseModel):
             "but it does not create a legal obligation."
         ),
     )
+    source_fingerprint: Optional[str] = Field(
+        None,
+        description=(
+            "Content hash of the exact authoritative text this claim was checked "
+            "against. Identifies the version of the regulation that produced the "
+            "result, so a remembered verdict becomes unreachable the moment the "
+            "text changes."
+        ),
+    )
+    reused_from_memory: bool = Field(
+        False,
+        description=(
+            "The entailment verdict came from a previously verified obligation "
+            "rather than a fresh model call. The deterministic checks were still "
+            "re-run in full against the current source; only the model's opinion "
+            "was reused."
+        ),
+    )
 
 
 class VerificationEvidence(BaseModel):
