@@ -362,10 +362,24 @@ class PackageOrchestrator:
                 downgraded += 1
                 continue
 
-            if not evidence.checks.source_status_current:
-                # The source exists but is a proposal, an older version, or of
-                # unestablished standing. A finding may still be worth acting
-                # on; it cannot be presented as current law.
+            if not evidence.checks.citation_exists:
+                # No source matched at all. This used to fall into the branch
+                # below, which reports "the matching source is not established
+                # as current (status: STATUS_UNKNOWN)" -- describing a source
+                # that was never found, and pointing a reader at a currency
+                # problem when the real problem is that the citation resolved
+                # to nothing in the loaded corpus. Two very different things to
+                # go and check.
+                reason = (
+                    f"The cited authority ({row.citation or 'none given'}) was not found in "
+                    "the regulatory material loaded for this analysis, so this requirement "
+                    "could not be checked at all. It may still be correct — but nothing here "
+                    "confirms it, and the citation itself should be verified first."
+                )
+            elif not evidence.checks.source_status_current:
+                # A source WAS matched, and it is a proposal, an older version,
+                # or of unestablished standing. A finding may still be worth
+                # acting on; it cannot be presented as current law.
                 reason = (
                     "The matching source is not established as the current, in-force text "
                     f"(status: {evidence.checks.source_status.value}). It cannot establish "

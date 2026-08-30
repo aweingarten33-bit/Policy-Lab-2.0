@@ -25,8 +25,8 @@ from app.services.retrieval.models import (
     can_support_present_duty,
     resolve_source_status,
 )
+from app.services.retrieval.authority_source import ChromaAuthorityProvider
 from app.services.retrieval.obligation_memory import fingerprint_text
-from app.services.retrieval.section_store import get_section_store
 from app.services.retrieval.store import get_store
 
 logger = logging.getLogger(__name__)
@@ -236,8 +236,13 @@ class ConcreteFact:
 class VerificationService:
     """Verify generated compliance claims against retrieved authority."""
 
-    def __init__(self):
+    def __init__(self, authority_provider=None):
         self._store = None
+        # Where the law comes from. Defaults to today's substrate, so nothing
+        # about existing behaviour depends on this argument existing; passing a
+        # different provider swaps the substrate without touching a single
+        # verification rule. See ``authority_source.AuthorityProvider``.
+        self._authority = authority_provider or ChromaAuthorityProvider(self)
 
     @property
     def store(self):
@@ -792,29 +797,8 @@ class VerificationService:
         )
 
     def _find_source_for_citation(self, citation: str, retrieval_context: RetrievalContext):
-        if not citation:
-            return None
-
-        candidates = []
-        for result in retrieval_context.get_all_sources():
-            if not self._is_authoritative_result(result):
-                continue
-            meta = result.chunk.metadata
-            if not meta.citation or not self._citations_match(citation, meta.citation):
-                continue
-            scope_ok = bool(self._source_scope_text(
-                citation, meta.citation, result.chunk.text, allow_full_text=True
-            ))
-            current = can_support_present_duty(resolve_source_status(meta))
-            exact = self._normalize_generic_citation(citation) == self._normalize_generic_citation(meta.citation)
-            candidates.append((current, scope_ok, exact, result.score, result))
-
-        if not candidates:
-            return None
-
-        # Current + correct scope dominates semantic similarity.
-        candidates.sort(key=lambda x: (x[0], x[1], x[2], x[3]), reverse=True)
-        return candidates[0][-1]
+        """Resolve a citation to a source. Substrate's job — see ``_authority``."""
+        return self._authority.find_authority(citation, retrieval_context)
 
     @staticmethod
     def _is_authoritative_result(result) -> bool:
@@ -895,15 +879,12 @@ class VerificationService:
         end = min(len(source_text), pos + 2200)
         return source_text[start:end]
 
-    @staticmethod
-    def _authoritative_full_text(citation: str) -> str:
-        """The complete stored text of a cited section, or "" if not held."""
-        try:
-            return get_section_store().get_text(citation) or ""
-        except Exception as e:
-            # Verification must degrade to the retrieved chunk, never fail.
-            logger.warning("Authoritative section lookup failed for %r: %s", citation, e)
-            return ""
+    def _authoritative_full_text(self, citation: str) -> str:
+        """The complete text of a cited section, or "" if not held.
+
+        Substrate's job — see ``_authority``.
+        """
+        return self._authority.full_text(citation)
 
     def _select_excerpt(
         self,
