@@ -219,17 +219,40 @@ def ingest_cfr_part_sections(
             "source_status": meta.source_status.value if meta.source_status else None,
         })
 
-    stored = get_section_store().put_many(authoritative)
+    # The section store only feeds the legacy authority path. On the
+    # OpenContracts path the authoritative text of a federal section is fetched,
+    # parsed and modelled by OpenContracts and cached under its canonical key,
+    # so writing a second copy here -- with a second citation normaliser and a
+    # second metadata schema -- would be maintaining two answers to the same
+    # question. Skipped rather than deleted: the legacy path still needs it, and
+    # this whole branch goes when that path does.
+    stored = 0
+    if _legacy_section_store_in_use():
+        stored = get_section_store().put_many(authoritative)
+
     logger.info(
         f"  {part_citation}: {total} chunks embedded, {stored} full sections stored"
         + (
             f" ({bounded} section(s) longer than {max_embed} chars were indexed on their "
             f"first {max_embed} chars; their complete text is in the section store and "
             f"remains fully available to verification)"
-            if bounded else ""
+            if bounded and stored else ""
         )
     )
     return total
+
+
+def _legacy_section_store_in_use() -> bool:
+    """Whether anything still reads the homemade section store.
+
+    True when the legacy provider is pinned, and also when it is merely armed
+    as the availability fallback -- a fallback with nothing in it is not a
+    fallback.
+    """
+    provider = (settings.authority_provider or "").strip().lower()
+    if provider == "chroma":
+        return True
+    return bool(settings.authority_legacy_fallback_enabled)
 
 
 async def _async_seed() -> Dict[str, int]:

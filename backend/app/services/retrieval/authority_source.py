@@ -70,11 +70,15 @@ class AuthorityProvider(Protocol):
 
 
 class ChromaAuthorityProvider:
-    """Today's substrate: chunks retrieved from Chroma, sections from SQLite.
+    """LEGACY substrate: chunks retrieved from Chroma, sections from SQLite.
 
-    The bodies below were verification's own methods and are unchanged. They
-    live here now so that the OpenContracts provider has something to be
-    interchangeable *with*; moving them was the whole edit.
+    No longer the production path for federal CFR. It remains as the rollback
+    while the OpenContracts path proves itself, and for a deployment that has
+    deliberately pinned ``AUTHORITY_PROVIDER=chroma``. Everything it does for
+    federal regulations is now done by OpenContracts: fetching the section,
+    parsing it, modelling the record, resolving the citation.
+
+    The bodies below were verification's own methods and are unchanged.
 
     ``matcher`` is the verifier itself. Citation matching and subsection scope
     resolution are Policy Lab rules, not substrate behaviour, so they stay
@@ -285,3 +289,74 @@ def canonical_key_for(citation: str) -> str:
         return f"usc-{usc.group('title')}:{usc.group('section')}{subs}"
 
     return re.sub(r"\s+", "-", text.lower())
+
+
+class LegacyFallbackAuthorityProvider:
+    """OpenContracts, with the legacy substrate behind it only when it is down.
+
+    The distinction this class exists to enforce: a substrate that cannot be
+    reached is a different thing from a substrate that answered. Falling back
+    on the first is availability. Falling back on the second would give every
+    claim two stores to be believed by, and the whole point of the verification
+    rules is that a claim gets one honest answer.
+
+    So the fallback is consulted when the OpenContracts runtime cannot start,
+    and never because OpenContracts resolved nothing, or resolved something
+    proposed, superseded, or of unknown standing. Those are answers.
+    """
+
+    def __init__(self, primary, fallback):
+        self._primary = primary
+        self._fallback = fallback
+
+    @property
+    def resolves_without_retrieval_context(self) -> bool:
+        # Whichever substrate is actually serving. On the legacy one the
+        # retrieved chunks are the authority again, so the guard must come back.
+        return getattr(self._substrate(), "resolves_without_retrieval_context", False)
+
+    def _substrate(self):
+        from app.services.retrieval import opencontracts_runtime as ocr
+
+        if ocr.available():
+            return self._primary
+        logger.error(
+            "OpenContracts unavailable (%s); using the legacy authority path",
+            ocr.unavailable_reason(),
+        )
+        return self._fallback
+
+    def find_authority(self, citation: str, retrieval_context):
+        return self._substrate().find_authority(citation, retrieval_context)
+
+    def full_text(self, citation: str) -> str:
+        return self._substrate().full_text(citation)
+
+
+def get_authority_provider(matcher) -> AuthorityProvider:
+    """The authority provider this deployment verifies against.
+
+    Defaults to OpenContracts. ``AUTHORITY_PROVIDER=chroma`` pins the legacy
+    path; an unrecognised value gets the default rather than an exception,
+    because a typo in an environment variable must not decide which store the
+    law comes from.
+    """
+    from app.config import settings
+
+    choice = (settings.authority_provider or "").strip().lower()
+    if choice == "chroma":
+        logger.warning("AUTHORITY_PROVIDER=chroma: using the legacy authority substrate")
+        return ChromaAuthorityProvider(matcher)
+
+    if choice not in ("", "opencontracts"):
+        logger.warning(
+            "Unrecognised AUTHORITY_PROVIDER=%r; using opencontracts", settings.authority_provider
+        )
+
+    from app.services.retrieval.opencontracts_client import CFRAuthorityClient
+    from app.services.retrieval.opencontracts_provider import OpenContractsAuthorityProvider
+
+    provider = OpenContractsAuthorityProvider(matcher, CFRAuthorityClient())
+    if settings.authority_legacy_fallback_enabled:
+        return LegacyFallbackAuthorityProvider(provider, ChromaAuthorityProvider(matcher))
+    return provider

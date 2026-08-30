@@ -181,6 +181,47 @@ class Settings(BaseSettings):
     # for local development and as a deliberate opt-in.
     kb_seed_at_runtime: bool = False
 
+    # ── Authority substrate ──
+    #
+    # Where verification gets the law from. Two jobs, one owner each:
+    # OpenContracts owns the authority document -- fetching it, parsing it,
+    # modelling it, resolving a citation to it -- and Policy Lab owns every
+    # judgement made about it afterwards.
+    #
+    #   "opencontracts"  federal CFR authorities fetched and modelled by
+    #                    OpenContracts' own CFR provider and AuthoritySourceRecord.
+    #                    The canonical production path.
+    #   "chroma"         LEGACY. The homemade substrate: authority text carried
+    #                    on vector-store chunks plus a separate section store.
+    #                    Kept only as a rollback while the OpenContracts path
+    #                    proves itself in production, and to be removed.
+    authority_provider: str = "opencontracts"
+
+    # TEMPORARY. If the OpenContracts runtime cannot start, fall back to the
+    # legacy Chroma authority path rather than failing every federal claim
+    # closed at once.
+    #
+    # This covers exactly one condition: the substrate is unavailable. It is
+    # never consulted because OpenContracts gave an unwelcome answer -- a
+    # citation that did not resolve, a proposed rule, a superseded version --
+    # since retrying those against a second store is how a claim gets two
+    # chances to be believed. Delete this once the migration is settled.
+    authority_legacy_fallback_enabled: bool = True
+
+    # Whether an authority missing from the local cache may be fetched from
+    # eCFR on demand. Off makes the cache authoritative: an uncached citation
+    # is unresolvable, which is a verification failure and never a guess.
+    authority_fetch_enabled: bool = True
+
+    # Path to an OpenContracts checkout, when it is not already importable.
+    opencontracts_src: str = ""
+
+    # Pin eCFR to one day's text for a reproducible corpus. Empty means today,
+    # which is what "what does the law require now" actually asks for. This is
+    # a fetch parameter and never an effective date; the effective date comes
+    # from eCFR's own amendment record or not at all.
+    ecfr_snapshot_date: str = ""
+
     # ── Live Research Settings ──
     live_research_enabled: bool = True
     live_research_max_results: int = 5

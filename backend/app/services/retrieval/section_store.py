@@ -1,4 +1,16 @@
-"""Authoritative full-text store — the complete text of each cited section.
+"""LEGACY authoritative full-text store — the complete text of each cited section.
+
+Superseded for federal CFR. That job -- holding the exact text a claim is
+checked against -- now belongs to OpenContracts, which fetches and models each
+section under its own canonical key. This store is written and read only while
+the legacy authority path is active (``AUTHORITY_PROVIDER=chroma``, or the
+availability fallback being armed), and it goes when that path does.
+
+``citation_key`` below outlives it: Obligation Memory uses it to normalise the
+citation half of a memory key, which is a different job from resolving an
+authority and is not affected by the migration.
+
+The original reasoning, still true of what this file does:
 
 Retrieval and verification want different things from the same regulation, and
 the pipeline was serving both from one artefact.

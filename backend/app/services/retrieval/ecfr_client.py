@@ -15,6 +15,27 @@ verified, dated source chunks, even though the product is positioned as
 automatically whenever an industry's regulation list changes.
 
 Each pull is timestamped so outputs clearly show when the regulation was retrieved.
+
+This client now builds the RETRIEVAL index only
+-----------------------------------------------
+The authoritative text a claim is verified against no longer comes from here.
+That is fetched, parsed and modelled by OpenContracts' own CFR provider, one
+section at a time under its canonical key (see opencontracts_client.py), which
+is the substrate verification reads.
+
+Two eCFR readers therefore exist, and they are not duplicates -- they answer
+different questions and OpenContracts implements only one of them. Theirs
+fetches ONE section: a whole title's XML per call, which is the right shape for
+resolving a citation on demand and the wrong shape for building a corpus.
+This one fetches a whole PART in a single request and splits it into every
+section it contains, which is what indexing 40+ parts needs. Running the corpus
+build through their per-section path would download the same multi-megabyte
+title XML once per section.
+
+So: this client feeds embeddings and semantic search. OpenContracts feeds
+verification. The moment they hold different text, verification uses theirs --
+because a retrieval chunk is a pointer to a provision, and only the provision
+itself can prove anything.
 """
 
 import asyncio

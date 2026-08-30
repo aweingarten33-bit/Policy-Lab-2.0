@@ -61,17 +61,23 @@ class AuthorityDocumentClient(Protocol):
         """``{"text": str, "metadata": dict}`` as OpenContracts holds it."""
 
 
-def _oc_candidate_keys(canonical_key: str) -> list[str]:
-    """OpenContracts' own key-resolution order.
+def _oc_candidate_keys(canonical_key: str) -> Optional[list[str]]:
+    """OpenContracts' own key-resolution order, or None if they are unavailable.
 
-    Imported at call time because it pulls in Django. Not reimplemented on
-    failure: a private copy of their resolver would drift from theirs and
-    silently resolve citations differently, which is precisely the bug this
-    whole exercise exists to avoid.
+    Never reimplemented on failure. A private copy of their resolver would
+    drift from theirs and silently resolve citations differently, which is the
+    class of bug this whole integration exists to remove. Without them there is
+    no resolution, and no resolution means unverified.
     """
-    from opencontractserver.enrichment.authorities import candidate_keys
+    from app.services.retrieval import opencontracts_runtime as ocr
 
-    return candidate_keys(canonical_key)
+    if not ocr.available():
+        return None
+    try:
+        return ocr.candidate_keys(canonical_key)
+    except Exception as e:  # noqa: BLE001
+        logger.error("OpenContracts candidate_keys failed for %r: %s", canonical_key, e)
+        return None
 
 
 class OpenContractsAuthorityProvider:
@@ -81,6 +87,11 @@ class OpenContractsAuthorityProvider:
     citation matching and subsection scope resolution are Policy Lab rules and
     are called back into, so both substrates are held to the same scope test.
     """
+
+    # Resolution is by canonical key, so an empty retrieval context is not
+    # evidence that there is nothing to verify against. Retrieval finds
+    # candidate passages; it no longer owns the authority.
+    resolves_without_retrieval_context = True
 
     def __init__(self, matcher, client: AuthorityDocumentClient):
         self._matcher = matcher
@@ -137,11 +148,9 @@ class OpenContractsAuthorityProvider:
         if not citation:
             return None
         key = canonical_key_for(citation)
-        try:
-            keys = _oc_candidate_keys(key)
-        except ImportError:
-            logger.error("OpenContracts is not importable; cannot resolve %r", citation)
-            raise
+        keys = _oc_candidate_keys(key)
+        if keys is None:
+            return None
         for candidate in keys:
             doc = self._client.get_authority_document(candidate)
             if doc:

@@ -68,6 +68,20 @@ async def health_check():
             # Never let an age lookup break the health check itself.
             logger.warning(f"Health check could not determine corpus age: {e}")
 
+    configured = (settings.authority_provider or "opencontracts").strip().lower()
+    active = configured
+    if configured != "chroma":
+        from app.services.retrieval import opencontracts_runtime as ocr
+
+        if not ocr.available():
+            active = "chroma-legacy-fallback"
+            logger.error(
+                "Authority substrate DEGRADED: configured for OpenContracts but running on "
+                "the legacy path (%s). Federal citations are being resolved against the "
+                "homemade store.",
+                ocr.unavailable_reason(),
+            )
+
     # Render exposes the deployed commit; other platforms can set GIT_COMMIT.
     commit = (os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_COMMIT") or "")[:7] or None
 
@@ -75,6 +89,9 @@ async def health_check():
         status="ok",
         version="3.0.0",
         build_commit=commit,
+        authority_provider=configured,
+        authority_provider_active=active,
+        authority_provider_degraded=active != configured,
         kb_enabled=kb_enabled,
         kb_chunks=kb_chunks,
         kb_grounded=kb_enabled and kb_chunks > 0 and not kb_unreadable,

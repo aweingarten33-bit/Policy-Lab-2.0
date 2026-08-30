@@ -25,7 +25,7 @@ from app.services.retrieval.models import (
     can_support_present_duty,
     resolve_source_status,
 )
-from app.services.retrieval.authority_source import ChromaAuthorityProvider
+from app.services.retrieval.authority_source import get_authority_provider
 from app.services.retrieval.obligation_memory import fingerprint_text
 from app.services.retrieval.store import get_store
 
@@ -238,11 +238,11 @@ class VerificationService:
 
     def __init__(self, authority_provider=None):
         self._store = None
-        # Where the law comes from. Defaults to today's substrate, so nothing
-        # about existing behaviour depends on this argument existing; passing a
-        # different provider swaps the substrate without touching a single
-        # verification rule. See ``authority_source.AuthorityProvider``.
-        self._authority = authority_provider or ChromaAuthorityProvider(self)
+        # Where the law comes from. Defaults to whatever this deployment is
+        # configured for -- OpenContracts, in production. Passing a provider
+        # swaps the substrate without touching a single verification rule.
+        # See ``authority_source.AuthorityProvider``.
+        self._authority = authority_provider or get_authority_provider(self)
 
     @property
     def store(self):
@@ -463,7 +463,17 @@ class VerificationService:
             reason="",
         )
 
-        if not retrieval_context or not retrieval_context.get_all_sources():
+        # An empty retrieval context used to end verification here, because on
+        # the legacy substrate the retrieved chunks WERE the authority -- no
+        # chunks meant nothing to check against. That is no longer true when the
+        # substrate resolves a citation by key, so the question is asked of the
+        # provider instead of assumed from the context.
+        #
+        # Nothing is loosened by this. A provider that resolves by key still
+        # returns None for a citation it does not hold, which lands on exactly
+        # the same failure below.
+        resolves_by_key = getattr(self._authority, "resolves_without_retrieval_context", False)
+        if not resolves_by_key and (not retrieval_context or not retrieval_context.get_all_sources()):
             evidence.reason = "No authoritative source material was retrieved, so this claim could not be verified."
             return evidence
 
