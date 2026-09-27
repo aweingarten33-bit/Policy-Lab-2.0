@@ -1,7 +1,6 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import PasswordGate from "@/components/PasswordGate.tsx";
 import Index from "./pages/Index.tsx";
 import Legal from "./pages/Legal.tsx";
 import Guide from "./pages/Guide.tsx";
@@ -10,16 +9,14 @@ import NotFound from "./pages/NotFound.tsx";
 const App = () => (
   <TooltipProvider>
     <Toaster richColors position="top-right" />
-    <PasswordGate>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/legal" element={<Legal />} />
-          <Route path="/guide" element={<Guide />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </PasswordGate>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route path="/legal" element={<Legal />} />
+        <Route path="/guide" element={<Guide />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
   </TooltipProvider>
 );
 
