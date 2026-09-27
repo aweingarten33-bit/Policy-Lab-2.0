@@ -6,40 +6,6 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-// ── App password gate ──
-// Backend already gates every /api/* route behind an x-api-key header check
-// (see api_key_middleware in main.py) when the API_KEY env var is set -- it's
-// a no-op otherwise. This stores the password the user entered and attaches
-// it to every request below. Expires after PASSWORD_TTL_MS so it's not
-// remembered forever on a shared/public machine.
-const PASSWORD_STORAGE_KEY = "tpl_app_password";
-const PASSWORD_TTL_MS = 60 * 60 * 1000; // 1 hour
-
-export function getStoredPassword(): string {
-  try {
-    const raw = localStorage.getItem(PASSWORD_STORAGE_KEY);
-    if (!raw) return "";
-    const { password, storedAt } = JSON.parse(raw) as { password: string; storedAt: number };
-    if (!password || typeof storedAt !== "number" || Date.now() - storedAt > PASSWORD_TTL_MS) {
-      localStorage.removeItem(PASSWORD_STORAGE_KEY);
-      return "";
-    }
-    return password;
-  } catch {
-    return "";
-  }
-}
-
-export function setStoredPassword(password: string): void {
-  try {
-    localStorage.setItem(PASSWORD_STORAGE_KEY, JSON.stringify({ password, storedAt: Date.now() }));
-  } catch { /* ignore */ }
-}
-
-export function clearStoredPassword(): void {
-  try { localStorage.removeItem(PASSWORD_STORAGE_KEY); } catch { /* ignore */ }
-}
-
 /**
  * A random id for this browser session, used to bind background jobs to the
  * client that started them. Everyone shares one app password, so this is not
@@ -69,46 +35,11 @@ function getClientId(): string {
   }
 }
 
-function authHeaders(password?: string): Record<string, string> {
-  const pw = password ?? getStoredPassword();
-  const headers: Record<string, string> = {};
-  if (pw) headers["x-api-key"] = pw;
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
   const cid = getClientId();
   if (cid) headers["x-client-id"] = cid;
   return headers;
-}
-
-/**
- * Check whether a password is accepted by the backend. Used both by the
- * password gate (testing a candidate password before storing it) and could
- * be reused to re-validate a stored one. Hits a cheap, side-effect-free
- * GET endpoint since there's no dedicated auth-check route.
- */
-export async function verifyPassword(password: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${API_BASE}/api/industries`, {
-      headers: authHeaders(password),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Extract a readable message from a FastAPI error response. Our own route
- * handlers send `detail` as a plain string, but FastAPI's built-in Pydantic
- * validation errors (e.g. hitting a field's min_length) send `detail` as an
- * array of error objects instead — passed straight to `new Error()`, that
- * stringifies to the literal text "[object Object]", not a useful message.
- */
-function extractErrorDetail(errorData: any, fallback: string): string {
-  const detail = errorData?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (Array.isArray(detail) && detail.length > 0) {
-    return detail.map((d: any) => (typeof d?.msg === "string" ? d.msg : JSON.stringify(d))).join("; ");
-  }
-  return fallback;
 }
 
 // ── Source Attribution Types (Phase 3) ──
