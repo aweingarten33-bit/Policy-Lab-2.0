@@ -211,11 +211,9 @@ app = FastAPI(
 )
 
 
-# ── API Key Middleware ──
-# Health and the frontend shell remain reachable without a key. Diagnostics are
-# API functionality and can trigger outbound/provider checks, so they require
-# the same app credential as the rest of /api rather than being anonymously
-# callable from the internet.
+# ── API access middleware ──
+# The user-facing application is public. Only destructive knowledge-base
+# operations require the separate administrator credential below.
 _PUBLIC_PATHS = frozenset([
     "/api/health", "/docs", "/redoc", "/",
 ])
@@ -249,12 +247,7 @@ def _is_api_request(request: Request) -> bool:
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
-    """Require the app password for API access, and a separate admin key for
-    destructive knowledge-base operations.
-
-    Fails CLOSED in production: if API_KEY is unset there, every API request is
-    refused rather than served openly.
-    """
+    """Keep normal app routes public and protect destructive admin actions."""
     if (
         not _is_api_request(request)
         or request.url.path in _PUBLIC_PATHS
@@ -262,26 +255,7 @@ async def api_key_middleware(request: Request, call_next):
     ):
         return await call_next(request)
 
-    if not settings.api_key:
-        if settings.is_production:
-            logger.critical(
-                "API_KEY is not set while ENVIRONMENT=production — refusing all API "
-                "requests. Set the API_KEY environment variable to restore service."
-            )
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "Server is not configured for access. Contact the administrator."},
-            )
-        return await call_next(request)
-
-    supplied = request.headers.get("x-api-key", "")
-    if not secrets.compare_digest(supplied, settings.api_key):
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Invalid or missing API key. Set x-api-key header."},
-        )
-
-    if _is_admin_request(request):
+    # The application is public. Only destructive knowledge-base operations\n    # retain a separate administrator credential check below.\n\n    if _is_admin_request(request):
         admin_key = settings.admin_api_key
         if not admin_key:
             logger.warning("Admin action blocked: ADMIN_API_KEY is not configured (%s)", request.url.path)
