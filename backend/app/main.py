@@ -255,7 +255,9 @@ async def api_key_middleware(request: Request, call_next):
     ):
         return await call_next(request)
 
-    # The application is public. Only destructive knowledge-base operations\n    # retain a separate administrator credential check below.\n\n    if _is_admin_request(request):
+    # The application is public. Only destructive knowledge-base operations
+    # retain a separate administrator credential check below.
+    if _is_admin_request(request):
         admin_key = settings.admin_api_key
         if not admin_key:
             logger.warning("Admin action blocked: ADMIN_API_KEY is not configured (%s)", request.url.path)

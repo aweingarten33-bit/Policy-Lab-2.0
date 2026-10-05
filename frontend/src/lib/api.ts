@@ -36,10 +36,36 @@ function getClientId(): string {
 }
 
 function authHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
+  const headers: Record<string, string> = {};
   const cid = getClientId();
   if (cid) headers["x-client-id"] = cid;
   return headers;
+}
+
+// Pull a readable message out of an error response body (FastAPI-style
+// `detail` as a string or a list of {msg}), or a caught Error / string.
+function extractErrorDetail(data: unknown, fallback: string): string {
+  if (typeof data === "string") return data || fallback;
+  if (data instanceof Error) return data.message || fallback;
+  if (data && typeof data === "object") {
+    const detail = (data as { detail?: unknown }).detail;
+    if (typeof detail === "string" && detail) return detail;
+    if (Array.isArray(detail)) {
+      const msgs = detail
+        .map((d) =>
+          typeof d === "string"
+            ? d
+            : d && typeof d === "object" && typeof (d as { msg?: unknown }).msg === "string"
+              ? (d as { msg: string }).msg
+              : "",
+        )
+        .filter(Boolean);
+      if (msgs.length) return msgs.join("; ");
+    }
+    const message = (data as { message?: unknown }).message;
+    if (typeof message === "string" && message) return message;
+  }
+  return fallback;
 }
 
 // ── Source Attribution Types (Phase 3) ──
