@@ -209,40 +209,23 @@ class Settings(BaseSettings):
     @property
     def llm_cascade_models(self) -> List[str]:
         """
-        Cascade for gap analysis / chat / everything except drafting. Sonnet 5
-        primary -- Haiku was faster but proved unreliable at actually obeying
-        the prompt's length constraints, causing repeated max_tokens failures
-        even after tightening them twice. Sonnet follows instructions more
-        precisely, so far fewer wasted 1-3 minute waits that end in failure.
-        Citation accuracy and audit-grade reasoning matter most here anyway,
-        and Analyze already streams progress so its wait is less painful.
+        Cascade for gap analysis / chat / everything except drafting.
+        Gemini 2.5 Flash primary, Groq gpt-oss-120b as fallback.
         """
         return self._build_cascade([
-            ("anthropic_api_key", "anthropic/claude-sonnet-5"),
-            ("openai_api_key", "gpt-4o-mini"),
+            ("gemini_api_key", "gemini/gemini-2.5-flash"),
             ("groq_api_key", "groq/openai/gpt-oss-120b"),
-            ("gemini_api_key", "gemini/gemini-2.0-flash"),
-            ("mistral_api_key", "mistral/mistral-small-latest"),
-            ("openrouter_api_key", "openrouter/meta-llama/llama-3.3-70b-instruct:free"),
         ])
 
     @property
     def llm_cascade_models_draft(self) -> List[str]:
         """
-        Cascade for policy drafting. Sonnet 5 primary — same tier as gap
-        analysis. Used to prefer Gemini/Haiku for speed, but with no Gemini
-        key configured that fallback logic never actually ran; it was Haiku
-        4.5 the whole time. A drafted policy is meant to hold up when run
-        back through gap analysis, so it gets the same model tier doing the
-        writing as the one doing the reviewing, not a lighter one.
+        Cascade for policy drafting. Same models as gap analysis so a drafted
+        policy is written by the same tier that later reviews it.
         """
         return self._build_cascade([
-            ("anthropic_api_key", "anthropic/claude-sonnet-5"),
-            ("gemini_api_key", "gemini/gemini-2.0-flash"),
-            ("openai_api_key", "gpt-4o-mini"),
+            ("gemini_api_key", "gemini/gemini-2.5-flash"),
             ("groq_api_key", "groq/openai/gpt-oss-120b"),
-            ("mistral_api_key", "mistral/mistral-small-latest"),
-            ("openrouter_api_key", "openrouter/meta-llama/llama-3.3-70b-instruct:free"),
         ])
 
     @property
