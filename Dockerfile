@@ -55,9 +55,16 @@ COPY --from=frontend-build /fe/dist /app/frontend/dist
 # The trade-off, stated plainly: while this is true, an eCFR outage blocks
 # deploys entirely, including unrelated fixes. Set it back to false to ship
 # during one.
+#
+# Budget: 360s used to run out after 16 of 24 eCFR targets, so 42 CFR 423 and
+# all seven 29 CFR employment parts (ADA, FMLA, OSHA, Title VII, FLSA, GINA,
+# EEOC) were never baked and the employment industry had no regulatory text.
+# 1200s is about 3x what those 16 took; the remaining parts' sizes are not
+# measured. OSHA 1910, the largest, is seeded last so a shortfall costs only
+# it. `timeout` stays 300s above the budget.
 ARG KB_SEED_REQUIRED=true
-ENV KB_SEED_TIMEOUT_SECONDS=360
-RUN timeout 600 python scripts/build_knowledge_base.py \
+ENV KB_SEED_TIMEOUT_SECONDS=1200
+RUN timeout 1500 python scripts/build_knowledge_base.py \
       $( [ "$KB_SEED_REQUIRED" = "true" ] && echo --require-success ) \
     || { [ "$KB_SEED_REQUIRED" = "true" ] && exit 1; true; }
 
