@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     # ── Provider API Keys (set whichever you have — cascade uses all available) ──
     groq_api_key: str = ""           # console.groq.com — free, fast, high limits
     gemini_api_key: str = ""         # aistudio.google.com — free tier
+    deepseek_api_key: str = ""       # platform.deepseek.com — paid, low cost
     mistral_api_key: str = ""        # console.mistral.ai — free tier
     openrouter_api_key: str = ""     # openrouter.ai — free models available
     anthropic_api_key: str = ""      # console.anthropic.com — paid, best quality
@@ -210,11 +211,12 @@ class Settings(BaseSettings):
     def llm_cascade_models(self) -> List[str]:
         """
         Cascade for gap analysis / chat / everything except drafting.
-        Gemini 3.8 Flash primary, Groq gpt-oss-120b as fallback.
+        Gemini 3.8 Flash primary, then Groq gpt-oss-120b, then DeepSeek Flash.
         """
         return self._build_cascade([
             ("gemini_api_key", "gemini/gemini-3.8-flash"),
             ("groq_api_key", "groq/openai/gpt-oss-120b"),
+            ("deepseek_api_key", "deepseek/deepseek-flash"),
         ])
 
     @property
@@ -226,6 +228,7 @@ class Settings(BaseSettings):
         return self._build_cascade([
             ("gemini_api_key", "gemini/gemini-3.8-flash"),
             ("groq_api_key", "groq/openai/gpt-oss-120b"),
+            ("deepseek_api_key", "deepseek/deepseek-flash"),
         ])
 
     @property
