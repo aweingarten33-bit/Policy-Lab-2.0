@@ -203,17 +203,17 @@ class Settings(BaseSettings):
         Entries whose key isn't set are skipped automatically."""
         cascade = [model for key_attr, model in preference_order if getattr(self, key_attr)]
         if not cascade:
-            cascade.append("gemini/gemini-2.5-flash")
+            cascade.append("gemini/gemini-3.8-flash")
         return cascade
 
     @property
     def llm_cascade_models(self) -> List[str]:
         """
         Cascade for gap analysis / chat / everything except drafting.
-        Gemini 2.5 Flash primary, Groq gpt-oss-120b as fallback.
+        Gemini 3.8 Flash primary, Groq gpt-oss-120b as fallback.
         """
         return self._build_cascade([
-            ("gemini_api_key", "gemini/gemini-2.5-flash"),
+            ("gemini_api_key", "gemini/gemini-3.8-flash"),
             ("groq_api_key", "groq/openai/gpt-oss-120b"),
         ])
 
@@ -224,7 +224,7 @@ class Settings(BaseSettings):
         policy is written by the same tier that later reviews it.
         """
         return self._build_cascade([
-            ("gemini_api_key", "gemini/gemini-2.5-flash"),
+            ("gemini_api_key", "gemini/gemini-3.8-flash"),
             ("groq_api_key", "groq/openai/gpt-oss-120b"),
         ])
 
