@@ -220,7 +220,7 @@ class Settings(BaseSettings):
         return self._build_cascade([
             ("anthropic_api_key", "anthropic/claude-sonnet-5"),
             ("openai_api_key", "gpt-4o-mini"),
-            ("groq_api_key", "groq/llama-3.3-70b-versatile"),
+            ("groq_api_key", "groq/openai/gpt-oss-120b"),
             ("gemini_api_key", "gemini/gemini-2.0-flash"),
             ("mistral_api_key", "mistral/mistral-small-latest"),
             ("openrouter_api_key", "openrouter/meta-llama/llama-3.3-70b-instruct:free"),
@@ -240,7 +240,7 @@ class Settings(BaseSettings):
             ("anthropic_api_key", "anthropic/claude-sonnet-5"),
             ("gemini_api_key", "gemini/gemini-2.0-flash"),
             ("openai_api_key", "gpt-4o-mini"),
-            ("groq_api_key", "groq/llama-3.3-70b-versatile"),
+            ("groq_api_key", "groq/openai/gpt-oss-120b"),
             ("mistral_api_key", "mistral/mistral-small-latest"),
             ("openrouter_api_key", "openrouter/meta-llama/llama-3.3-70b-instruct:free"),
         ])
