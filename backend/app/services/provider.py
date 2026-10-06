@@ -39,6 +39,14 @@ litellm.suppress_debug_info = True
 litellm.drop_params = True
 
 
+def _temperature_for(model: str, requested: float) -> float:
+    """Gemini 3 models are documented to loop or degrade below temperature
+    1.0, so they always get 1.0; every other model gets what was asked for."""
+    if model.startswith("gemini/gemini-3"):
+        return 1.0
+    return requested
+
+
 def _summarize_error(error: Exception) -> str:
     """Short, readable reason for one model's failure.
 
@@ -155,7 +163,7 @@ class LLMProvider:
                     model=model,
                     messages=messages,
                     max_tokens=tokens,
-                    temperature=temperature,
+                    temperature=_temperature_for(model, temperature),
                     timeout=_timeout_for(tokens),
                     num_retries=0,
                     stream=True,
@@ -259,7 +267,7 @@ class LLMProvider:
             model=model,
             messages=messages,
             max_tokens=max_tokens,
-            temperature=temperature,
+            temperature=_temperature_for(model, temperature),
             timeout=_timeout_for(max_tokens),
             num_retries=0,
             thinking={"type": "disabled"},
@@ -301,7 +309,7 @@ class LLMProvider:
             model=model,
             messages=messages,
             max_tokens=max_tokens,
-            temperature=temperature,
+            temperature=_temperature_for(model, temperature),
             timeout=_timeout_for(max_tokens),
             num_retries=0,
             thinking={"type": "disabled"},

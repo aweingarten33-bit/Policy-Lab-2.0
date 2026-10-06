@@ -753,8 +753,10 @@ def _merge_results(results: list[AnalysisResult]) -> AnalysisResult:
     )
 
 
-# ── Ensemble models: run these simultaneously for gap analysis ──
-_ENSEMBLE_MODELS = ["gpt-4o-mini"]
+# Gap analysis runs at temperature 0 so re-running the same policy gives the
+# same findings (needed for before/after comparisons). Providers that require
+# a different value (Gemini 3) are overridden in provider.py.
+_ANALYSIS_TEMPERATURE = 0.0
 
 
 async def analyze_policy_stream(
@@ -798,7 +800,7 @@ async def analyze_policy_stream(
             system_prompt=system_prompt,
             user_message=user_message,
             max_tokens=settings.llm_max_tokens,
-            temperature=0.3,
+            temperature=_ANALYSIS_TEMPERATURE,
         ):
             buffer += piece
             rows = complete_rows(buffer)
@@ -846,57 +848,23 @@ async def analyze_policy(
     jurisdiction: Optional[str] = None,
     retrieval_context: Optional[RetrievalContext] = None,
 ) -> AnalysisResult:
-    """
-    Send policy text to both Claude Haiku and Groq simultaneously.
-    Both models analyze the same policy in parallel; their gap tables are merged
-    so findings missed by one are caught by the other.
-    Falls back to whichever model(s) succeed if one fails (e.g. Groq 'too large').
-    """
+    """Run the gap analysis through the normal provider cascade."""
     provider = get_provider()
 
     system_prompt = _build_system_prompt(industry, jurisdiction)
     user_message = _build_user_prompt(text, industry, jurisdiction, retrieval_context)
 
     logger.info(
-        f"Ensemble analysis — industry: {industry or 'healthcare'}, "
-        f"text length: {len(text)} chars, models: {_ENSEMBLE_MODELS}"
+        f"Analysis — industry: {industry or 'healthcare'}, "
+        f"text length: {len(text)} chars"
     )
 
-    pairs = await provider.complete_ensemble(
+    raw_text = await provider.complete(
         system_prompt=system_prompt,
         user_message=user_message,
-        models=_ENSEMBLE_MODELS,
         max_tokens=settings.llm_max_tokens,
-        temperature=0.3,
+        temperature=_ANALYSIS_TEMPERATURE,
     )
-
-    if not pairs:
-        # All ensemble models failed — fall back to cascade
-        logger.warning("Ensemble: all models failed, falling back to cascade")
-        raw_text = await provider.complete(
-            system_prompt=system_prompt,
-            user_message=user_message,
-            max_tokens=settings.llm_max_tokens,
-            temperature=0.3,
-        )
-        result = _parse_llm_response(raw_text)
-        logger.info(f"Fallback analysis complete — {len(result.gap_table)} findings")
-        return result
-
-    parsed = []
-    for model, raw_text in pairs:
-        try:
-            parsed.append(_parse_llm_response(raw_text))
-            logger.info(f"Ensemble parsed {model}: {len(parsed[-1].gap_table)} findings")
-        except Exception as e:
-            logger.warning(f"Ensemble: failed to parse {model} response — {e}")
-
-    if not parsed:
-        raise ValueError("Ensemble: all model responses failed to parse")
-
-    result = _merge_results(parsed)
-    logger.info(
-        f"Ensemble merged — {len(result.gap_table)} total findings "
-        f"({result.critical_count} critical) from {len(parsed)} model(s)"
-    )
+    result = _parse_llm_response(raw_text)
+    logger.info(f"Analysis complete — {len(result.gap_table)} findings")
     return result
