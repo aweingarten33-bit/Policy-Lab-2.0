@@ -22,6 +22,7 @@ FIXES APPLIED:
 """
 
 import asyncio
+import re
 import logging
 from typing import Optional, List
 
@@ -36,6 +37,20 @@ litellm.suppress_debug_info = True
 # (it only supports temperature=1). Drop unsupported params per-model instead
 # of erroring out, so the same call site works across the whole cascade.
 litellm.drop_params = True
+
+
+def _summarize_error(error: Exception) -> str:
+    """Short, readable reason for one model's failure.
+
+    Provider errors usually embed a JSON body; pull out its "message" field
+    (e.g. "Insufficient Balance") instead of the raw dump, so every model's
+    reason fits in the final cascade error rather than only the last one's.
+    """
+    text = str(error)
+    match = re.search(r'"message"\s*:\s*"([^"]+)"', text)
+    reason = match.group(1) if match else text.split("\n", 1)[0]
+    reason = re.sub(r"\s*\(request_id:[^)]*\)?", "", reason).strip()
+    return f"{type(error).__name__}: {reason[:160]}"
 
 # How long (seconds) to wait for any single model before giving up and trying the next.
 # Long-form policy generation (max_tokens >= 2000) uses _MODEL_TIMEOUT_LONG since
@@ -130,6 +145,7 @@ class LLMProvider:
         ]
         cascade = models or settings.llm_cascade_models
         last_error: Optional[Exception] = None
+        failures: List[str] = []
 
         for model in cascade:
             started = False
@@ -167,11 +183,11 @@ class LLMProvider:
                 short_err = str(e)[:120].replace("\n", " ")
                 logger.warning(f"Stream model {model} failed before any output [{type(e).__name__}]: {short_err}")
                 last_error = e
+                failures.append(f"{model} ({_summarize_error(e)})")
                 continue
 
         raise RuntimeError(
-            f"All AI providers are currently unavailable. Tried: {', '.join(cascade)}. "
-            f"Last error: {type(last_error).__name__}: {str(last_error)[:200]}"
+            f"All AI providers are currently unavailable. Tried: {'; '.join(failures)}."
         ) from last_error
 
     async def complete_chat(
@@ -199,6 +215,7 @@ class LLMProvider:
         """Try each model in the cascade until one succeeds."""
         cascade = models or settings.llm_cascade_models
         last_error: Optional[Exception] = None
+        failures: List[str] = []
 
         logger.info(f"Cascade: {len(cascade)} model(s) available: {', '.join(cascade)}")
 
@@ -212,14 +229,13 @@ class LLMProvider:
                 short_err = str(e)[:120].replace("\n", " ")
                 logger.warning(f"Model {model} failed [{type(e).__name__}]: {short_err}")
                 last_error = e
+                failures.append(f"{model} ({_summarize_error(e)})")
                 continue
 
-        logger.error(f"All {len(cascade)} models in cascade failed. Last error: {last_error}")
-        last_error_summary = str(last_error).split("\n", 1)[0][:200]
+        summary = "; ".join(failures)
+        logger.error(f"All {len(cascade)} models in cascade failed: {summary}")
         raise RuntimeError(
-            f"All AI providers are currently unavailable. "
-            f"Tried: {', '.join(cascade)}. "
-            f"Last error: {type(last_error).__name__}: {last_error_summary}"
+            f"All AI providers are currently unavailable. Tried: {summary}."
         ) from last_error
 
     def _call_model(
