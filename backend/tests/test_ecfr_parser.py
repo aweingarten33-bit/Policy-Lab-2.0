@@ -108,3 +108,60 @@ def test_old_literal_section_format_would_have_failed():
     assert any(
         (n.attrib.get("TYPE") or "").upper() == "SECTION" for n in root.iter()
     ), "sections are carried as TYPE='SECTION' attributes instead"
+
+
+# Real eCFR sections do not keep all their text in <P>. Definitions and lists
+# use <FP>, quoted material sits in <EXTRACT>, and some sections are mostly a
+# <GPOTABLE>. Reading only <P> dropped those passages without any error.
+NON_P_XML_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
+<ECFR>
+ <DIV5 TYPE="PART" N="164">
+  <DIV6 TYPE="SUBPART" N="C">
+   <DIV8 TYPE="SECTION" N="164.304">
+    <SECTNO>§ 164.304</SECTNO>
+    <SUBJECT>Definitions.</SUBJECT>
+    <P>As used in this subpart, the following terms have the following meanings:</P>
+    <FP>Access means the ability or the means necessary to read, write, modify, or communicate data.</FP>
+    <EXTRACT><P>Quoted standard text that lives inside an extract block.</P></EXTRACT>
+    <GPOTABLE><ROW><ENT>Security management process</ENT><ENT>164.308(a)(1)</ENT></ROW></GPOTABLE>
+    <CITA>[68 FR 8376, Feb. 20, 2003]</CITA>
+   </DIV8>
+   <DIV8 TYPE="SECTION" N="164.305">
+    <SECTNO>§ 164.305</SECTNO>
+    <SUBJECT>[Reserved]</SUBJECT>
+    <P>[Reserved]</P>
+   </DIV8>
+   <DIV8 TYPE="SECTION" N="164.306">
+    <SECTNO>§ 164.306</SECTNO>
+    <SUBJECT>Short.</SUBJECT>
+    <FP>Covered entities must comply.</FP>
+   </DIV8>
+  </DIV6>
+ </DIV5>
+</ECFR>
+"""
+
+
+class TestNonParagraphText:
+    def _sections(self):
+        return {s["section"]: s for s in _parse(NON_P_XML_SAMPLE)["sections"]}
+
+    def test_text_outside_p_elements_is_kept(self):
+        text = self._sections()["164.304"]["text"]
+        assert "As used in this subpart" in text
+        assert "Access means the ability" in text, "<FP> text was dropped"
+        assert "inside an extract block" in text, "<EXTRACT> text was dropped"
+        assert "Security management process" in text, "table text was dropped"
+
+    def test_headers_and_amendment_history_are_not_body_text(self):
+        section = self._sections()["164.304"]
+        assert "§ 164.304" not in section["text"]
+        assert section["heading"] == "Definitions."
+        assert "68 FR 8376" not in section["text"]
+
+    def test_reserved_sections_are_skipped(self):
+        assert "164.305" not in self._sections()
+
+    def test_short_sections_with_real_text_are_kept(self):
+        """The old 50-character floor dropped short but real provisions."""
+        assert self._sections()["164.306"]["text"] == "Covered entities must comply."

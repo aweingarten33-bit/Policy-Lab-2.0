@@ -46,9 +46,13 @@ from typing import Optional, Protocol
 
 from app.models.schemas import SourceStatus
 from app.services.retrieval.models import (
+    Jurisdiction,
     RetrievalContext,
     RetrievalResult,
     SourceCategory,
+    SourceChunk,
+    SourceMetadata,
+    SourceType,
     can_support_present_duty,
     resolve_source_status,
 )
@@ -109,11 +113,67 @@ class ChromaAuthorityProvider:
             candidates.append((current, scope_ok, exact, result.score, result))
 
         if not candidates:
-            return None
+            # Nothing retrieved for this request carries the cited section.
+            # Retrieval keeps only a handful of chunks per step, so a finding
+            # citing a section outside that handful -- e.g. 45 CFR 164.404 on a
+            # request whose top results were 42 CFR 482 -- used to come back
+            # unverified even though the complete section is in the store.
+            # Look it up there before concluding the authority is absent.
+            return self._from_section_store(citation)
 
         # Current + correct scope dominates semantic similarity.
         candidates.sort(key=lambda x: (x[0], x[1], x[2], x[3]), reverse=True)
         return candidates[0][-1]
+
+    def _from_section_store(self, citation: str) -> Optional[RetrievalResult]:
+        """The cited section from the authoritative section store, or None.
+
+        Only eCFR ingestion writes this store, so a hit is codified federal
+        regulation text. Its standing comes from what was recorded at
+        ingestion; a missing or unrecognised value fails closed to
+        STATUS_UNKNOWN rather than being assumed current.
+        """
+        try:
+            row = get_section_store().get(citation)
+        except Exception as e:
+            logger.warning("Section store fallback failed for %r: %s", citation, e)
+            return None
+        if not row or not row.get("full_text") or not row.get("citation"):
+            return None
+        if not self._matcher._citations_match(citation, row["citation"]):
+            return None
+
+        try:
+            status = SourceStatus(row.get("source_status"))
+        except ValueError:
+            status = SourceStatus.status_unknown
+
+        metadata = SourceMetadata(
+            source_name=row.get("source_name") or row["citation"],
+            source_type=SourceType.retrieved_source,
+            category=SourceCategory.federal_regulation,
+            jurisdiction=Jurisdiction.federal,
+            citation=row["citation"],
+            part_citation=row.get("part_citation"),
+            url=row.get("url"),
+            authority=row.get("authority"),
+            effective_date=row.get("effective_date"),
+            publication_date=row.get("publication_date"),
+            retrieved_date=row.get("retrieved_date"),
+            last_verified_date=row.get("last_verified_date"),
+            source_status=status,
+            collection=SourceCategory.federal_regulation.value,
+        )
+        return RetrievalResult(
+            chunk=SourceChunk(
+                id=f"section_store:{row.get('citation_key') or row['citation']}",
+                text=row["full_text"],
+                metadata=metadata,
+            ),
+            # Not a similarity score: the section was looked up by citation.
+            score=0.0,
+            query=citation,
+        )
 
     def full_text(self, citation: str) -> str:
         try:

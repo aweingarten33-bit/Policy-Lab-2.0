@@ -12,6 +12,7 @@ scheduler will populate it at 02:00 UTC.
 """
 
 import asyncio
+import gc
 import logging
 from datetime import date
 from typing import Dict
@@ -275,6 +276,7 @@ async def _async_seed() -> Dict[str, int]:
     logger.info(f"Seeding knowledge base from eCFR ({len(ECFR_TARGETS)} targets, as of {today})...")
 
     for title, part, label, category in ECFR_TARGETS:
+        part_data = chunks = None
         if time.monotonic() > deadline:
             logger.error(
                 f"Seeding budget of {settings.kb_seed_timeout_seconds}s exhausted — "
@@ -317,6 +319,12 @@ async def _async_seed() -> Dict[str, int]:
         except Exception as e:
             logger.error(f"Failed to seed {label}: {e}")
             results[label] = 0
+        finally:
+            # One part is fetched, parsed, embedded and persisted before the
+            # next begins. Drop this part's XML-derived text explicitly so the
+            # largest parts don't stack in memory on a 512 MB instance.
+            part_data = chunks = None
+            gc.collect()
 
     total = sum(results.values())
     logger.info(f"KB seeded from eCFR: {total} total chunks across {len(results)} sources")

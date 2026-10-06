@@ -153,7 +153,7 @@ class TestStrictModeRequiresTheRegulations:
     eCFR IS reachable; it previously could only be observed by luck.
     """
 
-    def _main(self, monkeypatch, total, regulatory, strict=True):
+    def _main(self, monkeypatch, total, regulatory, strict=True, results=None):
         import io
         import contextlib
         import importlib.util
@@ -165,8 +165,19 @@ class TestStrictModeRequiresTheRegulations:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
+        if results is None:
+            # A healthy build: both required HIPAA parts present when any
+            # regulation loaded.
+            from app.services.retrieval.ecfr_client import ECFR_TARGETS
+
+            results = {
+                label: (10 if regulatory else 0)
+                for t, p, label, _ in ECFR_TARGETS
+                if (t, p) in module.REQUIRED_PARTS
+            }
+
         async def _fake_build():
-            return total, regulatory
+            return total, regulatory, results
 
         monkeypatch.setattr(module, "_build", _fake_build)
         monkeypatch.setattr(
@@ -201,6 +212,32 @@ class TestStrictModeRequiresTheRegulations:
         assert code == 0
         assert "SUCCESS" in out
         assert "guidance-only grounding" in err
+
+    def test_missing_hipaa_part_fails_the_strict_build(self, monkeypatch):
+        """Other regulations loading is not enough: an image without 45 CFR
+        Part 164 cannot verify the citations most findings make."""
+        from app.services.retrieval.ecfr_client import ECFR_TARGETS
+
+        labels = {(t, p): label for t, p, label, _ in ECFR_TARGETS}
+        results = {labels[(45, 160)]: 157, labels[(45, 164)]: 0, "42 CFR Part 482": 281}
+        code, out, err = self._main(
+            monkeypatch, total=4000, regulatory=3000, results=results
+        )
+        assert code == 1, out
+        assert "FAILED" in err
+        assert labels[(45, 164)] in err
+        assert labels[(45, 160)] not in err
+
+    def test_missing_hipaa_part_ships_when_the_gate_is_off(self, monkeypatch):
+        from app.services.retrieval.ecfr_client import ECFR_TARGETS
+
+        labels = {(t, p): label for t, p, label, _ in ECFR_TARGETS}
+        results = {labels[(45, 160)]: 0, labels[(45, 164)]: 0}
+        code, out, _ = self._main(
+            monkeypatch, total=4000, regulatory=3000, strict=False, results=results
+        )
+        assert code == 0
+        assert "SUCCESS" in out
 
 
 class TestReleaseBuildIsStrict:
