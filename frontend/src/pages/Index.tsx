@@ -1008,9 +1008,6 @@ export default function Index() {
           <span className="nyt-masthead text-[26px] sm:text-3xl text-foreground whitespace-nowrap overflow-visible leading-[1.3] py-0.5 inline-block">
             The Policy Lab
           </span>
-          <p className="text-[9px] sm:text-[10px] text-muted-foreground/70 leading-tight -mt-0.5">
-            AI-assisted, not AI-decided — you're the final approver, so review every finding, citation, and suggested change. Final judgment and responsibility remain yours.
-          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {!backendOnline && (
@@ -1419,9 +1416,6 @@ export default function Index() {
                 </button>
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
-              <strong className="text-foreground/80 font-medium">Fix All Gaps</strong> rewrites the policy end to end to resolve every finding — takes about 30–45 seconds. <strong className="text-foreground/80 font-medium">Download Report</strong> gets you the gap analysis findings as an editable Word file (.docx).
-            </p>
 
             {/* Tab bar */}
             <div className="flex gap-1 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -1435,12 +1429,6 @@ export default function Index() {
                   </button>
                 );
               })}
-              {pkgStreaming && (
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-mono text-[10px] font-medium text-foreground/80 neu-btn shrink-0">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  more loading…
-                </div>
-              )}
             </div>
 
             {/* Tab content */}
@@ -1681,7 +1669,7 @@ function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilt
     <div className="space-y-4">
       {/* Filter chips — surgical drilldown without leaving the page */}
       <div className="flex flex-wrap gap-2">
-        {chips.map((chip) => {
+        {chips.filter((chip) => chip.count > 0).map((chip) => {
           const active = (severityFilter ?? null) === chip.key;
           return (
             <button

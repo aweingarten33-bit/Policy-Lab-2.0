@@ -30,6 +30,36 @@ router = APIRouter(prefix="/api/kb", tags=["Knowledge Base"])
 CORPUS_STALE_AFTER_DAYS = 180
 
 
+# Where to look when a provider rejects a request, keyed by litellm prefix.
+_PROVIDER_INFO = {
+    "deepseek": ("DeepSeek", "DEEPSEEK_API_KEY", "platform.deepseek.com"),
+    "gemini": ("Gemini", "GEMINI_API_KEY", "aistudio.google.com"),
+    "groq": ("Groq", "GROQ_API_KEY", "console.groq.com"),
+    "anthropic": ("Anthropic", "ANTHROPIC_API_KEY", "console.anthropic.com"),
+    "mistral": ("Mistral", "MISTRAL_API_KEY", "console.mistral.ai"),
+    "openrouter": ("OpenRouter", "OPENROUTER_API_KEY", "openrouter.ai"),
+}
+
+
+def _describe_provider_failure(model: str, error: Exception) -> str:
+    """One-line diagnosis of a failed model call that names its provider."""
+    prefix = model.split("/", 1)[0] if "/" in model else "openai"
+    name, env_var, console = _PROVIDER_INFO.get(
+        prefix, ("OpenAI", "OPENAI_API_KEY", "platform.openai.com"))
+    # The provider layer wraps the real error; report the underlying one.
+    root = error.__cause__ or error
+    text = f"{type(root).__name__}: {root}"
+    lowered = text.lower()
+    if "429" in text or "rate" in lowered:
+        return f"{name} ({model}) is rate limiting requests. Wait a few minutes and retry."
+    if "402" in text or "credit" in lowered or "balance" in lowered:
+        return (f"{name} ({model}) rejected the request for billing reasons. "
+                f"Check the account balance at {console}.")
+    if "401" in text or "403" in text or "authentication" in lowered:
+        return f"{name} ({model}) rejected the API key. Check {env_var} in the environment."
+    return f"{name} ({model}) call failed: {text[:300]}"
+
+
 @router.get("/stats", response_model=KnowledgeBaseStatsResponse)
 async def kb_stats():
     """Get knowledge base statistics."""
@@ -239,34 +269,35 @@ async def kb_diagnose():
         if not configured:
             step("AI provider", False,
                  "No model is configured — every provider API key is unset. "
-                 "Set ANTHROPIC_API_KEY in the environment.")
+                 "Set DEEPSEEK_API_KEY or GEMINI_API_KEY in the environment.")
         else:
-            started = _t.monotonic()
-            try:
-                reply = await provider.complete(
-                    system_prompt="Reply with the single word: ok",
-                    user_message="ping",
-                    max_tokens=8,
-                    temperature=0,
-                )
-                elapsed = _t.monotonic() - started
-                step("AI provider", bool(reply and reply.strip()),
-                     f"{configured[0]} responded in {elapsed:.1f}s.")
-            except Exception as e:
-                text = f"{type(e).__name__}: {e}"
-                if "429" in text or "rate" in text.lower():
-                    detail = (f"Rate limited by the provider — {configured[0]}. "
-                              f"Wait a few minutes and retry.")
-                elif "402" in text or "credit" in text.lower() or "balance" in text.lower():
-                    detail = (f"The provider rejected the request for billing reasons "
-                              f"({configured[0]}). Check the account balance at "
-                              f"console.anthropic.com → Billing.")
-                elif "401" in text or "403" in text or "authentication" in text.lower():
-                    detail = (f"The provider rejected the API key ({configured[0]}). "
-                              f"Check ANTHROPIC_API_KEY in the environment.")
-                else:
-                    detail = f"Model call failed: {text[:300]}"
-                step("AI provider", False, detail)
+            # Try each configured model on its own, in cascade order, so a
+            # failure names the provider that actually failed rather than
+            # whichever one happens to be first in the list.
+            failures = []
+            passed = None
+            for model in configured:
+                started = _t.monotonic()
+                try:
+                    reply = await provider.complete(
+                        system_prompt="Reply with the single word: ok",
+                        user_message="ping",
+                        max_tokens=8,
+                        temperature=0,
+                        models=[model],
+                    )
+                except Exception as e:
+                    failures.append(_describe_provider_failure(model, e))
+                    continue
+                if reply and reply.strip():
+                    passed = f"{model} responded in {_t.monotonic() - started:.1f}s."
+                    break
+                failures.append(f"{model} returned an empty reply.")
+            if passed:
+                detail = " ".join([passed] + [f"(Earlier in the cascade: {f})" for f in failures])
+                step("AI provider", True, detail)
+            else:
+                step("AI provider", False, " ".join(failures))
     except Exception as e:
         step("AI provider", False, f"Could not test the provider: {type(e).__name__}: {e}")
 

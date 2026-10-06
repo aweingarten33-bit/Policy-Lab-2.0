@@ -211,12 +211,12 @@ class Settings(BaseSettings):
     def llm_cascade_models(self) -> List[str]:
         """
         Cascade for gap analysis / chat / everything except drafting.
-        Gemini 3.8 Flash primary, then Groq gpt-oss-120b, then DeepSeek Flash.
+        DeepSeek Flash primary, Gemini 3.8 Flash fallback. Groq is not used:
+        its free-tier request limit is smaller than our prompts.
         """
         return self._build_cascade([
-            ("gemini_api_key", "gemini/gemini-3.8-flash"),
-            ("groq_api_key", "groq/openai/gpt-oss-120b"),
             ("deepseek_api_key", "deepseek/deepseek-flash"),
+            ("gemini_api_key", "gemini/gemini-3.8-flash"),
         ])
 
     @property
@@ -226,9 +226,8 @@ class Settings(BaseSettings):
         policy is written by the same tier that later reviews it.
         """
         return self._build_cascade([
-            ("gemini_api_key", "gemini/gemini-3.8-flash"),
-            ("groq_api_key", "groq/openai/gpt-oss-120b"),
             ("deepseek_api_key", "deepseek/deepseek-flash"),
+            ("gemini_api_key", "gemini/gemini-3.8-flash"),
         ])
 
     @property
