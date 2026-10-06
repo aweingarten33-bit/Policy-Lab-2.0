@@ -203,7 +203,7 @@ class Settings(BaseSettings):
         Entries whose key isn't set are skipped automatically."""
         cascade = [model for key_attr, model in preference_order if getattr(self, key_attr)]
         if not cascade:
-            cascade.append("gemini/gemini-2.0-flash")
+            cascade.append("gemini/gemini-2.5-flash")
         return cascade
 
     @property
