@@ -117,9 +117,22 @@ export interface GapRow {
     | "organizational_choice"
     | "unverified_requirement";
   obligation_note?: string;
+  // What the finding is a statement about. Only a policy document is ever
+  // read, so a finding is a gap in the document or a question about practice
+  // -- never a determination that the organization is out of compliance.
+  finding_kind?: "document_gap" | "implementation_question";
+  implementation_question?: string | null;
   verification_warning?: string;
   evidence?: VerificationEvidence;
   source_attribution?: SourceAttribution;
+}
+
+/** Which state-law sources a run actually consulted. Derived server-side from retrieval. */
+export interface StateCoverage {
+  jurisdiction: string;
+  state_text_available: boolean;
+  sources_consulted: Array<{ name: string; url?: string | null; kind: "knowledge_base" | "live_search" }>;
+  summary: string;
 }
 
 export type ClaimSupport =
@@ -313,6 +326,7 @@ export interface ComplianceActionPackage {
   live_research_used: boolean;
   verification_overall?: string;
   unverified_claim_count?: number;
+  state_coverage?: StateCoverage | null;
 }
 
 // ── Status labels for the pipeline ──
@@ -361,8 +375,9 @@ export async function getIndustries(): Promise<IndustryOption[]> {
 }
 
 /**
- * "Fix All Gaps" — rewrite the policy end to end to resolve every finding
- * from an existing gap analysis. Does not re-run the analysis itself.
+ * "Draft revisions" — write a proposed revision of the policy aimed at the
+ * findings of an existing gap analysis. Does not re-run the analysis, so the
+ * result is unconfirmed until the user re-checks it.
  */
 export async function fixAllGaps(
   text: string,
@@ -451,6 +466,7 @@ export async function exportGapAnalysis(
       kb_sources_used: pkg.kb_sources_used,
       live_research_used: pkg.live_research_used,
       verification_overall: pkg.verification_overall,
+      state_coverage: pkg.state_coverage ?? null,
     }),
   });
 
@@ -535,6 +551,11 @@ export interface DraftedPolicy {
   live_research_used?: boolean;
   verification_overall?: string | null;
   unverified_claim_count?: number | null;
+  // Placeholders the draft uses instead of invented facts, and what each needs decided.
+  decisions_required?: string[];
+  // Regulatory obligations for this topic the draft does not appear to cover.
+  missing_obligations?: string[];
+  state_coverage?: StateCoverage | null;
 }
 
 export interface SourceSnippet {

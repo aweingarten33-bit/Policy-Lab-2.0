@@ -21,7 +21,7 @@ export default function Legal() {
           The fine print.
         </h1>
         <p className="text-sm text-muted-foreground mb-10 leading-relaxed">
-          Last updated: July 22, 2026
+          Last updated: October 7, 2026
         </p>
 
         <section className="space-y-3 mb-10">
@@ -70,22 +70,37 @@ export default function Legal() {
             How Your Data Is Handled
           </h2>
           <p className="text-sm leading-relaxed text-foreground/85">
-            The Policy Lab is stateless. We do not require an account, and we
-            do not store the policies, descriptions, or files you submit on our
-            servers after your request is processed.
+            We do not require an account. Our server does not write the
+            policies, descriptions, or files you submit to disk. While a request
+            runs, and for up to 30 minutes after it finishes, the text and result
+            are held in server memory so a reloaded page can pick them back up;
+            after that they are discarded.
           </p>
           <p className="text-sm leading-relaxed text-foreground/85">
-            To generate output, the text you submit is sent to a third-party
-            AI provider for processing, and to search regulatory sources
-            online. Those providers have their own privacy policies and
-            data-handling practices, which apply to your content while it is
-            in their systems.
+            <span className="font-bold">What is sent where.</span> To generate
+            output, the full text you submit is sent to third-party AI model
+            providers. When a live search runs (only when the stored regulations
+            don't cover your request), a short search query built from the start
+            of your text — with obvious identifiers such as email addresses,
+            phone numbers and Social Security numbers stripped — is sent to a web
+            search provider. Those providers have their own privacy policies and
+            data-handling practices, which apply to your content while it is in
+            their systems. No Business Associate Agreement is in place with any
+            of them.
           </p>
           <p className="text-sm leading-relaxed text-foreground/85">
-            <span className="font-bold">Do not paste anything you would not be comfortable sending to a third-party AI provider.</span>{" "}
-            That includes confidential client information, protected health
-            information (PHI), trade secrets, attorney work product, or any
-            other material subject to a confidentiality obligation.
+            <span className="font-bold">What stays in your browser.</span> Your
+            text, uploaded file name and results are saved in this browser's local
+            storage so they survive a reload. They stay there until you use
+            &ldquo;Start fresh&rdquo; or clear your browser data. Anyone using the
+            same browser profile can see them.
+          </p>
+          <p className="text-sm leading-relaxed text-foreground/85">
+            <span className="font-bold">Do not submit protected health information (PHI), patient records, or client-confidential information.</span>{" "}
+            That also covers trade secrets, attorney work product, and any other
+            material subject to a confidentiality obligation, or anything you
+            would not be comfortable sending to a third-party AI provider. Use
+            de-identified or sample policies.
           </p>
         </section>
 

@@ -20,6 +20,9 @@ from app.services.retrieval.retriever import get_retriever
 from app.services.retrieval.live_research import get_live_research_service
 from app.services.retrieval.verification import get_verification_service
 from app.services.retrieval.models import RetrievalContext
+from app.services.draft_facts import ground_draft_facts
+from app.services.obligation_checklists import checklist_for, missing_obligations, prompt_block
+from app.services.state_coverage import state_coverage
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,10 @@ def _build_draft_system_prompt(industry_slug: str, jurisdiction: Optional[str]) 
         f"You are the most senior {cfg['name']} compliance attorney and policy writer in the United States. "
         f"You write complete, professional, regulation-compliant policy documents for {cfg['description']}.\n\n"
         f"A user will describe a policy they need. Your job is to write the full policy document from scratch — "
-        f"complete, professional, and ready to adopt. Not an outline. Not a template. The actual policy.\n\n"
+        f"complete and professional. Not an outline. You know almost nothing about this organization beyond the "
+        f"description, so every organizational fact you were not given (who holds a role, what an internal "
+        f"deadline is, when the policy takes effect) stays an explicit placeholder for the organization to fill "
+        f"in. The draft is a starting point for the organization's own decisions, not a finished policy.\n\n"
         f"FIRST — is this actually a policy request? The description must be a genuine request for an "
         f"organizational policy or procedure. If it clearly isn't — random trivia, an off-topic question, a "
         f"story request, spam, or anything that was never attempting to describe a policy — do NOT invent a "
@@ -58,15 +64,15 @@ def _build_draft_system_prompt(industry_slug: str, jurisdiction: Optional[str]) 
         f"MATERIAL below, and only with its citation. Do not name a rule, a status, or a date from memory: "
         f"whether a rule is current, proposed, delayed or superseded is precisely the kind of fact that changes "
         f"after training. If the reference material shows no such update, say nothing about recent changes.\n"
-        f"7. Every obligation must be specific, operable, and accountable — not just present. This document will "
-        f"later be run through an adversarial gap analysis that checks each obligation on exactly those three "
-        f"axes, so write it to already pass: assign a specific named role or title (never 'appropriate staff,' "
-        f"'management,' or 'the department'), give an exact timeframe, interval, or numeric threshold (never "
-        f"'promptly,' 'periodically,' 'as needed,' 'as appropriate,' or 'in a timely manner'), and state what "
-        f"evidence proves it happened wherever the obligation is the kind that gets audited (a log entry, a "
-        f"signed form, a dated record, a specific retention period in days/months/years). A vague placeholder is "
-        f"not acceptable anywhere a concrete answer is knowable — decide on a reasonable specific value rather "
-        f"than hedging.\n"
+        f"7. Every obligation must be specific, operable, and accountable — but NEVER invent the organization's "
+        f"facts to get there. Each obligation names who does it, by when, and what record proves it happened. "
+        f"When the description did not tell you who, write a placeholder instead of a title: "
+        f"[ACCOUNTABLE ROLE 1], [ACCOUNTABLE ROLE 2] and so on, one number per distinct role, reused "
+        f"consistently. Never make up a job title such as 'Director of Clinical Services' or 'Quality "
+        f"Improvement Coordinator'. When the timing is an internal choice nobody gave you, write [TIMEFRAME]. "
+        f"Never write a specific date unless the description supplied it; the effective date is [EFFECTIVE DATE]. "
+        f"Vague words ('promptly', 'periodically', 'appropriate staff') are still not acceptable: a placeholder "
+        f"is precise about what must be decided, a vague word hides it.\n"
         f"8. CRITICAL — separate REGULATORY deadlines from ORGANIZATIONAL ones. Requirement 7 tells you to pick "
         f"concrete numbers. That does NOT license you to present an invented number as legally mandated. Every "
         f"specific deadline, retention period, notification window, training frequency, or numeric threshold you "
@@ -76,9 +82,9 @@ def _build_draft_system_prompt(industry_slug: str, jurisdiction: Optional[str]) 
         f"reference material does not state the number, you do NOT know it — do not guess, and do not attach a "
         f"citation to a guess.\n"
         f"   (b) ORGANIZATIONAL CHOICE — the regulation requires that you have a policy, but the specific interval "
-        f"is yours to set. Still pick a concrete, sensible value (per requirement 7), but write it as the "
-        f"organization's chosen standard with NO citation attached — e.g. 'Records are retained for seven years "
-        f"under this policy' rather than 'Records must be retained for seven years as required by [regulation].'\n"
+        f"is the organization's to set. Write [TIMEFRAME] with NO citation attached, and list it under "
+        f"decisions_required — e.g. 'Records are retained for [TIMEFRAME] under this policy', never a number you "
+        f"picked and never 'as required by [regulation]'.\n"
         f"   When you are not certain which category a number falls into, treat it as (b). Overstating an "
         f"organizational preference as a legal mandate is the most harmful error you can make here: a user relying "
         f"on this to know what the law actually requires is misled about their real obligations.\n\n"
@@ -97,7 +103,7 @@ Return ONLY valid JSON — no markdown fences, no preamble. The sections array M
 
 {
   "policy_title": "Full formal title of the policy",
-  "effective_date": "Suggested effective date for the organization to adopt — a date of your choosing, stated as the organization's proposed adoption date, never as a regulatory deadline",
+  "effective_date": "[EFFECTIVE DATE] — unless the description states the date, in which case that exact date",
   "version": "1.0",
   "regulations_applied": ["Only the regulations/statutes/guidance this policy was actually written to satisfy and that genuinely apply. No target number — list one if one applies. Never add an authority to lengthen the list."],
   "sections": [
@@ -105,13 +111,14 @@ Return ONLY valid JSON — no markdown fences, no preamble. The sections array M
     { "title": "II. Scope", "content": "2-4 sentences — who is covered, what activities, which locations/entities." },
     { "title": "III. Definitions", "content": "One sentence per term, only terms actually used elsewhere in this policy — not a general glossary." },
     { "title": "IV. Policy Statement", "content": "3-6 sentences — the core policy position and commitments." },
-    { "title": "V. Procedures", "content": "Numbered steps, each one sentence: the action, the specific named role who performs it, and an exact timeframe (a number of hours/days, not 'promptly' or 'as needed'). Cover the real procedure end-to-end without enumerating every hypothetical edge case." },
-    { "title": "VI. Roles and Responsibilities", "content": "One to two sentences per role — a specific named title (not 'management' or 'staff') and exactly what they are responsible for, including the authority they hold to do it." },
-    { "title": "VII. Recordkeeping", "content": "2-4 sentences — what records must be kept, the exact retention period (a number of days/months/years, not 'an appropriate period'), storage requirements, and who is responsible for maintaining them." },
+    { "title": "V. Procedures", "content": "Numbered steps, each one sentence: the action, who performs it ([ACCOUNTABLE ROLE n] unless the description named the role), and when (a period the cited regulation states, or [TIMEFRAME]). Cover the real procedure end-to-end without enumerating every hypothetical edge case." },
+    { "title": "VI. Roles and Responsibilities", "content": "One to two sentences per role — the role ([ACCOUNTABLE ROLE n] unless named in the description) and exactly what it is responsible for, including the authority it needs to do it." },
+    { "title": "VII. Recordkeeping", "content": "2-4 sentences — what records must be kept, the retention period (the period the cited regulation states, otherwise [TIMEFRAME]), storage requirements, and which role maintains them." },
     { "title": "VIII. Violations and Consequences", "content": "2-4 sentences — what constitutes a violation, reporting process, disciplinary consequences." },
     { "title": "IX. References", "content": "A list of the statutes, regulations, and guidance documents actually cited above — no additional prose." },
     { "title": "X. Review and Revision Schedule", "content": "1-3 sentences — how often reviewed, who is responsible, version control." }
   ],
+  "decisions_required": ["One short line per placeholder or open choice: the placeholder, then what the organization must decide — e.g. '[ACCOUNTABLE ROLE 1] — who receives, logs and investigates complaints'. List every placeholder you used."],
   "drafting_notes": "2-3 sentences: which regulatory frameworks were applied, any recent update incorporated (only if it appeared in the reference material, with its citation — otherwise omit that clause entirely), and what legal review is recommended before adoption."
 }
 
@@ -121,8 +128,8 @@ budget better spent on section depth.
 
 Keep every section focused and complete, not exhaustive — this is a policy document,
 not a training manual or a legal brief. State the rule, the responsible role, and the
-timeframe; do not enumerate every hypothetical scenario or edge case. A tightly-written
-real policy beats a padded one."""
+timeframe (or its placeholder); do not enumerate every hypothetical scenario or edge case.
+A tightly-written real policy beats a padded one."""
 
     return prompt + "\n\n" + CONFIDENTIALITY_RULE
 
@@ -136,8 +143,10 @@ def _build_draft_user_prompt(policy_description: str, industry_slug: str, jurisd
         prompt += f" in {jurisdiction}"
     prompt += f".\n\nPolicy needed: {policy_description}\n\n"
     prompt += (
-        "Write the full policy document. Every section must be complete — real sentences, real procedures, "
-        "real regulatory citations. Make it ready to sign and adopt."
+        "Write the full policy document. Every section must be complete — real sentences and real procedures, "
+        "with regulatory citations only where the reference material supports them. Do not invent facts about "
+        "this organization: any role, internal deadline or date not stated above is a placeholder "
+        "([ACCOUNTABLE ROLE n], [TIMEFRAME], [EFFECTIVE DATE]) listed in decisions_required."
     )
     return prompt + "\n\n" + CONFIDENTIALITY_RULE
 
@@ -154,6 +163,9 @@ async def _prepare_draft(
 
     system_prompt = _build_draft_system_prompt(industry_slug, jurisdiction)
     user_message = _build_draft_user_prompt(policy_description, industry_slug, jurisdiction)
+    obligations = prompt_block(checklist_for(industry_slug, policy_description))
+    if obligations:
+        user_message += "\n\n" + obligations
 
     logger.info(f"Drafting policy — industry: {industry_slug}, description: {policy_description[:80]}")
 
@@ -195,6 +207,34 @@ async def _prepare_draft(
         logger.info(f"Draft KB: {ctx.total_sources_found} reference chunks injected")
 
     return system_prompt, user_message, ctx
+
+
+def finalize_draft(
+    data: dict,
+    ctx: Optional[RetrievalContext],
+    policy_description: str,
+    industry: Optional[str] = None,
+    jurisdiction: Optional[str] = None,
+) -> dict:
+    """Everything a parsed draft goes through before anyone sees it.
+
+    Order matters: invented facts are replaced first, so verification and the
+    obligation check both run on the text the reader will actually get.
+    """
+    supplied = "\n".join(filter(None, [policy_description, jurisdiction]))
+    reference = ctx.formatted_context if ctx is not None else ""
+    data = ground_draft_facts(data, supplied, reference or "")
+
+    checklist = checklist_for(industry or "healthcare", policy_description)
+    data["missing_obligations"] = [
+        f"{o.citation}: {o.requirement}" for o in missing_obligations(data.get("full_text", ""), checklist)
+    ]
+
+    if ctx is not None:
+        data = attach_attribution(data, ctx)
+    coverage = state_coverage(ctx, jurisdiction)
+    data["state_coverage"] = coverage.model_dump() if coverage else None
+    return data
 
 
 def attach_attribution(data: dict, ctx: RetrievalContext) -> dict:
@@ -318,7 +358,7 @@ async def draft_policy(
         models=settings.llm_cascade_models_draft,
     )
     data = parse_draft_response(raw_text)
-    return attach_attribution(data, ctx)
+    return finalize_draft(data, ctx, policy_description, industry, jurisdiction)
 
 
 async def draft_policy_stream(

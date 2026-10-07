@@ -27,6 +27,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
 
+from app.services.limitations import analysis_limitations, draft_limitations, revision_limitations
 from app.models.schemas import (
     AnalysisResult, GapRow, RiskLevel, ExportFormat,
     ComplianceActionPackage, RewrittenPolicy, RedlineChange,
@@ -181,6 +182,30 @@ def _add_horizontal_rule(doc, color: str = "F59E0B"):
     pPr.append(pBdr)
 
 
+def _add_limitations_banner(doc, lines: List[str], heading: str = "READ FIRST — LIMITS OF THIS DOCUMENT"):
+    """The limits of this output, boxed, at the top -- before any finding or policy text."""
+    lines = [l for l in (lines or []) if l]
+    if not lines:
+        return
+    table = doc.add_table(rows=1, cols=1)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    cell = table.cell(0, 0)
+    _set_cell_shading(cell, "FFF8E1")
+    p = cell.paragraphs[0]
+    run = p.add_run(heading)
+    run.bold = True
+    run.font.size = Pt(11)
+    run.font.color.rgb = COLOR_CRITICAL
+    run.font.name = FONT_FAMILY
+    for line in lines:
+        p = cell.add_paragraph()
+        run = p.add_run("• " + line)
+        run.font.size = Pt(9.5)
+        run.font.color.rgb = COLOR_BLACK
+        run.font.name = FONT_FAMILY
+    doc.add_paragraph()
+
+
 def _counsel_phrase(industry: Optional[str]) -> str:
     """Which kind of counsel to point the reader at.
 
@@ -230,11 +255,11 @@ def _add_disclaimer_box(doc, industry: Optional[str] = None, document_kind: str 
     # the document came out of a healthcare template.
     if _handles_phi(industry):
         disclaimers.append(
-            ("PHI Handling:", "No policy text or protected health information is stored by this system. All processing is ephemeral and in-memory only.")
+            ("PHI Handling:", "Do not submit PHI or client-confidential information. Submitted text is sent to third-party AI providers to generate output; this server holds it in memory for up to 30 minutes and never writes it to disk, and the user's browser keeps a local copy until they start fresh.")
         )
     else:
         disclaimers.append(
-            ("Data Handling:", "No policy text submitted to this system is stored. All processing is ephemeral and in-memory only.")
+            ("Data Handling:", "Do not submit client-confidential information. Submitted text is sent to third-party AI providers to generate output; this server holds it in memory for up to 30 minutes and never writes it to disk, and the user's browser keeps a local copy until they start fresh.")
         )
 
     for title, body in disclaimers:
@@ -524,7 +549,7 @@ def generate_action_package_docx(package: ComplianceActionPackage, file_name: Op
         toc_items.append(f"{section_num}. Gap Analysis Findings")
         section_num += 1
     if package.rewritten_policy:
-        toc_items.append(f"{section_num}. Rewritten Policy")
+        toc_items.append(f"{section_num}. Proposed Revision")
         section_num += 1
     if package.redline_changes:
         toc_items.append(f"{section_num}. Redline Document (Tracked Changes)")
@@ -600,6 +625,10 @@ def _build_cover_page(doc: Document, package: ComplianceActionPackage, file_name
     _add_horizontal_rule(doc)
 
     _add_styled_paragraph(doc, "", size=6, space_after=60)
+    if package.gap_analysis:
+        _add_limitations_banner(doc, analysis_limitations(
+            package.gap_analysis, package.live_research_used, package.state_coverage,
+        ))
     info_data = [
         ("Policy Document:", file_name or "Uploaded Policy"),
         ("Policy Type:", package.policy_type),
@@ -652,7 +681,8 @@ def _build_cover_page(doc: Document, package: ComplianceActionPackage, file_name
 
 def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
                                  file_name: Optional[str] = None,
-                                 standalone: bool = True):
+                                 standalone: bool = True,
+                                 limitations: Optional[List[str]] = None):
     # Two tiers, not four -- a middle "Moderate" bucket reads as safe to skip.
     # Everything is either a real compliance/legal exposure (Must Fix) or a
     # best-practice improvement (Should Fix). (Previously this also had a bug:
@@ -679,6 +709,7 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
                               size=11, space_after=40)
         _add_styled_paragraph(doc, f"Policy Type: {result.policy_type}",
                               size=11, space_after=160)
+        _add_limitations_banner(doc, limitations or [])
     else:
         # Inside the action package: just a section heading, no duplicate metadata
         _add_styled_paragraph(doc, "Gap Analysis Findings", bold=True, size=18,
@@ -815,7 +846,7 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
 # ── Rewritten Policy Section ──
 
 def _build_rewritten_policy_section(doc: Document, rewritten: RewrittenPolicy):
-    _add_styled_paragraph(doc, "3. REWRITTEN POLICY", bold=True, size=16,
+    _add_styled_paragraph(doc, "3. PROPOSED REVISION", bold=True, size=16,
                           color=COLOR_DARK_NAVY, space_before=200, space_after=80)
     _add_styled_paragraph(doc, rewritten.policy_title, bold=True, size=14,
                           color=COLOR_ACCENT_ORANGE, space_after=40)
@@ -868,7 +899,7 @@ def _build_rewritten_policy_section(doc: Document, rewritten: RewrittenPolicy):
                                   color=COLOR_LIGHT_GRAY, space_after=60)
 
     # Full text
-    _add_styled_paragraph(doc, "Complete Rewritten Policy (Ready for Adoption)", bold=True, size=12,
+    _add_styled_paragraph(doc, "Complete Proposed Revision (not re-analyzed — review before adoption)", bold=True, size=12,
                           color=COLOR_DARK_NAVY, space_before=200, space_after=80)
     _add_styled_paragraph(doc, rewritten.full_text, size=10, space_after=100)
 
@@ -1286,7 +1317,7 @@ def _build_verification_summary_section(doc: Document, package: ComplianceAction
     if package.rewritten_policy and package.rewritten_policy.source_attributions:
         verified = sum(1 for a in package.rewritten_policy.source_attributions if a.verification_status == VerificationStatus.verified)
         unverified = sum(1 for a in package.rewritten_policy.source_attributions if a.verification_status in _NOT_CONFIRMED_STATUSES)
-        output_verification.append(("Rewritten Policy", len(package.rewritten_policy.source_attributions), verified, unverified, package.rewritten_policy.live_research_used))
+        output_verification.append(("Proposed Revision", len(package.rewritten_policy.source_attributions), verified, unverified, package.rewritten_policy.live_research_used))
 
     if package.remediation_plan and package.remediation_plan.source_attributions:
         verified = sum(1 for a in package.remediation_plan.source_attributions if a.verification_status == VerificationStatus.verified)
@@ -1380,7 +1411,8 @@ def _build_footer_section(doc: Document):
 def generate_docx(result: AnalysisResult, file_name: Optional[str] = None,
                    kb_sources_used: Optional[List[str]] = None,
                    live_research_used: bool = False,
-                   verification_overall: Optional[str] = None) -> bytes:
+                   verification_overall: Optional[str] = None,
+                   state_coverage=None) -> bytes:
     """Generate a clean, template-style .docx gap analysis report and return as bytes.
 
     kb_sources_used/live_research_used/verification_overall live on the parent
@@ -1389,7 +1421,10 @@ def generate_docx(result: AnalysisResult, file_name: Optional[str] = None,
     despite the whole point of the app being source-grounded verification."""
     doc = Document()
     _setup_document(doc)
-    _build_gap_analysis_section(doc, result, file_name=file_name)
+    _build_gap_analysis_section(
+        doc, result, file_name=file_name,
+        limitations=analysis_limitations(result, live_research_used, state_coverage),
+    )
     doc.add_paragraph()
     _add_sources_used_section(doc, kb_sources_used, live_research_used, verification_overall)
 
@@ -1403,11 +1438,13 @@ def generate_export(result: AnalysisResult, file_name: Optional[str] = None,
                     export_format: ExportFormat = ExportFormat.docx,
                     kb_sources_used: Optional[List[str]] = None,
                     live_research_used: bool = False,
-                    verification_overall: Optional[str] = None) -> tuple[bytes, str]:
+                    verification_overall: Optional[str] = None,
+                    state_coverage=None) -> tuple[bytes, str]:
     """Generate a single gap analysis export file."""
     safe_name = (file_name or "Policy").rsplit(".", 1)[0].replace(" ", "_").replace("(", "").replace(")", "")[:60]
     date_str = datetime.now().strftime("%Y-%m-%d")
-    file_bytes = generate_docx(result, file_name, kb_sources_used, live_research_used, verification_overall)
+    file_bytes = generate_docx(result, file_name, kb_sources_used, live_research_used, verification_overall,
+                               state_coverage)
     filename = f"{safe_name}_Gap_Report_{date_str}.docx"
     return file_bytes, filename
 
@@ -1459,6 +1496,28 @@ def generate_draft_policy_docx(policy: dict) -> bytes:
     _add_styled_paragraph(doc, "  |  ".join(meta_parts), size=10, color=COLOR_GRAY)
 
     doc.add_paragraph()
+    _add_limitations_banner(doc, draft_limitations(policy))
+
+    decisions = policy.get("decisions_required") or []
+    if decisions:
+        _add_styled_paragraph(doc, "DECISIONS YOU NEED TO MAKE", bold=True, size=10, color=COLOR_ACCENT_ORANGE)
+        for item in decisions:
+            p = doc.add_paragraph(style="List Bullet")
+            run = p.add_run(item)
+            run.font.size = Pt(10)
+            run.font.name = FONT_FAMILY
+        doc.add_paragraph()
+
+    missing = policy.get("missing_obligations") or []
+    if missing:
+        _add_styled_paragraph(doc, "OBLIGATIONS THIS DRAFT DOES NOT APPEAR TO COVER", bold=True, size=10,
+                              color=COLOR_CRITICAL)
+        for item in missing:
+            p = doc.add_paragraph(style="List Bullet")
+            run = p.add_run(item)
+            run.font.size = Pt(10)
+            run.font.name = FONT_FAMILY
+        doc.add_paragraph()
 
     # Scope
     if policy.get("scope"):
@@ -1581,6 +1640,7 @@ def generate_updated_policy_docx(rewritten: RewrittenPolicy) -> bytes:
     _add_styled_paragraph(doc, "  |  ".join(meta_parts), size=10, color=COLOR_GRAY)
 
     doc.add_paragraph()
+    _add_limitations_banner(doc, revision_limitations(), heading="PROPOSED REVISION — READ FIRST")
     _add_horizontal_rule(doc)
     doc.add_paragraph()
 

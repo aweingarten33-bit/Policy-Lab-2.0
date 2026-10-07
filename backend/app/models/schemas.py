@@ -203,6 +203,9 @@ class ExportRequest(BaseModel):
     )
     live_research_used: bool = Field(False, description="Whether live research was used")
     verification_overall: Optional[str] = Field(None, description="Verification summary sentence")
+    state_coverage: Optional["StateCoverage"] = Field(
+        None, description="Which state-law sources were consulted, for the report's limitations banner"
+    )
 
 
 class ClaimSupport(str, Enum):
@@ -318,6 +321,24 @@ class VerificationEvidence(BaseModel):
     reason: str = ""
 
 
+class FindingKind(str, Enum):
+    """What a finding is actually a statement about.
+
+    The tool reads a policy document and nothing else. It never inspects
+    records, logs or practice, so it can say what the document does or does
+    not say, and it can ask whether the organization does something -- but it
+    cannot determine that the organization is out of compliance. An analysis
+    once narrated that records "would not exist" because the policy omitted
+    them; no records had been looked at.
+    """
+    document_gap = "document_gap"                          # the document doesn't say X
+    implementation_question = "implementation_question"    # does the organization do X?
+    # Reserved for a determination backed by inspected evidence. No input to
+    # this tool supplies such evidence, so the parser never lets a finding
+    # carry it; it exists so the distinction is explicit in the contract.
+    compliance_determination = "compliance_determination"
+
+
 class ObligationType(str, Enum):
     """What kind of duty a finding asserts.
 
@@ -372,6 +393,17 @@ class GapRow(BaseModel):
     obligation_note: Optional[str] = Field(
         None,
         description="Why the obligation type changed, when the entailment gate downgraded it"
+    )
+    finding_kind: FindingKind = Field(
+        FindingKind.document_gap,
+        description=(
+            "Whether this is a gap in the document's text or a question about practice. Never a "
+            "compliance determination: no records or practices are inspected."
+        ),
+    )
+    implementation_question: Optional[str] = Field(
+        None,
+        description="A question for the organization about whether it actually does what the obligation requires",
     )
     remediation_priority: Optional[str] = Field(
         None,
@@ -688,6 +720,10 @@ class ComplianceActionPackage(BaseModel):
         None,
         description="Actual retrieved source passages, so the UI can show the real text behind a citation"
     )
+    state_coverage: Optional["StateCoverage"] = Field(
+        None,
+        description="Which state-law sources were actually consulted, when a state was selected"
+    )
 
 
 class ActionPackageRequest(BaseModel):
@@ -726,6 +762,23 @@ class PackageExportRequest(BaseModel):
         None,
         description="Which sections to include in the export. If omitted, includes ALL sections."
     )
+
+
+class StateSourceConsulted(BaseModel):
+    """One state-law source that was actually in front of the model."""
+    name: str
+    url: Optional[str] = None
+    kind: str = Field(..., description="'knowledge_base' (stored text) or 'live_search' (a web search result)")
+
+
+class StateCoverage(BaseModel):
+    """What state-law material a run actually consulted. Derived from retrieval, never from the model."""
+    jurisdiction: str
+    state_text_available: bool = Field(
+        False, description="Whether codified state text (not just search results) was available"
+    )
+    sources_consulted: List[StateSourceConsulted] = Field(default_factory=list)
+    summary: str
 
 
 class DraftPolicyRequest(BaseModel):
@@ -767,6 +820,17 @@ class DraftedPolicy(BaseModel):
     )
     source_snippets: Optional[List[SourceSnippet]] = Field(
         None, description="Actual retrieved source passages, so the UI can show the real text behind a citation"
+    )
+    decisions_required: List[str] = Field(
+        default_factory=list,
+        description="Placeholders in the draft and the organizational decisions each one needs",
+    )
+    missing_obligations: List[str] = Field(
+        default_factory=list,
+        description="Regulatory obligations for this topic the draft does not appear to address",
+    )
+    state_coverage: Optional[StateCoverage] = Field(
+        None, description="Which state-law sources were actually consulted, when a state was selected"
     )
 
 
@@ -859,3 +923,7 @@ class KnowledgeBaseStatsResponse(BaseModel):
     total_collections: int
     collections: Dict[str, int]
     embedding_model: str = "all-MiniLM-L6-v2 (local)"
+
+
+ComplianceActionPackage.model_rebuild()
+ExportRequest.model_rebuild()

@@ -39,6 +39,7 @@ from app.models.schemas import (
     SourceAttribution, SourceType, VerificationStatus,
 )
 from app.services.llm_service import analyze_policy, analyze_policy_stream
+from app.services.state_coverage import state_coverage
 from app.services.retrieval.retriever import get_retriever, ComplianceRetriever
 from app.services.retrieval.verification import get_verification_service, VerificationService
 from app.services.retrieval.live_research import get_live_research_service, LiveResearchService
@@ -588,6 +589,7 @@ class PackageOrchestrator:
                 )
                 package.gap_analysis = gap_result
                 package.policy_type = gap_result.policy_type
+                package.state_coverage = state_coverage(retrieval_ctx, jurisdiction)
 
                 # Verify and attribute
                 package.status = PackageStatus.verifying
@@ -744,6 +746,7 @@ class PackageOrchestrator:
 
             package.gap_analysis = gap_result
             package.policy_type = gap_result.policy_type
+            package.state_coverage = state_coverage(retrieval_ctx, jurisdiction)
             attributions, sources, live_used, ver_summary = self._verify_and_attribute(
                 text=gap_result.audit_ready_summary,
                 retrieval_context=retrieval_ctx,

@@ -14,10 +14,11 @@ from typing import Optional
 from app.config import settings
 from app.services.provider import get_provider
 from app.models.schemas import (
-    AXIS_COUNT, AnalysisResult, GapRow, GapStatus, classify_from_axes,
+    AXIS_COUNT, AnalysisResult, FindingKind, GapRow, GapStatus, classify_from_axes,
 )
 from app.services.retrieval.models import RetrievalContext
 from app.services.industry_config import get_industry, get_regulations
+from app.services.obligation_checklists import checklist_for, prompt_block
 
 logger = logging.getLogger(__name__)
 
@@ -101,13 +102,23 @@ STEP 2 — FOUR-AXIS POLICY EVALUATION
   parsing, so inflating or deflating the count is the only way to change the
   status, and it changes the score with it.
 
-STEP 3 — AUDIT-DAY SIMULATION
-  For each finding, answer in your head: "If an auditor opened this policy
-  Monday at 9am, what is the first follow-up document they would demand,
-  and would it exist? What is the first interview question they would ask,
-  and what would the answer reveal?" If the answer exposes the org, the
-  finding is real. If you cannot articulate the audit-day exposure, the
-  finding is not yet sharp enough — refine it.
+STEP 3 — AUDIT-DAY SIMULATION (about the DOCUMENT, not the organization)
+  You have read one document. You have not seen any records, logs, training
+  files or practices, and you know nothing about what the organization
+  actually does. So keep three kinds of statement apart, and never blur them:
+
+    DOCUMENT GAP — "The policy does not require X" / "The policy does not say
+      who does X." This is what you can establish, from the text alone.
+    IMPLEMENTATION QUESTION — "Does the organization in fact do X?" You
+      cannot answer it. Ask it; do not answer it.
+    COMPLIANCE DETERMINATION — "The organization is not doing X" / "records of
+      X do not exist." You can never make this one: it needs evidence you do
+      not have. Never write that records "would not exist", that staff "do
+      not" do something, or that the organization "is non-compliant".
+
+  For each finding ask: "What would an auditor ask to see on this topic, and
+  does the policy require it to exist?" State the document gap, and phrase
+  the practice side as a question for the organization.
 
 STEP 4 — COUNTERFACTUAL LIABILITY TEST
   For each gap, ask: "If a violation occurred TOMORROW under this policy
@@ -320,7 +331,11 @@ failed analysis.
 
       "current_state": "1 sentence, hard cap: direct quote OR close paraphrase of the EXACT policy language on this topic. If the policy is silent, write: 'Policy is silent — no provision addresses [specific obligation].' This field proves you read the actual document; it is a citation record, not analysis.",
 
-      "finding": "2 sentences, hard cap. Name which of the four axes pass and which fail (consistent with axes_passed) and the single sharpest deficiency. If regulatory: state the audit-day exposure — what document a regulator would demand and whether it would exist. If organizational-only: say so explicitly and state the operational risk instead of inventing regulatory exposure. Do not restate current_state, do not hedge, do not pad.",
+      "finding": "2 sentences, hard cap, about the DOCUMENT only (see STEP 3). Name which of the four axes pass and which fail (consistent with axes_passed) and the single sharpest deficiency in the text. If regulatory: state what an auditor would ask to see and whether this policy requires it — never whether it exists, which you cannot know. If organizational-only: say so explicitly and state the operational risk instead of inventing regulatory exposure. Do not restate current_state, do not hedge, do not pad.",
+
+      "finding_kind": "document_gap | implementation_question — document_gap when the text omits or under-specifies the obligation; implementation_question when the text is adequate and the open point is only whether the organization actually does it. Never claim a compliance determination: you have not seen any records.",
+
+      "implementation_question": "1 sentence: the question the organization must answer about its actual practice, e.g. 'Does the agency investigate complaints from family members and caregivers, and document each resolution?' Omit when there is no practice question.",
 
       "suggested_language": "DROP-IN POLICY TEXT, 2 sentences, hard cap. MUST include: named role/title, specific timeframe, measurable threshold or trigger, and inline regulatory citation IF one genuinely applies — otherwise omit the citation rather than fabricate one. NEVER write 'the organization should consider.' This is clause text, not a sub-procedure — deeper reasoning belongs in finding, not here. CRITICAL — every specific number you write (deadline, retention period, notification window, training frequency, threshold) is either (a) FIXED BY THE REGULATION, in which case that exact number must appear in the retrieved source material and you cite it, or (b) AN ORGANIZATIONAL CHOICE, in which case you still pick a concrete value but write it as the organization's standard with NO citation attached ('Records are retained for seven years under this policy'), never as a legal mandate ('Records must be retained for seven years as required by...'). If the source material does not state the number, you do not know it — treat it as (b). Attaching a citation to an invented deadline tells the user the law requires something it may not, which is the most harmful error possible here.",
 
@@ -332,7 +347,7 @@ failed analysis.
     }
   ],
 
-  "audit_ready_summary": "3 sentences, hard cap: overall posture, severity distribution, the single highest-exposure gap, and the standing recommendation for independent legal review. Written for a compliance officer to read verbatim to their board. Flowing prose, no bullet points."
+  "audit_ready_summary": "3 sentences, hard cap: the posture of the DOCUMENT, severity distribution, the single highest-exposure gap in its text, and the standing recommendation for independent legal review. Describe what the policy says or omits, never what the organization does or what records exist. Written for a compliance officer to read verbatim to their board. Flowing prose, no bullet points."
 }
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -456,7 +471,14 @@ def _build_user_prompt(
     )
 
     if jurisdiction:
-        base += f"\n\nJurisdiction specified: {jurisdiction}. Include all applicable {jurisdiction} state regulations."
+        base += (
+            f"\n\nJurisdiction specified: {jurisdiction}. Apply {jurisdiction} law only where its text appears in "
+            f"the reference material below; otherwise state that {jurisdiction} requirements were not checked."
+        )
+
+    obligations = prompt_block(checklist_for(industry_slug or "healthcare", text))
+    if obligations:
+        base += "\n\n" + obligations
 
     if retrieval_context and retrieval_context.formatted_context:
         base += f"\n\n{retrieval_context.formatted_context}"
@@ -476,15 +498,33 @@ def _build_user_prompt(
         f"\n\nExecute the ANALYTICAL PROTOCOL on this policy. Walk the four-axis "
         f"evaluation for every regulatory obligation that touches this document. "
         f"For every finding, simulate audit day in front of a {audit_authority}: "
-        f"what document does the regulator demand, what interview question do they "
-        f"ask, what does the answer reveal. If you cannot articulate the audit-day "
-        f"exposure, the finding is not sharp enough — refine it before emitting. "
+        f"what would the regulator ask to see, and does this policy require it? "
+        f"You have only the document, so state document gaps and ask practice "
+        f"questions -- never say what records exist or what the organization does. "
+        f"If you cannot articulate the gap in the document, the finding is not "
+        f"sharp enough — refine it before emitting. "
         f"Treat hedge language as failure. Treat shallow citations as failure. "
         f"Return only the JSON contract, fully populated, depth proportional to "
         f"the regulatory complexity of the policy area."
     )
 
     return base
+
+
+def _coerce_finding_kind(value) -> FindingKind:
+    """The model's finding kind, never a compliance determination.
+
+    Only a policy document is ever analyzed. A determination about what the
+    organization does needs inspected evidence this tool never receives, so a
+    row claiming one is a document gap whatever the model said.
+    """
+    try:
+        kind = FindingKind(str(value or "").strip().lower())
+    except ValueError:
+        return FindingKind.document_gap
+    if kind is FindingKind.compliance_determination:
+        return FindingKind.document_gap
+    return kind
 
 
 def _coerce_axes(value) -> Optional[int]:
@@ -586,6 +626,8 @@ def _parse_llm_response(raw_text: str) -> AnalysisResult:
             citation=row_data.get("citation", ""),
             remediation_priority=remediation_priority,
             oig_element=row_data.get("oig_element"),
+            finding_kind=_coerce_finding_kind(row_data.get("finding_kind")),
+            implementation_question=(str(row_data.get("implementation_question") or "").strip() or None),
         ))
 
     # ── Counts and score: always computed from the parsed rows, never trusted

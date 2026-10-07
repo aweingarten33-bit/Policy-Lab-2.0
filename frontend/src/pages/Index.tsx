@@ -19,11 +19,16 @@ import {
   getSourceTypeLabel, getSourceTypeColor, getSourceTypeBg, getVerificationIcon,
 } from "@/lib/api";
 import { toast } from "sonner";
+import {
+  LimitationsBanner, StateSourcesList, ChatMarkdown, analysisLimitations, draftLimitations,
+} from "@/components/ResultNotices";
 
 // ── Style maps ──
 
 const JOB_KEY = "tpl_active_job";
 const DRAFT_JOB_KEY = "tpl_active_draft_job";
+// Everything this page keeps in the browser. Start fresh clears all of it.
+const STORED_KEYS = ["tpl_text", "tpl_fileName", "tpl_pkg", "tpl_mode", "tpl_draftDesc", "tpl_draftResult", JOB_KEY, DRAFT_JOB_KEY];
 
 function formatElapsed(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -202,7 +207,7 @@ function stripCiteTags(text: string): string {
 const TABS = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "gap_analysis", label: "Gap Analysis", icon: AlertTriangle },
-  { key: "corrected", label: "Corrected Policy", icon: CheckCircle2 },
+  { key: "corrected", label: "Proposed revision", icon: CheckCircle2 },
 ] as const;
 
 type TabKey = typeof TABS[number]["key"];
@@ -274,6 +279,14 @@ function GapRowItem({ row, urlMap, snippets }: { row: GapRow; urlMap?: Record<st
           <div>
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-medium">Finding</p>
+              <span
+                title={row.finding_kind === "implementation_question"
+                  ? "The document covers this; whether your organization actually does it is a question only you can answer."
+                  : "What the document says or omits. No records or practices were inspected."}
+                className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full tracking-wider bg-secondary text-muted-foreground"
+              >
+                {row.finding_kind === "implementation_question" ? "PRACTICE QUESTION" : "DOCUMENT GAP"}
+              </span>
               {(() => {
                 const o = OBLIGATION_MAP[row.obligation_type || "required"];
                 if (!o) return null;
@@ -289,6 +302,11 @@ function GapRowItem({ row, urlMap, snippets }: { row: GapRow; urlMap?: Record<st
               })()}
             </div>
             <p className="text-[13px] sm:text-sm text-foreground leading-relaxed">{linkifyRegulations(stripCiteTags(row.finding), urlMap, snippets)}</p>
+            {row.implementation_question && (
+              <p className="text-[12px] text-foreground/80 leading-relaxed mt-2">
+                <span className="font-semibold">Question for your team: </span>{row.implementation_question}
+              </p>
+            )}
             {row.obligation_type === "unverified_requirement" && row.obligation_note && (
               <div className="rounded-lg p-3 mt-2" style={{ background: "hsl(38 85% 52% / 0.09)" }}>
                 <p className="text-[11px] leading-relaxed text-foreground/80">
@@ -454,6 +472,10 @@ export default function Index() {
   const [exporting, setExporting] = useState(false);
   const [fixingGaps, setFixingGaps] = useState(false);
   const [correctedExporting, setCorrectedExporting] = useState(false);
+  // A fresh analysis of the proposed revision. The only thing allowed to say
+  // the revision resolves the findings.
+  const [rechecking, setRechecking] = useState(false);
+  const [recheck, setRecheck] = useState<{ remaining: number; mustFix: number } | null>(null);
   const [industry, setIndustry] = useState("healthcare");
   const [industries, setIndustries] = useState<IndustryOption[]>(FALLBACK_INDUSTRIES);
   const [stateCode, setStateCode] = useState("");
@@ -497,6 +519,13 @@ export default function Index() {
   });
   const [draftExporting, setDraftExporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Whether this page opened with work restored from browser storage, so the
+  // user can see that it was kept and clear it.
+  const [restoredFromBrowser] = useState(() => {
+    try {
+      return ["tpl_text", "tpl_pkg", "tpl_draftDesc", "tpl_draftResult"].some((k) => !!localStorage.getItem(k));
+    } catch { return false; }
+  });
 
   // ── Chat state ──
   const [chatOpen, setChatOpen] = useState(false);
@@ -960,8 +989,12 @@ export default function Index() {
     setChatOpen(false);
     setChatHistory([]);
     setChatInput("");
+    setRecheck(null);
+    setStateCode("");
     if (fileRef.current) fileRef.current.value = "";
-    try { localStorage.removeItem(JOB_KEY); } catch {}
+    // Clear the browser copy too, not just the screen -- otherwise the
+    // previous policy and results reappear the next time the page opens.
+    try { STORED_KEYS.forEach((k) => localStorage.removeItem(k)); } catch {}
   };
 
   const handleDownloadGapAnalysis = async () => {
@@ -983,12 +1016,39 @@ export default function Index() {
     try {
       const rewritten = await fixAllGaps(text, pkg.gap_analysis, industry, jurisdiction);
       setPkg((prev) => prev ? { ...prev, rewritten_policy: rewritten } : prev);
+      setRecheck(null);
       setActiveTab("corrected");
-      toast.success("Corrected policy ready", { description: "Every finding addressed — review before adopting." });
+      toast.info("Proposed revision ready", { description: "Not re-checked yet. Use Re-check to analyze it before relying on it." });
     } catch (e: any) {
-      toast.error("Fix failed", { description: e.message });
+      toast.error("Revision failed", { description: e.message });
     } finally {
       setFixingGaps(false);
+    }
+  };
+
+  // Runs a fresh analysis of the proposed revision. An all-clear is shown only
+  // when that analysis actually finds nothing left -- never just because a
+  // revision was generated.
+  const handleRecheck = async () => {
+    const revised = pkg?.rewritten_policy?.full_text;
+    if (!revised || rechecking) return;
+    setRechecking(true);
+    try {
+      const jobId = await startActionPackageJob(revised, fileName ? `${fileName} (proposed revision)` : "Proposed revision", industry, jurisdiction, true);
+      const result = await streamActionPackageJob(jobId, () => {});
+      const rows = result.gap_analysis?.gap_table ?? [];
+      const remaining = rows.filter((r) => r.status !== "compliant").length;
+      const mustFix = rows.filter((r) => r.risk_level === "critical" || r.risk_level === "high").length;
+      setRecheck({ remaining, mustFix });
+      if (remaining === 0) {
+        toast.success("Re-check found no remaining gaps", { description: "A fresh analysis of the revision found nothing left. It still needs review by counsel." });
+      } else {
+        toast.info(`Re-check found ${remaining} remaining issue${remaining !== 1 ? "s" : ""}`, { description: mustFix ? `${mustFix} marked must-fix.` : "None marked must-fix." });
+      }
+    } catch (e: any) {
+      toast.error("Re-check failed", { description: e.message });
+    } finally {
+      setRechecking(false);
     }
   };
 
@@ -1028,6 +1088,16 @@ export default function Index() {
         {/* ─── Input View ─── */}
         {!pkg && !draftResult && !loading && (
           <>
+            {restoredFromBrowser && (text.trim() || draftDesc.trim()) && (
+              <div className="mb-6 rounded-xl neu-sm px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-[12px] text-muted-foreground leading-relaxed">
+                  Your last session's text was restored from this browser.
+                </p>
+                <button type="button" onClick={reset} className="font-mono text-[10px] font-bold tracking-wider px-3 py-1.5 rounded-xl neu-btn">
+                  START FRESH
+                </button>
+              </div>
+            )}
             <div className="mb-12 sm:mb-16">
               {mode === "analyze" && (
                 <>
@@ -1035,7 +1105,7 @@ export default function Index() {
                     Upload your policy.<br />See what's missing.
                   </h1>
                   <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
-                    Get a policy gap analysis with regulations cited, plus a corrected version you can download.
+                    Get a gap analysis of your policy's text with regulations cited, plus a proposed revision you can review.
                   </p>
                 </>
               )}
@@ -1109,8 +1179,8 @@ export default function Index() {
                 )}
                 <p className="text-[11px] text-muted-foreground/80 leading-relaxed px-0.5">
                   {stateCode
-                    ? `Also checking ${stateCode} state law (health privacy, breach notification, licensure, employment) on top of federal — runs a live search of ${stateCode} government (.gov) sources to verify.`
-                    : "No state selected — only federal regulations are checked. Pick a state to also check that state's specific requirements."}
+                    ? `${stateCode} statute and regulation text is not stored in this tool. When the stored sources have nothing for ${stateCode}, it searches ${stateCode} government websites; the results list exactly which ${stateCode} sources were consulted, or say plainly that none were. Treat ${stateCode} coverage as unverified.`
+                    : "No state selected — only federal regulations are used."}
                 </p>
               </div>
 
@@ -1163,16 +1233,18 @@ export default function Index() {
                     <p className="font-medium text-[14px] text-foreground">{parsing ? "Parsing file..." : fileName || "Tap to upload file"}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">.txt .md .docx .pdf .rtf</p>
                   </div>
-                  {/* Shown here rather than only on the Legal page. Whether to
-                      paste real patient data is decided at the moment of
-                      upload, and a disclosure the user has to go looking for
-                      arrives too late to inform that decision. */}
-                  <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                    <span className="font-medium text-foreground">Do not upload real PHI or patient records.</span>{" "}
-                    Content is sent to third-party AI providers, and no Business Associate
-                    Agreement is in place with them. Use de-identified or sample policies.
-                  </p>
-                  <div className="mt-3 flex items-center justify-end">
+                  <p className="nyt-eyebrow mt-5 mb-2">Or paste the policy text</p>
+                  <div className="aqua-rain rounded-xl">
+                    <textarea
+                      value={text}
+                      onChange={(e) => { setText(e.target.value); if (fileName && !e.target.value) setFileName(""); }}
+                      placeholder="Paste the full text of your policy here."
+                      aria-label="Policy text"
+                      className="w-full min-h-[160px] bg-transparent rounded-xl px-4 py-3 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:outline-none resize-y font-sans"
+                    />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                    <span className="text-[12px] font-mono text-muted-foreground/70">{text.length.toLocaleString()} characters</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -1189,6 +1261,22 @@ export default function Index() {
                   </div>
                 </>
               )}
+
+              {/* Shown at the point of entry rather than only on the Legal
+                  page: what to leave out is decided while typing or uploading,
+                  and a disclosure found later arrives too late. */}
+              <div className="mt-4 rounded-xl p-3" style={{ background: "hsl(0 72% 51% / 0.05)" }}>
+                <p className="text-[11px] leading-relaxed text-foreground/80">
+                  <span className="font-semibold text-foreground">Do not enter PHI, patient records, or client-confidential information.</span>{" "}
+                  What you submit is sent to third-party AI model providers to generate the output, and no Business
+                  Associate Agreement is in place with them. If a live search runs, a short query built from the start
+                  of your text goes to a web search provider. Use de-identified or sample policies.
+                </p>
+                <p className="text-[11px] leading-relaxed text-muted-foreground mt-1.5">
+                  Your text and results are also saved in this browser so they survive a reload. Our server holds them in
+                  memory for up to 30 minutes, never on disk. <button type="button" onClick={reset} className="underline underline-offset-2 hover:text-foreground">Start fresh</button> clears the browser copy.
+                </p>
+              </div>
 
               {/* — Generate button (inside the card) — */}
               {mode === "draft" && (
@@ -1228,7 +1316,7 @@ export default function Index() {
             )}
 
             <p className="mt-4 text-center text-[11px] text-muted-foreground/70">
-              Checks live regulatory sources for the latest guidance
+              Uses stored federal regulations; searches government websites only when those don't cover the request. Each result says which it did.
             </p>
 
           </>
@@ -1309,13 +1397,35 @@ export default function Index() {
                   COPY TEXT
                 </button>
                 <button onClick={reset} className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl neu-sm text-muted-foreground hover:text-foreground touch-manipulation">
-                  START OVER
+                  START FRESH
                 </button>
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
-              <strong className="text-foreground/80 font-medium">Download Policy</strong> gets you the full drafted document as an editable Word file (.docx), ready to review, revise, and adopt.
-            </p>
+            <LimitationsBanner lines={draftLimitations(draftResult)} />
+
+            {(draftResult.decisions_required?.length ?? 0) > 0 && (
+              <div className="rounded-xl neu-sm p-4">
+                <p className="nyt-eyebrow mb-2">Decisions you need to make</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  {draftResult.decisions_required!.map((d, i) => (
+                    <li key={i} className="text-[12px] text-foreground leading-relaxed">{d}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {(draftResult.missing_obligations?.length ?? 0) > 0 && (
+              <div className="rounded-xl p-4 border-l-4 border-l-destructive" style={{ background: "hsl(0 72% 51% / 0.05)" }}>
+                <p className="text-[11px] font-mono uppercase tracking-wider font-bold text-destructive mb-2">Obligations this draft does not appear to cover</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  {draftResult.missing_obligations!.map((o, i) => (
+                    <li key={i} className="text-[12px] text-foreground leading-relaxed">{o}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <StateSourcesList coverage={draftResult.state_coverage} />
 
             {draftResult.scope && (
               <div className="rounded-xl neu-sm p-4">
@@ -1396,11 +1506,11 @@ export default function Index() {
                 <button
                   onClick={handleFixAllGaps}
                   disabled={fixingGaps || !pkg.gap_analysis}
-                  title="Rewrites the entire policy end to end so every finding from the gap analysis is resolved — ready to review and adopt."
+                  title="Writes a proposed revision of the policy aimed at the findings. It is not re-checked until you run Re-check on it."
                   className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn active:neu-pressed touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
                 >
                   {fixingGaps ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                  {fixingGaps ? "FIXING GAPS..." : "FIX ALL GAPS"}
+                  {fixingGaps ? "DRAFTING REVISIONS..." : "DRAFT REVISIONS"}
                 </button>
                 <button
                   onClick={handleDownloadGapAnalysis}
@@ -1412,10 +1522,13 @@ export default function Index() {
                   {exporting ? "DOWNLOADING..." : "DOWNLOAD REPORT (.DOCX)"}
                 </button>
                 <button onClick={reset} className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl neu-sm text-muted-foreground hover:text-foreground touch-manipulation">
-                  START OVER
+                  START FRESH
                 </button>
               </div>
             </div>
+
+            <LimitationsBanner lines={analysisLimitations(pkg, pkgStreaming)} />
+            <StateSourcesList coverage={pkg.state_coverage} />
 
             {/* Tab bar */}
             <div className="flex gap-1 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -1453,7 +1566,7 @@ export default function Index() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setShowRedline((s) => !s)}
-                      title={showRedline ? "Show the corrected policy as clean text" : "Show exactly what changed vs. the original, tracked-changes style"}
+                      title={showRedline ? "Show the proposed revision as clean text" : "Show exactly what changed vs. the original, tracked-changes style"}
                       className={`font-mono text-[10px] font-bold tracking-wider px-3 py-2 rounded-xl neu-btn touch-manipulation inline-flex items-center gap-1.5 ${showRedline ? "neu-pressed text-primary" : "text-foreground"}`}
                     >
                       <GitCompare className="w-3.5 h-3.5" />
@@ -1465,20 +1578,37 @@ export default function Index() {
                         setCorrectedExporting(true);
                         try {
                           await exportUpdatedPolicy(pkg);
-                          toast.success("Corrected policy downloaded");
+                          toast.success("Proposed revision downloaded");
                         } catch (e: any) {
                           toast.error("Download failed", { description: e.message });
                         } finally {
                           setCorrectedExporting(false);
                         }
                       }}
-                      title="Downloads this corrected policy, formatted and ready to review, as a Word file."
+                      title="Downloads this proposed revision as a Word file, for review."
                       className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn active:neu-pressed touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
                     >
                       {correctedExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
-                      {correctedExporting ? "DOWNLOADING..." : "DOWNLOAD CORRECTED POLICY (.DOCX)"}
+                      {correctedExporting ? "DOWNLOADING..." : "DOWNLOAD PROPOSED REVISION (.DOCX)"}
                     </button>
                   </div>
+                </div>
+                <div className="rounded-xl neu-sm p-4 flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-[12px] text-foreground/80 leading-relaxed max-w-md">
+                    {recheck === null
+                      ? "Not re-checked. This revision was written to address the findings, but nothing has confirmed it does. Re-check runs a fresh analysis on it."
+                      : recheck.remaining === 0
+                        ? "Re-check: a fresh analysis of this revision found no remaining gaps. It still needs review by counsel."
+                        : `Re-check: a fresh analysis found ${recheck.remaining} remaining issue${recheck.remaining !== 1 ? "s" : ""}${recheck.mustFix ? `, ${recheck.mustFix} marked must-fix` : ""}.`}
+                  </p>
+                  <button
+                    onClick={handleRecheck}
+                    disabled={rechecking}
+                    className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl neu-btn touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
+                  >
+                    {rechecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    {rechecking ? "RE-CHECKING..." : recheck ? "RE-CHECK AGAIN" : "RE-CHECK REVISION"}
+                  </button>
                 </div>
                 {pkg.rewritten_policy.change_summary && (
                   <div className="rounded-xl neu-sm p-4">
@@ -1488,7 +1618,7 @@ export default function Index() {
                 )}
                 {showRedline ? (
                   <div className="rounded-xl neu-raised p-6">
-                    <p className="nyt-eyebrow mb-1">Redline — Original vs. Corrected</p>
+                    <p className="nyt-eyebrow mb-1">Redline — Original vs. Proposed</p>
                     <p className="text-[11px] text-muted-foreground mb-4">
                       <del className="rounded px-0.5" style={{ background: "hsl(0 72% 51% / 0.12)", color: "hsl(0 72% 38%)" }}>Removed</del>
                       {" "}·{" "}
@@ -1498,7 +1628,7 @@ export default function Index() {
                   </div>
                 ) : (
                 <div className="rounded-xl neu-raised p-6">
-                  <p className="nyt-eyebrow mb-4">Full Corrected Policy</p>
+                  <p className="nyt-eyebrow mb-4">Proposed Revision</p>
                   <div className="space-y-5">
                     {pkg.rewritten_policy.sections.length > 0 ? pkg.rewritten_policy.sections.map((sec, i) => (
                       <div key={i}>
@@ -1837,13 +1967,13 @@ function ChatPanel({ open, onClose, history, input, setInput, onSend, chatLoadin
           {history.map((msg, i) => (
             <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
               <div
-                className="max-w-[85%] px-3 py-2.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap"
+                className={`max-w-[85%] px-3 py-2.5 rounded-2xl text-[12px] leading-relaxed ${msg.role === "user" ? "whitespace-pre-wrap" : ""}`}
                 style={msg.role === "user"
                   ? { background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))" }
                   : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }
                 }
               >
-                {msg.content}
+                {msg.role === "assistant" ? <ChatMarkdown text={msg.content} /> : msg.content}
               </div>
             </div>
           ))}

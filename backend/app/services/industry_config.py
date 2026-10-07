@@ -84,9 +84,13 @@ INDUSTRIES: dict = {
             "Joint Commission Standards",
         ],
         "state_addendum": (
-            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST also check all applicable "
-            "{jurisdiction} state-specific regulations: state health privacy laws, state breach notification statutes, "
-            "state health code sections, and any state OCR or AG enforcement actions. Cite state law by code section."
+            "The user selected jurisdiction \"{jurisdiction}\". Relevant {jurisdiction} topics include state health "
+            "privacy law, state breach notification, state health code, and state AG enforcement. "
+            "Use {jurisdiction} law ONLY where its text appears in the REFERENCE MATERIAL, and cite it as it "
+            "appears there. The knowledge base does not hold codified state text, so usually it will not. "
+            "Do not describe {jurisdiction} requirements, code sections, deadlines or ratios from memory. If no "
+            "{jurisdiction} material is provided, say once that {jurisdiction} requirements were not checked and "
+            "need separate review, and otherwise analyze federal law only."
         ),
         "audit_authority": "OCR audit, OIG investigation, or CMS survey",
     },
@@ -166,9 +170,13 @@ INDUSTRIES: dict = {
             "State Home Health Agency Licensure Requirements (varies by jurisdiction)",
         ],
         "state_addendum": (
-            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST also check all applicable "
-            "{jurisdiction} state home health agency licensure regulations, state caregiver/aide background check "
-            "and training requirements, and state Medicaid home care program rules. Cite state law by code section."
+            "The user selected jurisdiction \"{jurisdiction}\". Relevant {jurisdiction} topics include home health "
+            "agency licensure, caregiver/aide background check and training requirements, and state Medicaid home "
+            "care program rules. " "Use {jurisdiction} law ONLY where its text appears in the REFERENCE MATERIAL, and cite it as it "
+            "appears there. The knowledge base does not hold codified state text, so usually it will not. "
+            "Do not describe {jurisdiction} requirements, code sections, deadlines or ratios from memory. If no "
+            "{jurisdiction} material is provided, say once that {jurisdiction} requirements were not checked and "
+            "need separate review, and otherwise analyze federal law only."
         ),
         "audit_authority": "state home health survey, CMS Conditions of Participation deficiency citation, or OIG program integrity audit",
     },
@@ -242,13 +250,14 @@ INDUSTRIES: dict = {
             "State Board of Pharmacy regulations (vary by state, often stricter than federal)",
         ],
         "state_addendum": (
-            "IMPORTANT: The user has specified jurisdiction \"{jurisdiction}\". You MUST also check "
-            "all applicable {jurisdiction} Board of Pharmacy regulations, state controlled-substance "
-            "scheduling (which can differ from federal schedules), the state Prescription Drug "
-            "Monitoring Program (PDMP) query and reporting mandates, state record-retention periods, "
-            "pharmacist-to-technician ratio limits, and state compounding rules. State requirements "
-            "are frequently stricter than the federal floor — where they conflict, the stricter "
-            "controls. Cite state law by code section."
+            "The user selected jurisdiction \"{jurisdiction}\". Relevant {jurisdiction} topics include Board of "
+            "Pharmacy regulations, state controlled-substance scheduling, Prescription Drug Monitoring Program "
+            "mandates, record retention, technician ratios and compounding rules; state requirements can be "
+            "stricter than the federal floor. " "Use {jurisdiction} law ONLY where its text appears in the REFERENCE MATERIAL, and cite it as it "
+            "appears there. The knowledge base does not hold codified state text, so usually it will not. "
+            "Do not describe {jurisdiction} requirements, code sections, deadlines or ratios from memory. If no "
+            "{jurisdiction} material is provided, say once that {jurisdiction} requirements were not checked and "
+            "need separate review, and otherwise analyze federal law only."
         ),
         "audit_authority": "a DEA inspection, state Board of Pharmacy audit, or Part D plan audit",
     },
@@ -299,7 +308,7 @@ POLICY_TYPES: dict = {
         {"slug": "compliance_risk_assessment",  "label": "Compliance Risk Assessment Policy",  "description": "Annual enterprise risk assessment, risk scoring, work plan, auditing & monitoring"},
     ],
     "home_health": [
-        {"slug": "patient_rights",            "label": "Patient Rights Policy",                       "description": "Notice of rights, grievance process, per 42 CFR 484.50"},
+        {"slug": "patient_rights",            "label": "Patient Rights Policy",                       "description": "Notice of rights; investigating and documenting complaints and protecting patients during an investigation, per 42 CFR 484.50"},
         {"slug": "oasis_assessment",          "label": "Comprehensive Assessment (OASIS) Policy",     "description": "Initial/comprehensive assessment timing, OASIS data collection"},
         {"slug": "care_planning",             "label": "Care Planning & Coordination Policy",         "description": "Plan of care development, physician orders, care coordination"},
         {"slug": "qapi_policy",               "label": "QAPI Policy",                                 "description": "Quality Assessment and Performance Improvement program"},
