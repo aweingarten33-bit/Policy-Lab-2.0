@@ -449,6 +449,15 @@ function SourceBadge({ attribution, urlMap }: { attribution?: SourceAttribution;
 
 // ── Main Page ──
 
+// One plain sentence per industry for the landing card. The server's
+// descriptions are written for configuration, not for a first-time reader;
+// any industry not listed here falls back to them.
+const INDUSTRY_BLURBS: Record<string, string> = {
+  healthcare: "Hospitals and hospital systems.",
+  home_health: "Home health and home care agencies.",
+  pharmacy: "Retail, hospital, specialty and compounding pharmacies.",
+};
+
 const FALLBACK_INDUSTRIES: IndustryOption[] = [
   { slug: "healthcare", name: "Hospitals", icon: "🏥", description: "Acute care hospitals, hospital systems, hospital-based compliance and privacy programs" },
   { slug: "home_health", name: "Home Health", icon: "🏠", description: "Medicare-certified home health agencies, home care agencies" },
@@ -1102,20 +1111,20 @@ export default function Index() {
               {mode === "analyze" && (
                 <>
                   <h1 className="font-serif-display text-4xl sm:text-6xl lg:text-7xl font-black text-foreground mb-6 sm:mb-8 leading-[1.02] tracking-tight">
-                    Upload your policy.<br />See what's missing.
+                    Upload a policy.<br />See the gaps.
                   </h1>
                   <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
-                    Get a gap analysis of your policy's text with regulations cited, plus a proposed revision you can review.
+                    We check your policy against the federal regulation text and list what it's missing. You get a gap report and a proposed revision, with blanks left for your organization's own choices.
                   </p>
                 </>
               )}
               {mode === "draft" && (
                 <>
                   <h1 className="font-serif-display text-4xl sm:text-6xl lg:text-7xl font-black text-foreground mb-6 sm:mb-8 leading-[1.02] tracking-tight">
-                    Tell us what you need.<br />We'll draft it.
+                    Describe a policy.<br />Get a first draft.
                   </h1>
                   <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
-                    Describe the policy and get a draft written from scratch, regulations cited, ready to download.
+                    We draft it from the federal regulation text. Anything only your organization can decide — who does what, deadlines, start date — is left as a blank for you to fill in.
                   </p>
                 </>
               )}
@@ -1141,7 +1150,7 @@ export default function Index() {
             <div className="rounded-2xl neu-raised p-5 sm:p-6">
 
               {/* — Industry & Location — */}
-              <p className="nyt-eyebrow mb-3">Industry &amp; location</p>
+              <p className="nyt-eyebrow mb-3">Your industry and state</p>
               <div className="flex flex-col gap-2.5">
                 <div className="relative">
                   <select
@@ -1156,9 +1165,9 @@ export default function Index() {
                   </select>
                   <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
-                {industries.find((ind) => ind.slug === industry)?.description && (
+                {(INDUSTRY_BLURBS[industry] ?? industries.find((ind) => ind.slug === industry)?.description) && (
                   <p className="text-[11px] text-muted-foreground/80 leading-relaxed px-0.5">
-                    {industries.find((ind) => ind.slug === industry)?.description}
+                    {INDUSTRY_BLURBS[industry] ?? industries.find((ind) => ind.slug === industry)?.description}
                   </p>
                 )}
                 <div className="relative">
@@ -1179,8 +1188,8 @@ export default function Index() {
                 )}
                 <p className="text-[11px] text-muted-foreground/80 leading-relaxed px-0.5">
                   {stateCode
-                    ? `${stateCode} statute and regulation text is not stored in this tool. When the stored sources have nothing for ${stateCode}, it searches ${stateCode} government websites; the results list exactly which ${stateCode} sources were consulted, or say plainly that none were. Treat ${stateCode} coverage as unverified.`
-                    : "No state selected — only federal regulations are used."}
+                    ? `${stateCode} law isn't stored here, so ${stateCode} rules won't be verified — check them separately.`
+                    : "No state picked, so only federal rules are checked."}
                 </p>
               </div>
 
@@ -1189,7 +1198,7 @@ export default function Index() {
               {/* — Draft: Describe the policy — */}
               {mode === "draft" && (
                 <>
-                  <p className="nyt-eyebrow mb-3">Describe the policy you need</p>
+                  <p className="nyt-eyebrow mb-3">What policy do you need?</p>
                   <div className="aqua-rain rounded-xl">
                     <textarea
                       value={draftDesc}
@@ -1205,7 +1214,7 @@ export default function Index() {
                         const sample = SAMPLE_DRAFT_DESCRIPTIONS[industry] ?? SAMPLE_DRAFT_DESCRIPTIONS.other;
                         setDraftDesc(sample.slice(0, 2000));
                         setError("");
-                        toast.success("Sample request loaded — hit Generate to run it");
+                        toast.success("Sample request loaded — click Generate Policy to run it");
                       }}
                       className="pl-sample-link"
                     >
@@ -1251,7 +1260,7 @@ export default function Index() {
                         setText(SAMPLE_POLICY_TEXTS[industry] ?? SAMPLE_POLICY_TEXTS.healthcare);
                         setFileName(`sample-${industry === "healthcare" ? "hospital" : industry}-policy.txt`);
                         setError("");
-                        toast.success("Sample policy loaded — hit Generate to run it");
+                        toast.success("Sample policy loaded — click Analyze Policy to run it");
                       }}
                       className="pl-sample-link"
                     >
@@ -1267,14 +1276,14 @@ export default function Index() {
                   and a disclosure found later arrives too late. */}
               <div className="mt-4 rounded-xl p-3" style={{ background: "hsl(0 72% 51% / 0.05)" }}>
                 <p className="text-[11px] leading-relaxed text-foreground/80">
-                  <span className="font-semibold text-foreground">Do not enter PHI, patient records, or client-confidential information.</span>{" "}
-                  What you submit is sent to third-party AI model providers to generate the output, and no Business
-                  Associate Agreement is in place with them. If a live search runs, a short query built from the start
-                  of your text goes to a web search provider. Use de-identified or sample policies.
+                  <span className="font-semibold text-foreground">Don't enter patient information (PHI) or anything confidential about a client.</span>{" "}
+                  Your text is sent to outside AI providers, and no HIPAA business associate agreement covers them.
+                  If we search the web, a short excerpt goes to a search engine.
                 </p>
                 <p className="text-[11px] leading-relaxed text-muted-foreground mt-1.5">
-                  Your text and results are also saved in this browser so they survive a reload. Our server holds them in
-                  memory for up to 30 minutes, never on disk. <button type="button" onClick={reset} className="underline underline-offset-2 hover:text-foreground">Start fresh</button> clears the browser copy.
+                  Your work stays saved in this browser until you click{" "}
+                  <button type="button" onClick={reset} className="underline underline-offset-2 hover:text-foreground">Start fresh</button>.
+                  Our server keeps it in memory for up to 30 minutes, never on disk.
                 </p>
               </div>
 
@@ -1316,7 +1325,7 @@ export default function Index() {
             )}
 
             <p className="mt-4 text-center text-[11px] text-muted-foreground/70">
-              Uses stored federal regulations; searches government websites only when those don't cover the request. Each result says which it did.
+              Every result opens with a note on what it could and couldn't check.
             </p>
 
           </>
@@ -1328,8 +1337,8 @@ export default function Index() {
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: "hsl(var(--primary))" }} />
             <p className="font-mono text-xs font-medium text-center px-4" style={{ color: "hsl(var(--primary))" }}>
               {mode === "draft"
-                ? (draftStreamText ? "writing your policy..." : loadSec < 6 ? "reviewing your requirements..." : "structuring the policy...")
-                : (loadSec < 8 ? "reading your policy..." : loadSec < 18 ? "finding the gaps..." : loadSec < 30 ? "scoring exposure..." : "finalizing the analysis...")}
+                ? (draftStreamText ? "writing your policy..." : loadSec < 6 ? "reading your request..." : "looking up the regulations...")
+                : (loadSec < 8 ? "reading your policy..." : loadSec < 18 ? "comparing it with the regulations..." : loadSec < 30 ? "listing the gaps..." : "almost done...")}
             </p>
             {/* Elapsed time counts UP, not down -- generation time genuinely varies
                 (document complexity, model load), so a countdown could hit zero
