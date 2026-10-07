@@ -27,7 +27,8 @@ build-time failure degrades rather than breaks.
 Usage:
     python scripts/build_knowledge_base.py [--require-success]
 
-    --require-success  exit non-zero if no chunks were loaded (fails the build)
+    --require-success  exit non-zero if no regulatory chunks were loaded, or if
+                       45 CFR Part 160 or 164 has none (fails the build)
 """
 
 import argparse
@@ -39,8 +40,25 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+# Parts a strict build must contain. HIPAA is what most findings cite, so an
+# image missing it is not shippable even if other regulations loaded.
+REQUIRED_PARTS = ((45, 160), (45, 164))
+
+
+def _missing_required_parts(results: dict) -> list:
+    """Labels of REQUIRED_PARTS that ended up with no chunks."""
+    from app.services.retrieval.ecfr_client import ECFR_TARGETS
+
+    labels = {(t, p): label for t, p, label, _ in ECFR_TARGETS}
+    return [
+        labels.get(key, f"{key[0]} CFR Part {key[1]}")
+        for key in REQUIRED_PARTS
+        if results.get(labels.get(key, ""), 0) <= 0
+    ]
+
+
 async def _build() -> tuple:
-    """Build the corpus. Returns (total_chunks, regulation_chunks).
+    """Build the corpus. Returns (total_chunks, regulation_chunks, results).
 
     The two numbers are reported separately on purpose. The OIG/HCCA guidance
     is bundled with the repo and loads from disk with no network at all, so a
@@ -58,7 +76,7 @@ async def _build() -> tuple:
     existing = sum(v for v in stats.values() if v > 0)
     if existing:
         print(f"[build-kb] Knowledge base already has {existing} chunks — nothing to do.")
-        return existing, max(stats.get("federal_regulation", 0), 0)
+        return existing, max(stats.get("federal_regulation", 0), 0), None
 
     print("[build-kb] Downloading regulations from eCFR and embedding them...")
     results = await _async_seed()
@@ -74,7 +92,7 @@ async def _build() -> tuple:
         f"[build-kb] Total: {total} chunks across {len(results)} sources "
         f"({regulation_chunks} of them regulatory text from eCFR)."
     )
-    return total, regulation_chunks
+    return total, regulation_chunks, results
 
 
 def main() -> int:
@@ -84,10 +102,10 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        total, regulation_chunks = asyncio.run(_build())
+        total, regulation_chunks, results = asyncio.run(_build())
     except Exception as e:
         print(f"[build-kb] ERROR: {type(e).__name__}: {e}", file=sys.stderr)
-        total, regulation_chunks = 0, 0
+        total, regulation_chunks, results = 0, 0, {}
 
     # Strict mode requires the regulations, not merely "some content". The
     # bundled guidance loads from disk regardless, so checking the total would
@@ -98,6 +116,18 @@ def main() -> int:
             f"({total} chunks of bundled guidance loaded, but a strict build "
             "requires the regulations.) Refusing to ship an image whose "
             "citations cannot be verified against current CFR text.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # results is None only when an existing store was reused, which was
+    # already validated by the build that produced it.
+    missing = _missing_required_parts(results) if results is not None else []
+    if args.require_success and missing:
+        print(
+            "[build-kb] FAILED: required regulation(s) have no chunks: "
+            + "; ".join(missing)
+            + ". Refusing to ship an image that cannot verify HIPAA citations.",
             file=sys.stderr,
         )
         return 1

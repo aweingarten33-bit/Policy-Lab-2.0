@@ -6,6 +6,7 @@ Endpoints:
   - POST /api/kb/ingest          — Ingest a source document
   - POST /api/kb/seed            — Seed the knowledge base with foundational content
   - GET  /api/kb/collections     — List all collections with chunk counts
+  - GET  /api/kb/sources         — Chunk counts per source document (read-only)
   - DELETE /api/kb/collections/{name} — Reset a specific collection
 """
 
@@ -151,6 +152,70 @@ async def list_collections():
         }
     except Exception as e:
         logger.error(f"Collections list error: {e}")
+        raise HTTPException(status_code=500, detail="Knowledge base operation failed.") from None
+
+
+# Metadata is read in pages so a large collection is never held in memory
+# all at once on a small instance.
+_SOURCES_PAGE_SIZE = 1000
+
+
+def _source_labels() -> dict:
+    """Display labels keyed by the citation each source is stored under."""
+    from app.services.retrieval.ecfr_client import ECFR_TARGETS
+    from app.services.retrieval.guidance_client import GUIDANCE_DOCUMENTS
+
+    labels = {f"{t} CFR Part {p}": label for t, p, label, _ in ECFR_TARGETS}
+    labels.update({doc.citation: doc.label for doc in GUIDANCE_DOCUMENTS})
+    return labels
+
+
+@router.get("/sources")
+async def list_sources():
+    """Chunk counts per source document, read from the knowledge base.
+
+    Read-only, and returns metadata only -- never chunk text. CFR sources are
+    grouped by part ("45 CFR Part 164"), everything else by its citation.
+    """
+    try:
+        store = get_store()
+        labels = _source_labels()
+        groups: dict = {}
+        for collection_name, count in store.get_all_stats().items():
+            if count <= 0:
+                continue
+            collection = store.get_collection(collection_name)
+            for offset in range(0, count, _SOURCES_PAGE_SIZE):
+                page = collection.get(
+                    include=["metadatas"], limit=_SOURCES_PAGE_SIZE, offset=offset
+                )
+                for meta in page.get("metadatas") or []:
+                    meta = meta or {}
+                    prefix = (
+                        meta.get("part_citation")
+                        or meta.get("citation")
+                        or meta.get("source_name")
+                        or "Unknown source"
+                    )
+                    group = groups.setdefault((collection_name, prefix), {
+                        "source": labels.get(prefix) or meta.get("source_name") or prefix,
+                        "citation_prefix": prefix,
+                        "collection": collection_name,
+                        "chunk_count": 0,
+                        "fetched_as_of": None,
+                    })
+                    group["chunk_count"] += 1
+                    fetched = meta.get("retrieved_date")
+                    if fetched and (group["fetched_as_of"] is None or fetched > group["fetched_as_of"]):
+                        group["fetched_as_of"] = fetched
+
+        sources = sorted(groups.values(), key=lambda g: (g["collection"], g["citation_prefix"]))
+        return {
+            "total_chunks": sum(g["chunk_count"] for g in sources),
+            "sources": sources,
+        }
+    except Exception as e:
+        logger.error(f"KB sources error: {e}")
         raise HTTPException(status_code=500, detail="Knowledge base operation failed.") from None
 
 

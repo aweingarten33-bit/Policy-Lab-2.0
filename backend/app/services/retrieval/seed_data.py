@@ -12,6 +12,7 @@ scheduler will populate it at 02:00 UTC.
 """
 
 import asyncio
+import gc
 import logging
 from datetime import date
 from typing import Dict
@@ -232,6 +233,18 @@ def ingest_cfr_part_sections(
     return total
 
 
+# Parts large enough to consume most of the seeding budget on their own. They
+# are seeded last, so if the budget runs out it costs only them rather than
+# every smaller part listed after them. OSHA's general industry standards are
+# by far the largest part in the corpus.
+_LARGEST_PARTS = {(29, 1910)}
+
+
+def _seeding_order(targets):
+    """Targets in configured order, with the largest parts moved to the end."""
+    return sorted(targets, key=lambda t: (t[0], t[1]) in _LARGEST_PARTS)
+
+
 async def _async_seed() -> Dict[str, int]:
     """Async implementation: fetch eCFR and ingest into ChromaDB."""
     from app.services.retrieval.store import get_store
@@ -274,7 +287,8 @@ async def _async_seed() -> Dict[str, int]:
     deadline = time.monotonic() + settings.kb_seed_timeout_seconds
     logger.info(f"Seeding knowledge base from eCFR ({len(ECFR_TARGETS)} targets, as of {today})...")
 
-    for title, part, label, category in ECFR_TARGETS:
+    for title, part, label, category in _seeding_order(ECFR_TARGETS):
+        part_data = chunks = None
         if time.monotonic() > deadline:
             logger.error(
                 f"Seeding budget of {settings.kb_seed_timeout_seconds}s exhausted — "
@@ -317,6 +331,12 @@ async def _async_seed() -> Dict[str, int]:
         except Exception as e:
             logger.error(f"Failed to seed {label}: {e}")
             results[label] = 0
+        finally:
+            # One part is fetched, parsed, embedded and persisted before the
+            # next begins. Drop this part's XML-derived text explicitly so the
+            # largest parts don't stack in memory on a 512 MB instance.
+            part_data = chunks = None
+            gc.collect()
 
     total = sum(results.values())
     logger.info(f"KB seeded from eCFR: {total} total chunks across {len(results)} sources")

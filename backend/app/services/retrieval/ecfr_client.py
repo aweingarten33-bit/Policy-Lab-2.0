@@ -35,6 +35,12 @@ logger = logging.getLogger(__name__)
 
 ECFR_BASE = "https://www.ecfr.gov/api/versioner/v1"
 
+# Children of a section node that are not regulatory text: the section number
+# and heading are captured separately, and CITA is the Federal Register
+# amendment history ("[65 FR 82802, Dec. 28, 2000, ...]").
+_SECTION_NON_TEXT_TAGS = {"SECTNO", "SUBJECT", "HEAD", "CITA"}
+_RESERVED_RE = re.compile(r"^\[?\s*reserved\s*\]?\.?$", re.IGNORECASE)
+
 
 def _build_ecfr_targets() -> List[tuple]:
     """Every industry's ecfr_targets plus the employment baseline, deduped.
@@ -325,14 +331,22 @@ class ECFRClient:
             sectno = (node.findtext("SECTNO") or node.attrib.get("N") or "").strip()
             subject = (node.findtext("SUBJECT") or node.findtext("HEAD") or "").strip()
 
-            paragraphs = []
-            for p in node.findall(".//P"):
-                text = " ".join("".join(p.itertext()).split())
+            # Every text-bearing child, not just <P>. Sections also carry text
+            # in <FP> (flush paragraphs), <EXTRACT>, lists and <GPOTABLE>
+            # tables; reading only <P> silently dropped those passages from
+            # sections that otherwise looked complete.
+            blocks = []
+            for child in node:
+                if child.tag in _SECTION_NON_TEXT_TAGS:
+                    continue
+                text = " ".join("".join(child.itertext()).split())
                 if text:
-                    paragraphs.append(text)
-            full_text = " ".join(paragraphs).strip()
+                    blocks.append(text)
+            full_text = " ".join(blocks).strip()
 
-            if not full_text or len(full_text) <= 50:
+            # Skip only sections with no substantive text ("[Reserved]"),
+            # not every section under an arbitrary length.
+            if not full_text or _RESERVED_RE.match(full_text):
                 continue
 
             clean_section = sectno.replace("§", "").strip()

@@ -238,3 +238,16 @@ class TestChunkIdsAreADeletableNamespace:
         assert removed == ingested, (
             "the refresh's delete prefix does not match the ids seeding writes"
         )
+
+
+def test_largest_part_is_seeded_last_and_hipaa_first():
+    """The seeding budget can run out. When it does, it must cost the single
+    largest part (OSHA 1910), not every smaller part configured after it --
+    and HIPAA, which most findings cite, must be loaded before anything else."""
+    from app.services.retrieval.ecfr_client import ECFR_TARGETS
+    from app.services.retrieval.seed_data import _seeding_order
+
+    order = [(t, p) for t, p, _, _ in _seeding_order(ECFR_TARGETS)]
+    assert order[:2] == [(45, 160), (45, 164)]
+    assert order[-1] == (29, 1910)
+    assert sorted(order) == sorted((t, p) for t, p, _, _ in ECFR_TARGETS)
