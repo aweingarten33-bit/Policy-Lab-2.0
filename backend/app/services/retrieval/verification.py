@@ -13,6 +13,7 @@ import logging
 import re
 from typing import Dict, List, Optional, Tuple
 
+from app.services.retrieval.cfr_citation import canonical_citation, parse_cfr_citation
 from app.services.retrieval.models import (
     ClaimVerification,
     RetrievalContext,
@@ -330,12 +331,12 @@ class VerificationService:
         claim_text: str = "",
     ) -> SourceAttribution:
         if retrieval_context:
-            match = self._find_source_for_citation(citation, retrieval_context)
+            match = self._find_source_for_citation(citation, retrieval_context, claim_text=claim_text)
             if match is not None:
                 meta = match.chunk.metadata
                 source_status = resolve_source_status(meta)
                 scope_text = self._source_scope_text(
-                    citation, meta.citation or "", match.chunk.text, allow_full_text=True
+                    canonical_citation(citation), meta.citation or "", match.chunk.text, allow_full_text=True
                 )
                 scope_ok = bool(scope_text)
 
@@ -467,13 +468,26 @@ class VerificationService:
             evidence.reason = "No authoritative source material was retrieved, so this claim could not be verified."
             return evidence
 
-        match = self._find_source_for_citation(citation, retrieval_context)
+        match = self._find_source_for_citation(citation, retrieval_context, claim_text=claim_text)
         if match is None:
             evidence.reason = (
                 f"The cited authority ({citation or 'none given'}) was not found in current "
                 "authoritative source material retrieved for this request."
             )
             return evidence
+
+        # Every check below runs on the canonical form of the citation, so
+        # "45 C.F.R. § 164.404(b)" is scoped to subsection (b) exactly like
+        # "45 CFR § 164.404(b)". A part- or range-level citation was resolved
+        # to one section of that part; say which, so the reader knows what the
+        # claim was actually checked against.
+        ref = parse_cfr_citation(citation)
+        scope_citation = ref.canonical if ref else citation
+        resolved_note = (
+            f"Cited at part level ({citation}); checked against {match.chunk.metadata.citation}, "
+            f"the section of that part that best matches this finding. "
+            if ref is not None and not ref.is_section else ""
+        )
 
         meta = match.chunk.metadata
         status = resolve_source_status(meta)
@@ -495,7 +509,7 @@ class VerificationService:
             return evidence
 
         scope_text = self._source_scope_text(
-            citation, meta.citation or "", match.chunk.text, allow_full_text=True
+            scope_citation, meta.citation or "", match.chunk.text, allow_full_text=True
         )
         if not scope_text:
             evidence.source = self._evidence_source(
@@ -527,7 +541,7 @@ class VerificationService:
             evidence.checks.specifics_supported = not unsupported
             if unsupported:
                 evidence.status = VerificationStatus.partially_verified
-                evidence.reason = (
+                evidence.reason = resolved_note + (
                     "The cited authority was found, but these concrete fact(s) are not stated "
                     f"at that citation scope: {', '.join(f.display for f in unsupported)}."
                 )
@@ -535,7 +549,7 @@ class VerificationService:
 
         evidence.status = VerificationStatus.partially_verified
         evidence.checks.claim_support = ClaimSupport.not_checked
-        evidence.reason = (
+        evidence.reason = resolved_note + (
             "The current cited authority and any concrete facts were located at the cited "
             "scope. Substantive claim support still requires the entailment check."
         )
@@ -713,10 +727,12 @@ class VerificationService:
             return None
 
         if citation:
-            match = self._find_source_for_citation(citation, retrieval_context)
+            match = self._find_source_for_citation(citation, retrieval_context, claim_text=text)
             if match is None:
                 return None
-            source_text = self._source_scope_text(citation, match.chunk.metadata.citation or "", match.chunk.text)
+            source_text = self._source_scope_text(
+                canonical_citation(citation), match.chunk.metadata.citation or "", match.chunk.text
+            )
         else:
             source_text = " ".join(
                 r.chunk.text
@@ -796,9 +812,11 @@ class VerificationService:
             warning=warning,
         )
 
-    def _find_source_for_citation(self, citation: str, retrieval_context: RetrievalContext):
+    def _find_source_for_citation(
+        self, citation: str, retrieval_context: RetrievalContext, claim_text: str = ""
+    ):
         """Resolve a citation to a source. Substrate's job — see ``_authority``."""
-        return self._authority.find_authority(citation, retrieval_context)
+        return self._authority.find_authority(citation, retrieval_context, claim_text=claim_text)
 
     @staticmethod
     def _is_authoritative_result(result) -> bool:

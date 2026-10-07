@@ -89,7 +89,7 @@ class OpenContractsAuthorityProvider:
     # ── the seam ──
 
     def find_authority(
-        self, citation: str, retrieval_context: RetrievalContext
+        self, citation: str, retrieval_context: RetrievalContext, claim_text: str = ""
     ) -> Optional[RetrievalResult]:
         doc = self._resolve(citation)
         if doc is None:

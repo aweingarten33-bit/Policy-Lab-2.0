@@ -304,6 +304,16 @@ class PackageOrchestrator:
 
         self._gate_unproven_mandates(gap_result)
 
+        # One line per finding, so a run's verification outcome can be read
+        # from the server log without the job result (which expires).
+        for row in gap_result.gap_table:
+            ev = row.evidence
+            if ev is not None:
+                logger.info(
+                    f"Evidence {ev.claim_id}: {ev.status.value} | cited {ev.citation!r} | "
+                    f"source {ev.source.name!r} | {(ev.reason or '')[:160]}"
+                )
+
         verified = sum(
             1 for r in gap_result.gap_table
             if r.evidence and r.evidence.status == VerificationStatus.verified

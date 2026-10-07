@@ -42,6 +42,17 @@ function authHeaders(): Record<string, string> {
   return headers;
 }
 
+// A start request that fails without a JSON body never reached the app: the
+// hosting platform answered instead, almost always because the server was
+// restarting (a deploy, or a crash from running out of memory). Saying so is
+// more useful than "Failed to start", which reads like a bug in the request.
+function startFailureMessage(status: number, what: "analysis" | "draft"): string {
+  if (status === 502 || status === 503 || status === 504) {
+    return `The server was restarting and could not start your ${what}. Wait a minute and try again.`;
+  }
+  return `Failed to start ${what} (${status}).`;
+}
+
 // Pull a readable message out of an error response body (FastAPI-style
 // `detail` as a string or a list of {msg}), or a caught Error / string.
 function extractErrorDetail(data: unknown, fallback: string): string {
@@ -618,7 +629,7 @@ export async function startDraftJob(
     }),
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ detail: "Failed to start draft" }));
+    const errorData = await response.json().catch(() => ({ detail: startFailureMessage(response.status, "draft") }));
     throw new Error(extractErrorDetail(errorData, `Job start failed (${response.status})`));
   }
   const data = await response.json();
@@ -733,7 +744,7 @@ export async function startActionPackageJob(
     }),
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ detail: "Failed to start analysis" }));
+    const errorData = await response.json().catch(() => ({ detail: startFailureMessage(response.status, "analysis") }));
     throw new Error(extractErrorDetail(errorData, `Job start failed (${response.status})`));
   }
   const data = await response.json();

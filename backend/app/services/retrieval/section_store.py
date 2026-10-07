@@ -162,6 +162,26 @@ class SectionStore:
             return None
         return dict(row) if row is not None else None
 
+    def get_by_part(self, part_citation: str) -> List[Dict[str, Optional[str]]]:
+        """Every stored section of one CFR part ("45 CFR Part 164"), or [] if none.
+
+        Used to resolve a finding cited at part, subpart or range level to the
+        specific section it is about. A part has tens of sections, so reading
+        them all is cheap.
+        """
+        if not part_citation:
+            return []
+        try:
+            with self._lock:
+                conn = self._connect()
+                rows = conn.execute(
+                    "SELECT * FROM authoritative_sections WHERE part_citation = ?", (part_citation,)
+                ).fetchall()
+        except sqlite3.Error as e:
+            logger.warning("Section store part lookup failed for %r: %s", part_citation, e)
+            return []
+        return [dict(r) for r in rows]
+
     def get_text(self, citation: str) -> Optional[str]:
         row = self.get(citation)
         return row["full_text"] if row else None

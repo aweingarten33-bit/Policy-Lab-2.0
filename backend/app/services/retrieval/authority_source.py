@@ -56,6 +56,7 @@ from app.services.retrieval.models import (
     can_support_present_duty,
     resolve_source_status,
 )
+from app.services.retrieval.cfr_citation import CfrRef, parse_cfr_citation
 from app.services.retrieval.section_store import get_section_store
 
 logger = logging.getLogger(__name__)
@@ -65,9 +66,12 @@ class AuthorityProvider(Protocol):
     """The two calls verification makes against the substrate."""
 
     def find_authority(
-        self, citation: str, retrieval_context: RetrievalContext
+        self, citation: str, retrieval_context: RetrievalContext, claim_text: str = ""
     ) -> Optional[RetrievalResult]:
-        """Resolve a citation to a source, or None when nothing matches."""
+        """Resolve a citation to a source, or None when nothing matches.
+
+        ``claim_text`` lets a provider pick the right section when the citation
+        names only a part, subpart or range."""
 
     def full_text(self, citation: str) -> str:
         """The complete authoritative text of a cited section, or ""."""
@@ -90,10 +94,20 @@ class ChromaAuthorityProvider:
         self._matcher = matcher
 
     def find_authority(
-        self, citation: str, retrieval_context: RetrievalContext
+        self, citation: str, retrieval_context: RetrievalContext, claim_text: str = ""
     ) -> Optional[RetrievalResult]:
         if not citation:
             return None
+
+        # Match on the canonical form ("45 CFR § 164.404"), whatever the model
+        # wrote around it -- "45 C.F.R.", a rule name in front, "Part 164,"
+        # before the section. A part, subpart or range names no single section,
+        # so it is resolved to the section of that part the claim is about.
+        ref = parse_cfr_citation(citation)
+        if ref is not None and not ref.is_section:
+            return self._resolve_part(ref, retrieval_context, claim_text)
+        if ref is not None:
+            citation = ref.canonical
 
         candidates = []
         for result in retrieval_context.get_all_sources():
@@ -125,6 +139,53 @@ class ChromaAuthorityProvider:
         candidates.sort(key=lambda x: (x[0], x[1], x[2], x[3]), reverse=True)
         return candidates[0][-1]
 
+    def _resolve_part(
+        self, ref: CfrRef, retrieval_context: RetrievalContext, claim_text: str
+    ) -> Optional[RetrievalResult]:
+        """The section within a cited part/subpart/range that best matches the claim.
+
+        Candidates are the retrieved chunks of that part plus every stored
+        section of it. They are ranked by how many of the claim's content terms
+        each contains; a section sharing none is not a match, so a part
+        citation whose sections say nothing about the claim stays unresolved
+        rather than borrowing an unrelated section's text.
+        """
+        claim_terms = self._matcher._content_terms(claim_text or "")
+        if not claim_terms:
+            return None
+
+        def score(text: str) -> int:
+            return len(claim_terms & self._matcher._content_terms(text))
+
+        ranked = []
+        for result in retrieval_context.get_all_sources():
+            if not self._matcher._is_authoritative_result(result):
+                continue
+            stored = parse_cfr_citation(result.chunk.metadata.citation or "")
+            if stored is None or stored.title != ref.title or not ref.covers_section(stored.section or ""):
+                continue
+            ranked.append((score(result.chunk.text), 1, result))
+
+        try:
+            rows = get_section_store().get_by_part(ref.part_citation)
+        except Exception as e:
+            logger.warning("Section store part lookup failed for %r: %s", ref.part_citation, e)
+            rows = []
+        for row in rows:
+            stored = parse_cfr_citation(row.get("citation") or "")
+            if stored is None or not ref.covers_section(stored.section or ""):
+                continue
+            result = self._row_to_result(row, ref.canonical)
+            if result is not None:
+                ranked.append((score(row.get("full_text") or ""), 0, result))
+
+        ranked = [r for r in ranked if r[0] > 0]
+        if not ranked:
+            return None
+        # Most shared terms wins; on a tie, prefer what retrieval returned.
+        ranked.sort(key=lambda r: (r[0], r[1]), reverse=True)
+        return ranked[0][2]
+
     def _from_section_store(self, citation: str) -> Optional[RetrievalResult]:
         """The cited section from the authoritative section store, or None.
 
@@ -142,7 +203,13 @@ class ChromaAuthorityProvider:
             return None
         if not self._matcher._citations_match(citation, row["citation"]):
             return None
+        return self._row_to_result(row, citation)
 
+    @staticmethod
+    def _row_to_result(row: dict, query: str) -> Optional[RetrievalResult]:
+        """A stored section as a RetrievalResult, with its recorded standing."""
+        if not row or not row.get("full_text") or not row.get("citation"):
+            return None
         try:
             status = SourceStatus(row.get("source_status"))
         except ValueError:
@@ -172,7 +239,7 @@ class ChromaAuthorityProvider:
             ),
             # Not a similarity score: the section was looked up by citation.
             score=0.0,
-            query=citation,
+            query=query,
         )
 
     def full_text(self, citation: str) -> str:
