@@ -1278,7 +1278,7 @@ export default function Index() {
                 <p className="text-[11px] leading-relaxed text-foreground/80">
                   <span className="font-semibold text-foreground">Don't enter patient information (PHI) or anything confidential about a client.</span>{" "}
                   Your text is sent to outside AI providers, and no HIPAA business associate agreement covers them.
-                  If we search the web, a short excerpt goes to a search engine.
+                  If we search the web, a short excerpt goes to a search engine. Use de-identified or sample policies.
                 </p>
                 <p className="text-[11px] leading-relaxed text-muted-foreground mt-1.5">
                   Your work stays saved in this browser until you click{" "}
