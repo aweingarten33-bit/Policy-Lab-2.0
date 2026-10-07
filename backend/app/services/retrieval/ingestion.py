@@ -97,6 +97,7 @@ def ingest_source_document(
     last_verified_date: Optional[str] = None,
     source_status: Optional[SourceStatus] = None,
     id_prefix: Optional[str] = None,
+    subpart: Optional[str] = None,
 ) -> int:
     """
     Ingest a single source document into the vector store.
@@ -165,6 +166,7 @@ def ingest_source_document(
             part_citation=part_citation,
             url=url,
             section=section or (f"Chunk {i+1}" if len(chunks) > 1 else None),
+            subpart=subpart,
             authority=authority,
             is_current=is_current,
             chunk_index=i,

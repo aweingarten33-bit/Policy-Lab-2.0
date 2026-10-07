@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 _TITLE_RE = re.compile(r"\b(?P<title>\d{1,2})\s*C\.?\s*F\.?\s*R\.?(?![A-Za-z])", re.IGNORECASE)
 _SECTION_RE = re.compile(r"(?<![\d.])(?P<section>\d{1,4}\.\d+[a-z]?)(?P<subs>(?:\s*\([A-Za-z0-9]{1,4}\))*)")
@@ -61,6 +61,8 @@ class CfrRef:
             return f"{self.title} CFR § {self.section}{self.subs}"
         if self.section_range:
             return f"{self.title} CFR §§ {self.section_range[0]}-{self.section_range[1]}"
+        if self.subpart:
+            return f"{self.part_citation} Subpart {self.subpart}"
         return self.part_citation
 
     def covers_section(self, section: str) -> bool:
@@ -77,8 +79,54 @@ def _section_key(section: str) -> Tuple[int, ...]:
     return tuple(int(p) for p in re.findall(r"\d+", section))
 
 
+# Notes the model appends inside a citation ("[MODEL INFERENCE — NOT VERIFIED
+# FROM LOADED SOURCES]", "(referenced in retrieved material as ...)") are not
+# part of the reference, and may themselves contain another citation.
+_ANNOTATION_RE = re.compile(r"\[[^\]]*\]|\([^()]*\b(?:referenced|see|cited|retrieved|as part of)\b[^()]*\)", re.IGNORECASE)
+
+
+def split_citations(citation: str) -> List[str]:
+    """The separate references in a combined citation string, annotations removed.
+
+    "45 CFR Part 164 Subpart D — Breach [MODEL INFERENCE]; 42 CFR § 482.13(d)(1)"
+    is two references. Reading it as one took the section number of the second
+    (482.13) as the section of the first (45 CFR), producing "45 CFR § 482.13" --
+    which does not exist -- and the finding was reported as not found.
+    """
+    cleaned = _ANNOTATION_RE.sub(" ", citation or "")
+    parts = []
+    for chunk in re.split(r";", cleaned):
+        # A chunk can still hold two titles ("45 CFR 164.404 and 42 CFR 2.13").
+        starts = [m.start() for m in _TITLE_RE.finditer(chunk)]
+        if len(starts) <= 1:
+            if chunk.strip():
+                parts.append(chunk.strip())
+            continue
+        if starts[0] > 0 and chunk[: starts[0]].strip():
+            parts.append(chunk[: starts[0]].strip())
+        for a, b in zip(starts, starts[1:] + [len(chunk)]):
+            parts.append(chunk[a:b].strip(" ,"))
+    return [p for p in parts if p]
+
+
+def parse_cfr_citations(citation: str) -> List[CfrRef]:
+    """Every CFR reference in a combined citation string, in order."""
+    refs = []
+    for part in split_citations(citation):
+        ref = _parse_one(part)
+        if ref is not None:
+            refs.append(ref)
+    return refs
+
+
 def parse_cfr_citation(citation: str) -> Optional[CfrRef]:
     """The first CFR reference in ``citation``, or None if it names no CFR title."""
+    refs = parse_cfr_citations(citation)
+    return refs[0] if refs else None
+
+
+def _parse_one(citation: str) -> Optional[CfrRef]:
+    """One CFR reference from a string holding at most one CFR title."""
     if not citation:
         return None
     title_match = _TITLE_RE.search(citation)
@@ -107,10 +155,18 @@ def parse_cfr_citation(citation: str) -> Optional[CfrRef]:
     return None
 
 
+_UNCITED_RE = re.compile(r"no (?:specific )?regulatory citation applies|organizational best practice", re.IGNORECASE)
+
+
+def is_uncited(citation: str) -> bool:
+    """True when a finding expressly cites no regulation (an organizational recommendation)."""
+    return bool(_UNCITED_RE.search(citation or "")) and parse_cfr_citation(citation or "") is None
+
+
 def canonical_citation(citation: str) -> str:
     """``citation`` rewritten to its canonical CFR form, or unchanged if it is not a CFR citation."""
     ref = parse_cfr_citation(citation)
     return ref.canonical if ref else citation
 
 
-__all__ = ["CfrRef", "canonical_citation", "parse_cfr_citation"]
+__all__ = ["CfrRef", "canonical_citation", "parse_cfr_citation", "parse_cfr_citations", "split_citations"]

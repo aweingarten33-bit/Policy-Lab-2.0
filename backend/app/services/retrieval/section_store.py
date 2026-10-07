@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS authoritative_sections (
     publication_date  TEXT,
     retrieved_date    TEXT,
     last_verified_date TEXT,
-    source_status     TEXT
+    source_status     TEXT,
+    subpart           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sections_part ON authoritative_sections(part_citation);
 """
@@ -102,6 +103,10 @@ class SectionStore:
         conn = sqlite3.connect(self.path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.executescript(_SCHEMA)
+        # Stores built before the subpart column existed: add it in place.
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(authoritative_sections)")}
+        if "subpart" not in columns:
+            conn.execute("ALTER TABLE authoritative_sections ADD COLUMN subpart TEXT")
         conn.commit()
         self._conn = conn
         return conn
@@ -127,6 +132,7 @@ class SectionStore:
                 s.get("retrieved_date"),
                 s.get("last_verified_date"),
                 s.get("source_status"),
+                (s.get("subpart") or None),
             ))
         if not rows:
             return 0
@@ -137,8 +143,8 @@ class SectionStore:
                 "INSERT OR REPLACE INTO authoritative_sections ("
                 "citation_key, citation, part_citation, source_name, authority, url, "
                 "full_text, effective_date, publication_date, retrieved_date, "
-                "last_verified_date, source_status) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "last_verified_date, source_status, subpart) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 rows,
             )
             conn.commit()

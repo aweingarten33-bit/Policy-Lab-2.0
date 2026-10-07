@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from app.models.schemas import AnalysisResult, StateCoverage, VerificationStatus
+from app.services.retrieval.cfr_citation import is_uncited
 
 DOCUMENT_ONLY = (
     "This analysis read the policy document only. No records, logs or practices were inspected, so "
@@ -44,12 +45,22 @@ def analysis_limitations(
     live_research_used: bool = False,
     state_coverage: Optional[StateCoverage] = None,
 ) -> List[str]:
-    rows = result.gap_table or []
+    all_rows = result.gap_table or []
+    # A finding that cites no regulation (an organizational recommendation)
+    # has nothing to verify; counting it as a verification failure overstated
+    # the problem and hid how many legal claims actually failed.
+    rows = [r for r in all_rows if not is_uncited(r.citation)]
+    uncited = len(all_rows) - len(rows)
     not_verified = sum(
         1 for r in rows
         if r.evidence is None or r.evidence.status is not VerificationStatus.verified
     )
     lines = []
+    if uncited:
+        lines.append(
+            f"{uncited} finding(s) cite no regulation: they are organizational recommendations, "
+            f"not legal requirements, and are not counted below."
+        )
     if rows:
         lines.append(
             f"Verification: {not_verified} of {len(rows)} finding(s) are not fully verified against the "

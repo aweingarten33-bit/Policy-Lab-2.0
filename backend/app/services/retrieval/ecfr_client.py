@@ -321,6 +321,18 @@ class ECFRClient:
             logger.warning(f"eCFR XML parse error for title-{title} part {part}: {e}")
             return {"title": title, "part": part, "fetched_date": fetched_date, "sections": []}
 
+        # Each section's enclosing subpart ("D" for HIPAA breach notification),
+        # so a finding cited to a subpart resolves only to sections inside it.
+        parents = {child: parent for parent in root.iter() for child in parent}
+
+        def subpart_of(node) -> Optional[str]:
+            p = parents.get(node)
+            while p is not None:
+                if (p.attrib.get("TYPE") or "").upper() == "SUBPART":
+                    return (p.attrib.get("N") or "").strip().upper() or None
+                p = parents.get(p)
+            return None
+
         for node in root.iter():
             # DIV8 is the usual section container, but match on TYPE rather than
             # tag name so a structural change (DIV7/DIV9) doesn't silently
@@ -369,6 +381,7 @@ class ECFRClient:
                 # the whole cited scope.
                 "text": full_text,
                 "citation": f"{title} CFR § {clean_section}" if clean_section else f"{title} CFR Part {part}",
+                "subpart": subpart_of(node),
             })
 
         if not sections:
@@ -450,6 +463,7 @@ def parts_to_source_chunks(part_data: Dict, category: SourceCategory) -> List[So
                 f"#p-{section_id}" if section_id else ""
             ),
             section=section_id or None,
+            subpart=section.get("subpart"),
             authority="eCFR — Electronic Code of Federal Regulations (current, in-force text)",
             is_current=True,
             chunk_index=i,

@@ -56,7 +56,7 @@ from app.services.retrieval.models import (
     can_support_present_duty,
     resolve_source_status,
 )
-from app.services.retrieval.cfr_citation import CfrRef, parse_cfr_citation
+from app.services.retrieval.cfr_citation import CfrRef, parse_cfr_citation, parse_cfr_citations
 from app.services.retrieval.section_store import get_section_store
 
 logger = logging.getLogger(__name__)
@@ -99,16 +99,28 @@ class ChromaAuthorityProvider:
         if not citation:
             return None
 
-        # Match on the canonical form ("45 CFR § 164.404"), whatever the model
-        # wrote around it -- "45 C.F.R.", a rule name in front, "Part 164,"
-        # before the section. A part, subpart or range names no single section,
-        # so it is resolved to the section of that part the claim is about.
-        ref = parse_cfr_citation(citation)
-        if ref is not None and not ref.is_section:
-            return self._resolve_part(ref, retrieval_context, claim_text)
-        if ref is not None:
-            citation = ref.canonical
+        # A citation string can hold several references ("45 CFR Part 164
+        # Subpart D [note]; 42 CFR § 482.13(d)(1)"). Try each in order and use
+        # the first that resolves. The returned result's ``query`` is the
+        # canonical reference that matched, so verification scopes its checks
+        # to that reference and not to whichever one happened to come first.
+        refs = parse_cfr_citations(citation)
+        if refs:
+            for ref in refs:
+                found = (
+                    self._resolve_section(ref.canonical, retrieval_context)
+                    if ref.is_section
+                    else self._resolve_part(ref, retrieval_context, claim_text)
+                )
+                if found is not None:
+                    return found.model_copy(update={"query": ref.canonical})
+            return None
+        # Not a CFR reference (agency guidance, a statute name): match as written.
+        return self._resolve_section(citation, retrieval_context)
 
+    def _resolve_section(
+        self, citation: str, retrieval_context: RetrievalContext
+    ) -> Optional[RetrievalResult]:
         candidates = []
         for result in retrieval_context.get_all_sources():
             if not self._matcher._is_authoritative_result(result):
@@ -142,49 +154,87 @@ class ChromaAuthorityProvider:
     def _resolve_part(
         self, ref: CfrRef, retrieval_context: RetrievalContext, claim_text: str
     ) -> Optional[RetrievalResult]:
-        """The section within a cited part/subpart/range that best matches the claim.
+        """The section within a cited part/subpart/range that the claim is about.
 
-        Candidates are the retrieved chunks of that part plus every stored
-        section of it. They are ranked by how many of the claim's content terms
-        each contains; a section sharing none is not a match, so a part
-        citation whose sections say nothing about the claim stays unresolved
-        rather than borrowing an unrelated section's text.
+        Candidate sections are restricted to the cited subpart or range when
+        the stored data records it ("Subpart C" can only resolve to a Security
+        Rule section). They are ranked by embedding similarity to the claim --
+        word overlap alone picked a privacy-notice section for a business
+        associate finding -- and a section must still share content terms
+        with the claim, so a part citation whose sections say nothing about the
+        claim stays unresolved instead of borrowing an unrelated section.
         """
         claim_terms = self._matcher._content_terms(claim_text or "")
         if not claim_terms:
             return None
-
-        def score(text: str) -> int:
-            return len(claim_terms & self._matcher._content_terms(text))
-
-        ranked = []
-        for result in retrieval_context.get_all_sources():
-            if not self._matcher._is_authoritative_result(result):
-                continue
-            stored = parse_cfr_citation(result.chunk.metadata.citation or "")
-            if stored is None or stored.title != ref.title or not ref.covers_section(stored.section or ""):
-                continue
-            ranked.append((score(result.chunk.text), 1, result))
 
         try:
             rows = get_section_store().get_by_part(ref.part_citation)
         except Exception as e:
             logger.warning("Section store part lookup failed for %r: %s", ref.part_citation, e)
             rows = []
-        for row in rows:
-            stored = parse_cfr_citation(row.get("citation") or "")
-            if stored is None or not ref.covers_section(stored.section or ""):
-                continue
-            result = self._row_to_result(row, ref.canonical)
-            if result is not None:
-                ranked.append((score(row.get("full_text") or ""), 0, result))
 
-        ranked = [r for r in ranked if r[0] > 0]
-        if not ranked:
-            return None
-        # Most shared terms wins; on a tie, prefer what retrieval returned.
-        ranked.sort(key=lambda r: (r[0], r[1]), reverse=True)
-        return ranked[0][2]
+        def in_scope(citation: str, subpart: Optional[str]) -> bool:
+            stored = parse_cfr_citation(citation or "")
+            if stored is None or stored.title != ref.title or not ref.covers_section(stored.section or ""):
+                return False
+            # Filter by subpart only where it is recorded; a store built before
+            # subparts were captured cannot be filtered and is not excluded.
+            if ref.subpart and subpart and subpart.upper() != ref.subpart:
+                return False
+            return True
+
+        rows = [r for r in rows if in_scope(r.get("citation"), r.get("subpart"))]
+        by_citation = {(r.get("citation") or "").strip().lower(): r for r in rows}
+
+        def overlaps(text: str) -> bool:
+            return bool(claim_terms & self._matcher._content_terms(text or ""))
+
+        # Semantic ranking over the indexed chunks of this part (and subpart).
+        for citation in self._semantic_candidates(ref, claim_text):
+            row = by_citation.get(citation.strip().lower())
+            if row is not None and overlaps(row.get("full_text")):
+                result = self._row_to_result(row, ref.canonical)
+                if result is not None:
+                    return result
+
+        # Fallback when the vector store is unavailable: shared content terms.
+        scored = sorted(
+            ((len(claim_terms & self._matcher._content_terms(r.get("full_text") or "")), r) for r in rows),
+            key=lambda x: x[0], reverse=True,
+        )
+        if scored and scored[0][0] > 0:
+            return self._row_to_result(scored[0][1], ref.canonical)
+        return None
+
+    @staticmethod
+    def _semantic_candidates(ref: CfrRef, claim_text: str, n: int = 8) -> list:
+        """Section citations of the cited part, nearest to the claim first."""
+        try:
+            from app.services.retrieval.store import get_store
+
+            store = get_store()
+            filters = [{"part_citation": ref.part_citation}]
+            if ref.subpart:
+                filters.append({"subpart": ref.subpart})
+            where = {"$and": filters} if len(filters) > 1 else filters[0]
+            results = store.query("federal_regulation", query_text=claim_text, n_results=n, where=where)
+            if ref.subpart and not (results.get("ids") or [[]])[0]:
+                # Subparts not recorded in this index yet: rank within the part.
+                results = store.query(
+                    "federal_regulation", query_text=claim_text, n_results=n,
+                    where={"part_citation": ref.part_citation},
+                )
+        except Exception as e:
+            logger.warning("Semantic section ranking failed for %r: %s", ref.canonical, e)
+            return []
+        seen, ordered = set(), []
+        for meta in (results.get("metadatas") or [[]])[0]:
+            citation = (meta or {}).get("citation") or ""
+            if citation and citation not in seen:
+                seen.add(citation)
+                ordered.append(citation)
+        return ordered
 
     def _from_section_store(self, citation: str) -> Optional[RetrievalResult]:
         """The cited section from the authoritative section store, or None.

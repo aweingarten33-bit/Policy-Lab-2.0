@@ -207,10 +207,12 @@ def ingest_cfr_part_sections(
             # One namespace per part, so the nightly refresh can clear the
             # previous version of exactly this part before writing the new one.
             id_prefix=f"ecfr_{title}_{part}",
+            subpart=meta.subpart,
         )
         authoritative.append({
             "citation": meta.citation,
             "part_citation": part_citation,
+            "subpart": meta.subpart,
             "source_name": meta.source_name,
             "authority": meta.authority,
             "url": meta.url,

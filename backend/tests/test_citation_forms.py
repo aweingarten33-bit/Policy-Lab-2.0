@@ -127,7 +127,7 @@ class TestParsing:
         ("HIPAA Privacy Rule, 45 CFR §164.530(j)", "45 CFR § 164.530(j)"),
         ("45 CFR Part 164, §164.404", "45 CFR § 164.404"),
         ("45 CFR §§ 164.400–164.414", "45 CFR §§ 164.400-164.414"),
-        ("45 CFR Part 164, Subpart D", "45 CFR Part 164"),
+        ("45 CFR Part 164, Subpart D", "45 CFR Part 164 Subpart D"),
         ("Organizational best practice — no regulatory citation applies.", "Organizational best practice — no regulatory citation applies."),
     ])
     def test_canonical_form(self, raw, canonical):
@@ -136,3 +136,75 @@ class TestParsing:
     def test_subpart_is_recorded(self):
         ref = parse_cfr_citation("45 CFR Part 164 Subpart D")
         assert ref.part == "164" and ref.subpart == "D" and not ref.is_section
+
+
+# ── Round 2: the exact citation strings production logged on 2026-10-07 ──
+#
+# After 76860f3 these still failed: the parser read a section number belonging
+# to a SECOND citation in the same string ("...; 42 CFR § 482.13(d)(1)", or
+# "(... 42 CFR § 2.11)") as the section of the first, producing nonexistent
+# references like "45 CFR § 2.11".
+
+PRODUCTION_CITATIONS = [
+    "45 CFR Part 164 Subpart D — HIPAA Breach Notification Rule [MODEL INFERENCE — NOT VERIFIED FROM LOADED SOURCES]; 42 CFR § 482.13(d)(1)",
+    "45 CFR Part 164 Subpart D — HIPAA Breach Notification Rule (referenced in retrieved material as part of the HIPAA Rules, 42 CFR § 2.11)",
+]
+
+
+@pytest.mark.parametrize("raw", PRODUCTION_CITATIONS)
+def test_a_second_citation_does_not_leak_into_the_first(raw):
+    first = parse_cfr_citation(raw)
+    assert first.canonical == "45 CFR Part 164 Subpart D"
+    assert not first.is_section
+
+
+@pytest.fixture
+def svc_with_subparts(tmp_path, monkeypatch):
+    from app.services.retrieval import section_store as section_module
+
+    store = section_module.SectionStore(persist_dir=str(tmp_path / "kb2"))
+    monkeypatch.setattr(section_module, "_section_store", store)
+    rows = [
+        ("164.404", "D", S164_404),
+        ("164.312", "C", "Technical safeguards. (a)(1) Access control. Implement technical policies and procedures "
+                         "for electronic information systems that maintain electronic protected health information "
+                         "to allow access only to authorized persons. (2)(i) Unique user identification."),
+        ("164.512", "E", "Uses and disclosures for which an authorization or opportunity to agree or object is not "
+                         "required, including disclosures required by law and for public health activities."),
+    ]
+    for section, subpart, text in rows:
+        store.put_many([{
+            "citation": f"45 CFR § {section}", "part_citation": "45 CFR Part 164", "subpart": subpart,
+            "source_name": f"§ {section}", "full_text": text,
+            "source_status": SourceStatus.current_verified.value,
+        }])
+    return VerificationService()
+
+
+@pytest.mark.parametrize("raw", PRODUCTION_CITATIONS)
+def test_production_breach_citations_resolve_to_164_404(svc_with_subparts, raw):
+    ev = svc_with_subparts.build_claim_evidence("f1", BREACH_CLAIM, raw, _hospital_only_context())
+    assert ev.status is VerificationStatus.partially_verified, ev.reason
+    assert "164.404" in (ev.source.name or "")
+    assert "Subpart D" in ev.reason
+
+
+def test_a_subpart_citation_only_resolves_inside_that_subpart(svc_with_subparts):
+    """Production checked 'Subpart C — Security Rule' against §164.512, a Privacy
+    Rule section. With subparts recorded, a Subpart C claim resolves to Subpart C."""
+    claim = ("The policy must require access control so only authorized persons can access electronic "
+             "protected health information, with unique user identification.")
+    ev = svc_with_subparts.build_claim_evidence(
+        "f1", claim, "45 CFR Part 164 Subpart C — HIPAA Security Rule [MODEL INFERENCE — NOT VERIFIED FROM LOADED SOURCES]",
+        _hospital_only_context(),
+    )
+    assert "164.312" in (ev.source.name or ""), ev.reason
+
+
+def test_an_uncited_recommendation_is_reported_as_such(svc):
+    ev = svc.build_claim_evidence(
+        "f6", "Review the policy annually.", "Organizational best practice — no regulatory citation applies.",
+        _hospital_only_context(),
+    )
+    assert ev.status is VerificationStatus.unverified
+    assert "No regulation is cited" in ev.reason

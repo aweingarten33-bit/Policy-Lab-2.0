@@ -78,6 +78,38 @@ _STATE_NAMES = {
 }
 
 
+# Per-section retrieval: how many policy sections are queried, and how many
+# regulation chunks each may add.
+MAX_SECTION_QUERIES = 12
+SECTION_RESULTS = 2
+_HEADING_RE = re.compile(r"^\s*(?:\d+(?:\.\d+)*[.)]?|[IVXLC]+\.|[A-Z])\s+\S|^[A-Z][A-Z0-9 &/,'()-]{3,}$")
+
+
+def _policy_sections(policy_text: str) -> List[str]:
+    """The policy split into its sections, as short query texts.
+
+    A heading line ("6. BREACH RESPONSE") starts a section; blank-line blocks
+    otherwise. Sections too short to say anything are skipped. Returns at most
+    MAX_SECTION_QUERIES, each capped at 400 characters.
+    """
+    if not policy_text:
+        return []
+    sections: List[List[str]] = []
+    for line in policy_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if sections and sections[-1]:
+                sections.append([])
+            continue
+        if _HEADING_RE.match(stripped) and len(stripped) < 80 or not sections:
+            sections.append([stripped])
+        else:
+            sections[-1].append(stripped)
+    texts = [" ".join(s) for s in sections if s]
+    texts = [t[:400] for t in texts if len(t) >= 60]
+    return texts[:MAX_SECTION_QUERIES]
+
+
 def _extract_state_code(jurisdiction: Optional[str]) -> Optional[str]:
     """Pull a 2-letter state code out of a jurisdiction string.
 
@@ -251,6 +283,32 @@ class ComplianceRetriever:
                     logger.warning(f"Failed to parse result {chunk_id}: {e}")
                     continue
 
+        # One query per section of the policy, against the regulations only.
+        #
+        # The query above is a template plus the policy's first 500
+        # characters, and it keeps the top 3 regulation chunks of ~7,000. A
+        # HIPAA policy covers breach response, access controls, training,
+        # vendors and patient rights; one query cannot reach all of them, and
+        # in production it returned hospital CoPs and 42 CFR Part 2 while not a
+        # single 45 CFR Part 164 section reached the model. The model then cited
+        # whole subparts from memory and marked its own citations unverified.
+        # Each section's own text finds the regulation that governs it.
+        if target_collections is None or "federal_regulation" in target_collections:
+            seen_ids = {r.chunk.id for r in retrieved_chunks}
+            for section_query in _policy_sections(policy_text):
+                try:
+                    hits = self.store.query(
+                        "federal_regulation", query_text=section_query,
+                        n_results=SECTION_RESULTS, where=where_filter or None,
+                    )
+                except Exception as e:
+                    logger.warning(f"Section query failed: {e}")
+                    continue
+                for result in self._to_results(hits, "federal_regulation", query):
+                    if result.chunk.id not in seen_ids:
+                        seen_ids.add(result.chunk.id)
+                        retrieved_chunks.append(result)
+
         # Codified law first, always. Similarity decides order only within a
         # tier, never across them.
         #
@@ -271,8 +329,13 @@ class ComplianceRetriever:
         retrieved_chunks = self._cap_supporting_material(retrieved_chunks)
 
         # Take top results (limit total to avoid context bloat)
-        max_total = 15
+        max_total = 20
         retrieved_chunks = retrieved_chunks[:max_total]
+        # Diagnostic: which authorities actually reached the model.
+        logger.info(
+            "Retrieval for %r returned: %s", step_name,
+            ", ".join(r.chunk.metadata.citation or r.chunk.metadata.source_name for r in retrieved_chunks),
+        )
 
         # Format context for prompt injection
         formatted_context = self._format_context_for_prompt(retrieved_chunks)
@@ -292,6 +355,26 @@ class ComplianceRetriever:
         )
 
         return context
+
+    def _to_results(self, hits: Dict[str, Any], col_name: str, query: str) -> List[RetrievalResult]:
+        """A raw Chroma query result as RetrievalResults."""
+        out: List[RetrievalResult] = []
+        ids = (hits.get("ids") or [[]])[0]
+        for i, chunk_id in enumerate(ids):
+            try:
+                meta_dict = (hits.get("metadatas") or [[]])[0][i] or {}
+                out.append(RetrievalResult(
+                    chunk=SourceChunk(
+                        id=chunk_id,
+                        text=(hits.get("documents") or [[]])[0][i] or "",
+                        metadata=self._parse_metadata(meta_dict, col_name),
+                    ),
+                    score=max(0, 1.0 - ((hits.get("distances") or [[]])[0][i] if hits.get("distances") else 1.0)),
+                    query=query,
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to parse result {chunk_id}: {e}")
+        return out
 
     def _build_query(
         self,

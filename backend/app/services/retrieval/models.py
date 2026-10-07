@@ -98,6 +98,7 @@ class SourceMetadata(BaseModel):
     )
     url: Optional[str] = Field(None, description="Source URL if available")
     section: Optional[str] = Field(None, description="Section within the source document")
+    subpart: Optional[str] = Field(None, description="CFR subpart letter the section sits in, when known")
     authority: Optional[str] = Field(None, description="Issuing authority (e.g., 'HHS OCR', 'CMS')")
 
     # ── Dates: four distinct questions, never one field ──

@@ -13,7 +13,7 @@ import logging
 import re
 from typing import Dict, List, Optional, Tuple
 
-from app.services.retrieval.cfr_citation import canonical_citation, parse_cfr_citation
+from app.services.retrieval.cfr_citation import canonical_citation, is_uncited, parse_cfr_citation
 from app.services.retrieval.models import (
     ClaimVerification,
     RetrievalContext,
@@ -335,8 +335,10 @@ class VerificationService:
             if match is not None:
                 meta = match.chunk.metadata
                 source_status = resolve_source_status(meta)
+                matched = parse_cfr_citation(match.query or "")
                 scope_text = self._source_scope_text(
-                    canonical_citation(citation), meta.citation or "", match.chunk.text, allow_full_text=True
+                    matched.canonical if matched else canonical_citation(citation),
+                    meta.citation or "", match.chunk.text, allow_full_text=True,
                 )
                 scope_ok = bool(scope_text)
 
@@ -468,6 +470,13 @@ class VerificationService:
             evidence.reason = "No authoritative source material was retrieved, so this claim could not be verified."
             return evidence
 
+        if is_uncited(citation):
+            evidence.reason = (
+                "No regulation is cited: this finding is an organizational recommendation, "
+                "so there is no legal source to verify it against."
+            )
+            return evidence
+
         match = self._find_source_for_citation(citation, retrieval_context, claim_text=claim_text)
         if match is None:
             evidence.reason = (
@@ -481,11 +490,13 @@ class VerificationService:
         # "45 CFR § 164.404(b)". A part- or range-level citation was resolved
         # to one section of that part; say which, so the reader knows what the
         # claim was actually checked against.
-        ref = parse_cfr_citation(citation)
+        # The provider reports which reference in the citation matched (a
+        # citation can name several). Scope every check to that one.
+        ref = parse_cfr_citation(match.query or "") or parse_cfr_citation(citation)
         scope_citation = ref.canonical if ref else citation
         resolved_note = (
-            f"Cited at part level ({citation}); checked against {match.chunk.metadata.citation}, "
-            f"the section of that part that best matches this finding. "
+            f"Cited at part level ({ref.canonical}); checked against {match.chunk.metadata.citation}, "
+            f"the section of it that best matches this finding. "
             if ref is not None and not ref.is_section else ""
         )
 
@@ -730,8 +741,10 @@ class VerificationService:
             match = self._find_source_for_citation(citation, retrieval_context, claim_text=text)
             if match is None:
                 return None
+            matched = parse_cfr_citation(match.query or "")
             source_text = self._source_scope_text(
-                canonical_citation(citation), match.chunk.metadata.citation or "", match.chunk.text
+                matched.canonical if matched else canonical_citation(citation),
+                match.chunk.metadata.citation or "", match.chunk.text,
             )
         else:
             source_text = " ".join(

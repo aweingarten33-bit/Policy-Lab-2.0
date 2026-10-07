@@ -17,8 +17,17 @@ function liveSearchLine(used: boolean | undefined): string {
 }
 
 export function analysisLimitations(pkg: ComplianceActionPackage, verifying: boolean): string[] {
-  const rows = pkg.gap_analysis?.gap_table ?? [];
+  const allRows = pkg.gap_analysis?.gap_table ?? [];
+  // Findings that cite no regulation are recommendations with nothing to
+  // verify; they are reported separately rather than as verification failures.
+  const isUncited = (c?: string) =>
+    /no (specific )?regulatory citation applies|organizational best practice/i.test(c ?? "") && !/\bC\.?\s*F\.?\s*R\b/i.test(c ?? "");
+  const rows = allRows.filter((r) => !isUncited(r.citation));
+  const uncited = allRows.length - rows.length;
   const lines: string[] = [];
+  if (uncited > 0) {
+    lines.push(`${uncited} finding${uncited !== 1 ? "s cite" : " cites"} no regulation: ${uncited !== 1 ? "they are" : "it is an"} organizational recommendation${uncited !== 1 ? "s" : ""}, not a legal requirement, and ${uncited !== 1 ? "are" : "is"} not counted below.`);
+  }
   if (verifying) {
     lines.push("Verification is still running. Treat every finding as unverified until it finishes.");
   } else if (rows.length > 0) {
