@@ -7,8 +7,9 @@ each one still said "the policy must...". The fix then stamped the prose
 The report has since been redesigned so the verdict lives on each finding's
 badge and nowhere else: green "Checked against {citation}", yellow "Regulation
 found, confirm applicability", red "Citation not confirmed, review before use",
-each opening the cited passage beside the claim. So the prose is no longer
-stamped and the summary gains no global correction. What still holds, and is
+each opening the cited passage beside the claim. A red finding's text and
+suggested language also start with the badge's own words, since suggested
+language is pasted into real policies; the summary gains no global correction. What still holds, and is
 tested here: an unconfirmed requirement is never labelled required by law, its
 evidence status (which drives the badge) survives reconciliation, guidance is
 still marked as not law, and a verified finding is untouched.
@@ -27,6 +28,7 @@ from app.models.schemas import (
 )
 from app.services.package_integrity import (
     GUIDANCE_FINDING_PREFIX,
+    NOT_CONFIRMED_PREFIX,
     reconcile_package_verification,
 )
 
@@ -100,12 +102,28 @@ class TestTheVerdictIsOnTheFinding:
         ).gap_analysis.gap_table[0]
         assert row.evidence.status is VerificationStatus.unverified
 
-    def test_the_prose_is_left_as_written(self):
-        """The badge carries the verdict; the finding's words are not stamped."""
-        row = reconcile_package_verification(_package(_row())).gap_analysis.gap_table[0]
-        assert row.finding == MANDATORY_FINDING
-        assert row.suggested_language == MANDATORY_LANGUAGE
+    def test_a_red_finding_repeats_the_badge_in_its_own_words(self):
+        """Suggested language gets pasted into real policies, so a finding whose
+        citation was not confirmed says so at the start of both texts, in the
+        badge's wording. Original wording follows intact."""
+        row = reconcile_package_verification(
+            _package(_row(evidence=self._unverified_evidence()))
+        ).gap_analysis.gap_table[0]
+        assert row.finding == NOT_CONFIRMED_PREFIX + MANDATORY_FINDING
+        assert row.suggested_language == NOT_CONFIRMED_PREFIX + MANDATORY_LANGUAGE
         assert "NOT VERIFIED" not in row.finding + row.suggested_language
+
+    def test_a_partially_verified_finding_is_not_prefixed(self):
+        evidence = self._unverified_evidence()
+        evidence.status = VerificationStatus.partially_verified
+        row = reconcile_package_verification(_package(_row(evidence=evidence))).gap_analysis.gap_table[0]
+        assert row.finding == MANDATORY_FINDING
+
+    def test_the_prefix_does_not_stack(self):
+        pkg = _package(_row(evidence=self._unverified_evidence()))
+        for _ in range(5):
+            pkg = reconcile_package_verification(pkg)
+        assert pkg.gap_analysis.gap_table[0].finding.count(NOT_CONFIRMED_PREFIX) == 1
 
     def test_a_guidance_backed_finding_gets_its_own_marker(self):
         evidence = _verified_evidence()

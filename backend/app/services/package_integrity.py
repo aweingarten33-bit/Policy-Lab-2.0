@@ -19,10 +19,11 @@ from app.models.schemas import (
 #
 # A finding whose regulatory requirement could not be confirmed used to be
 # stamped "[NOT VERIFIED — ...]" in its own text, and the executive summary
-# gained a correction paragraph. The report now carries that verdict in one
-# place only: the badge on the finding ("Citation not confirmed, review before
-# use"), which opens the cited passage beside the claim. The obligation type is
-# still downgraded, so nothing unconfirmed is labelled "required by law".
+# gained a correction paragraph. The report now carries that verdict on the
+# finding: its badge ("Citation not confirmed, review before use"), which opens
+# the cited passage beside the claim, plus the short prefix below on a red
+# finding's own text. Nothing is global. The obligation type is still
+# downgraded, so nothing unconfirmed is labelled "required by law".
 GUIDANCE_FINDING_PREFIX = (
     "[AGENCY GUIDANCE, NOT LAW — this reflects what a regulator expects, not a "
     "legal obligation] "
@@ -31,7 +32,14 @@ GUIDANCE_LANGUAGE_PREFIX = (
     "[BASED ON GUIDANCE, NOT LAW — sound practice, but not a legal requirement] "
 )
 
+# The one exception: a finding whose badge is red also carries the badge's own
+# words at the start of its text and its suggested language. A reader acts on
+# the sentence they copy, and suggested language is pasted into real policies.
+# Same wording as the badge, so it reads as one verdict, not a second one.
+NOT_CONFIRMED_PREFIX = "[Citation not confirmed — review before use] "
+
 _ALL_PREFIXES = (
+    NOT_CONFIRMED_PREFIX,
     GUIDANCE_FINDING_PREFIX,
     GUIDANCE_LANGUAGE_PREFIX,
 )
@@ -131,9 +139,15 @@ def reconcile_package_verification(
 
     # Guidance is not law: say so in the finding's own words. (An unconfirmed
     # requirement is shown by the finding's badge instead; see above.)
+    from app.services.verification_badge import RED, verification_badge
+
     for row in rows:
         obligation = getattr(row, "obligation_type", None)
-        if obligation is ObligationType.guidance:
+        badge = verification_badge(row)
+        if badge and badge[0] == RED:
+            row.finding = _stamp(row.finding, NOT_CONFIRMED_PREFIX)
+            row.suggested_language = _stamp(row.suggested_language, NOT_CONFIRMED_PREFIX)
+        elif obligation is ObligationType.guidance:
             row.finding = _stamp(row.finding, GUIDANCE_FINDING_PREFIX)
             row.suggested_language = _stamp(row.suggested_language, GUIDANCE_LANGUAGE_PREFIX)
 
