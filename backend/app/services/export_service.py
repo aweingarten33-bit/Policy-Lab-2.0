@@ -27,7 +27,8 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
 
-from app.services.limitations import analysis_limitations, draft_limitations, revision_limitations
+from app.services.limitations import draft_limitations, revision_limitations
+from app.services.verification_badge import GREEN, YELLOW, verification_badge
 from app.models.schemas import (
     AnalysisResult, GapRow, RiskLevel, ExportFormat,
     ComplianceActionPackage, RewrittenPolicy, RedlineChange,
@@ -65,10 +66,9 @@ _OBLIGATION_LABELS = {
     "guidance": ("REGULATORY GUIDANCE — recommended, not mandated", COLOR_MODEL_INFERENCE),
     "best_practice": ("BEST PRACTICE — not legally required", COLOR_BLACK),
     "organizational_choice": ("ORGANIZATIONAL CHOICE — your decision to adopt", COLOR_BLACK),
-    "unverified_requirement": (
-        "UNVERIFIED REQUIREMENT — stated as mandatory, not confirmed against the source",
-        COLOR_MODEL_INFERENCE,
-    ),
+    # No obligation label: an unconfirmed requirement is shown by the finding's
+    # verification label ("Citation not confirmed, review before use").
+    "unverified_requirement": ("", COLOR_BLACK),
 }
 
 # ── Verification Status Colors ──
@@ -625,10 +625,6 @@ def _build_cover_page(doc: Document, package: ComplianceActionPackage, file_name
     _add_horizontal_rule(doc)
 
     _add_styled_paragraph(doc, "", size=6, space_after=60)
-    if package.gap_analysis:
-        _add_limitations_banner(doc, analysis_limitations(
-            package.gap_analysis, package.live_research_used, package.state_coverage,
-        ))
     info_data = [
         ("Policy Document:", file_name or "Uploaded Policy"),
         ("Policy Type:", package.policy_type),
@@ -645,8 +641,6 @@ def _build_cover_page(doc: Document, package: ComplianceActionPackage, file_name
         info_data.append(("Knowledge Base Sources:", f"{len(package.kb_sources_used)} source(s) used"))
     if package.live_research_used:
         info_data.append(("Live Research:", "Used — curated regulatory sources searched"))
-    if package.unverified_claim_count is not None and package.unverified_claim_count > 0:
-        info_data.append(("Unverified Claims:", f"{package.unverified_claim_count} — require independent review"))
 
     for label, value in info_data:
         p = doc.add_paragraph()
@@ -763,6 +757,28 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
             run_v.font.name = FONT_FAMILY
             p.paragraph_format.space_after = Pt(3)
 
+            # The finding's verification badge, as text: the same three labels
+            # as the report on screen. Findings citing no regulation get none.
+            badge = verification_badge(row)
+            if badge:
+                state, badge_label = badge
+                p = doc.add_paragraph()
+                run_l = p.add_run("Verification: ")
+                run_l.bold = True
+                run_l.font.size = Pt(10)
+                run_l.font.color.rgb = COLOR_BLACK
+                run_l.font.name = FONT_FAMILY
+                run_v = p.add_run(f"[{badge_label}]")
+                run_v.bold = True
+                run_v.font.size = Pt(10)
+                run_v.font.color.rgb = (
+                    COLOR_STATUS_VERIFIED if state == GREEN
+                    else COLOR_STATUS_PARTIAL if state == YELLOW
+                    else COLOR_STATUS_CONTRADICTED
+                )
+                run_v.font.name = FONT_FAMILY
+                p.paragraph_format.space_after = Pt(3)
+
             # Whether this is actually mandatory. A reader's first question
             # about any finding is "do I have to?", and a finding whose claimed
             # mandate could not be confirmed against its own source must say so
@@ -772,7 +788,9 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
                 label, colour = _OBLIGATION_LABELS.get(
                     obligation.value, ("", COLOR_BLACK)
                 )
-                if label:
+                # An unconfirmed requirement is shown by the verification
+                # label below, not by a second verdict here.
+                if label and obligation.value != "unverified_requirement":
                     p = doc.add_paragraph()
                     run_l = p.add_run("Obligation: ")
                     run_l.bold = True
@@ -813,7 +831,7 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
             # only the first is checked against the cited text.
             if getattr(row, "regulatory_requirement", None):
                 p = doc.add_paragraph()
-                run_l = p.add_run("Regulatory requirement (checked against the cited text): ")
+                run_l = p.add_run("Regulatory requirement: ")
                 run_l.bold = True
                 run_l.font.size = Pt(10)
                 run_l.font.color.rgb = COLOR_BLACK
@@ -1448,12 +1466,11 @@ def generate_docx(result: AnalysisResult, file_name: Optional[str] = None,
     despite the whole point of the app being source-grounded verification."""
     doc = Document()
     _setup_document(doc)
-    _build_gap_analysis_section(
-        doc, result, file_name=file_name,
-        limitations=analysis_limitations(result, live_research_used, state_coverage),
-    )
+    # No top warning block and no report-wide verification line: each finding
+    # carries its own verification label, as in the report on screen.
+    _build_gap_analysis_section(doc, result, file_name=file_name)
     doc.add_paragraph()
-    _add_sources_used_section(doc, kb_sources_used, live_research_used, verification_overall)
+    _add_sources_used_section(doc, kb_sources_used, live_research_used)
 
     buffer = io.BytesIO()
     doc.save(buffer)

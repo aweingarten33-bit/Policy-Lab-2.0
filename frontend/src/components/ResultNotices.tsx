@@ -1,71 +1,15 @@
 import React from "react";
 import { AlertTriangle } from "lucide-react";
-import type { ComplianceActionPackage, DraftedPolicy, StateCoverage } from "@/lib/api";
+import type { DraftedPolicy, StateCoverage } from "@/lib/api";
 
-// ── What an output does and does not establish ──
-// Verification status used to live in footer metadata while the output opened
-// with REGULATIONS APPLIED, so the authoritative-looking part was read first
-// and the part that qualified it last. These lines open every result.
-
-const DOCUMENT_ONLY =
-  "Only the policy document was read. No records, logs or practices were inspected, so findings describe what the document says or omits, not whether your organization complies.";
+// ── What a drafted policy does and does not establish ──
+// (The analysis report has no such banner: its verification verdicts are the
+// badges on each finding.)
 
 function liveSearchLine(used: boolean | undefined): string {
   return used
     ? "A live search of government websites ran; those results are web pages, not codified text."
     : "No live government search ran: the stored federal regulations covered the request. Nothing newer than the stored text was checked.";
-}
-
-// Each status is its own outcome. "Partially verified" (the regulation was found
-// but the passage does not fully establish the finding) is not the same failure
-// as "not verified", and one "N of N not fully verified" line hid which was which.
-const STATUS_LABELS: [string, string][] = [
-  ["verified", "verified"],
-  ["partially_verified", "partially verified"],
-  ["unverified", "not verified"],
-  ["contradicted", "contradicted by the cited text"],
-  ["cannot_determine", "could not be determined"],
-];
-
-export function verificationBreakdown(statuses: (string | undefined)[]): string {
-  const counts = new Map<string, number>();
-  for (const st of statuses) {
-    const key = STATUS_LABELS.some(([k]) => k === st) ? (st as string) : "unverified";
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  const parts = STATUS_LABELS.filter(([k]) => counts.get(k)).map(([k, label]) => `${counts.get(k)} ${label}`);
-  const total = statuses.length;
-  const allVerified = counts.get("verified") === total;
-  const notes: string[] = [];
-  if (counts.get("partially_verified")) notes.push("Partially verified: the regulation was found, but the passage does not fully establish the finding.");
-  if (counts.get("unverified")) notes.push("Not verified: the finding could not be confirmed against the cited text.");
-  return (
-    `Verification of ${total} cited finding${total !== 1 ? "s" : ""}: ${parts.join(", ")}. ` +
-    (allVerified ? "They still need review by counsel." : `${notes.join(" ")} Check those before relying on them.`.trim())
-  );
-}
-
-export function analysisLimitations(pkg: ComplianceActionPackage, verifying: boolean): string[] {
-  const allRows = pkg.gap_analysis?.gap_table ?? [];
-  // Findings that cite no regulation are recommendations with nothing to
-  // verify; they are reported separately rather than as verification failures.
-  const isUncited = (c?: string) =>
-    /no (specific )?regulatory citation applies|organizational best practice/i.test(c ?? "") && !/\bC\.?\s*F\.?\s*R\b/i.test(c ?? "");
-  const rows = allRows.filter((r) => !isUncited(r.citation));
-  const uncited = allRows.length - rows.length;
-  const lines: string[] = [];
-  if (uncited > 0) {
-    lines.push(`${uncited} finding${uncited !== 1 ? "s cite" : " cites"} no regulation: ${uncited !== 1 ? "they are" : "it is an"} organizational recommendation${uncited !== 1 ? "s" : ""}, not a legal requirement, and ${uncited !== 1 ? "are" : "is"} not counted below.`);
-  }
-  if (verifying) {
-    lines.push("Verification is still running. Treat every finding as unverified until it finishes.");
-  } else if (rows.length > 0) {
-    lines.push(verificationBreakdown(rows.map((r) => r.evidence?.status)));
-  }
-  lines.push(DOCUMENT_ONLY);
-  lines.push(liveSearchLine(pkg.live_research_used));
-  if (pkg.state_coverage) lines.push(`State law: ${pkg.state_coverage.summary}`);
-  return lines;
 }
 
 export function draftLimitations(draft: DraftedPolicy): string[] {
@@ -125,7 +69,7 @@ export function StateSourcesList({ coverage }: { coverage?: StateCoverage | null
                 <span>{src.name}</span>
               )}
               <span className="ml-2 text-[10px] font-mono text-muted-foreground">
-                {src.kind === "live_search" ? "web search result — not verified" : "stored text"}
+                {src.kind === "live_search" ? "web search result — not codified text" : "stored text"}
               </span>
             </li>
           ))}

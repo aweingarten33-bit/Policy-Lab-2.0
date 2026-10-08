@@ -217,6 +217,17 @@ class ClaimSupport(str, Enum):
     not_checked = "NOT_CHECKED"
 
 
+class EvidencePassage(BaseModel):
+    """One cited section's passage, as the claim was checked against it."""
+    citation: str = Field("", description="The section this passage is from")
+    role: str = Field(
+        "cited",
+        description="cited (the section checked), also_cited (another section the finding cites), "
+                    "incorporated (a paragraph the cited text incorporates by reference)",
+    )
+    text: str = ""
+
+
 class EvidenceSource(BaseModel):
     """The exact authoritative passage a claim was checked against."""
     name: Optional[str] = None
@@ -246,6 +257,10 @@ class EvidenceSource(BaseModel):
     status: SourceStatus = Field(
         SourceStatus.status_unknown,
         description="Standing of this source relative to present-day law",
+    )
+    passages: List[EvidencePassage] = Field(
+        default_factory=list,
+        description="The excerpt split by section, so a reader can see each cited passage under its citation",
     )
 
 

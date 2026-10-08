@@ -13,27 +13,16 @@ from app.models.schemas import (
     VerificationStatus,
 )
 
-# Prefixes stamped onto the prose of a finding whose legal claim was not
-# verified.
+# Prefixes stamped onto the prose of a finding backed only by agency guidance.
+# They classify the source (guidance is not law); they are not a verification
+# verdict.
 #
-# Reported from real output: every finding in a production run was correctly
-# labelled UNVERIFIED REQUIREMENT, and every finding's text still read
-# "the policy must...", named an exact deadline, and cited a section as though
-# the requirement had been confirmed. A reader takes the sentence, not the
-# badge -- and the sentence said the law requires this.
-#
-# So the words change too, not only the label. Deliberately by prefixing rather
-# than by rewriting: a rewrite would need a model call, would be another place
-# for a claim to be invented, and could mangle a quoted provision. A prefix is
-# deterministic, reversible, and leaves the original text intact for a reader
-# who wants to judge it.
-UNVERIFIED_FINDING_PREFIX = (
-    "[NOT VERIFIED — the cited source does not establish this as a legal requirement] "
-)
-UNVERIFIED_LANGUAGE_PREFIX = (
-    "[NOT VERIFIED AS LAW — adopt this only as your organization's own standard "
-    "unless you confirm the requirement in the regulation yourself] "
-)
+# A finding whose regulatory requirement could not be confirmed used to be
+# stamped "[NOT VERIFIED — ...]" in its own text, and the executive summary
+# gained a correction paragraph. The report now carries that verdict in one
+# place only: the badge on the finding ("Citation not confirmed, review before
+# use"), which opens the cited passage beside the claim. The obligation type is
+# still downgraded, so nothing unconfirmed is labelled "required by law".
 GUIDANCE_FINDING_PREFIX = (
     "[AGENCY GUIDANCE, NOT LAW — this reflects what a regulator expects, not a "
     "legal obligation] "
@@ -43,8 +32,6 @@ GUIDANCE_LANGUAGE_PREFIX = (
 )
 
 _ALL_PREFIXES = (
-    UNVERIFIED_FINDING_PREFIX,
-    UNVERIFIED_LANGUAGE_PREFIX,
     GUIDANCE_FINDING_PREFIX,
     GUIDANCE_LANGUAGE_PREFIX,
 )
@@ -130,7 +117,7 @@ def reconcile_package_verification(
                 )
             elif evidence.status is VerificationStatus.partially_verified:
                 reason = (
-                    "The authority was only partially verified or the cited passage did not "
+                    "The cited regulation was found, but the passage did not "
                     "fully establish the claimed duty. Policy Lab therefore cannot label it "
                     "as a confirmed legal requirement."
                 )
@@ -142,18 +129,11 @@ def reconcile_package_verification(
             row.obligation_note = reason
             downgraded_required += 1
 
-    # The prose has to match the label. A finding carrying a badge that says
-    # unverified and a sentence that says "must, per 45 CFR §X, within 60 days"
-    # is read as a confirmed legal requirement, because that is what the
-    # sentence says.
+    # Guidance is not law: say so in the finding's own words. (An unconfirmed
+    # requirement is shown by the finding's badge instead; see above.)
     for row in rows:
         obligation = getattr(row, "obligation_type", None)
-        if obligation is ObligationType.unverified_requirement:
-            if getattr(row, "regulatory_requirement", None):
-                row.regulatory_requirement = _stamp(row.regulatory_requirement, UNVERIFIED_FINDING_PREFIX)
-            row.finding = _stamp(row.finding, UNVERIFIED_FINDING_PREFIX)
-            row.suggested_language = _stamp(row.suggested_language, UNVERIFIED_LANGUAGE_PREFIX)
-        elif obligation is ObligationType.guidance:
+        if obligation is ObligationType.guidance:
             row.finding = _stamp(row.finding, GUIDANCE_FINDING_PREFIX)
             row.suggested_language = _stamp(row.suggested_language, GUIDANCE_LANGUAGE_PREFIX)
 
@@ -186,28 +166,5 @@ def reconcile_package_verification(
             f" {downgraded_required} claimed legal requirement(s) were downgraded because "
             "full verification was not established."
         )
-
-    # The executive summary is the part most likely to be read aloud to a board
-    # and least likely to be read alongside the badges. It is model prose about
-    # the findings, so when the findings turn out not to be established law it
-    # describes something that did not happen. The correction is appended rather
-    # than the summary rewritten: the observations may still be sound, and a
-    # rewrite would need a model call.
-    unverified_rows = sum(
-        1 for r in rows
-        if getattr(r, "obligation_type", None) in (
-            ObligationType.unverified_requirement, ObligationType.guidance
-        )
-    )
-    if unverified_rows:
-        summary = (getattr(gap_analysis, "audit_ready_summary", "") or "").strip()
-        correction = (
-            f"IMPORTANT: {unverified_rows} of {len(rows)} finding(s) in this report could "
-            f"not be confirmed as legal requirements against the cited source. Wherever "
-            f"this summary describes something as required, treat it as unverified and "
-            f"check the regulation directly before relying on it."
-        )
-        if correction not in summary:
-            gap_analysis.audit_ready_summary = (summary + "\n\n" + correction).strip()
 
     return package

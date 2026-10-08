@@ -163,6 +163,9 @@ export interface VerificationEvidence {
     url?: string | null;
     version_date?: string | null;
     excerpt?: string | null;
+    // The excerpt split by section: the passage the requirement was checked
+    // against, plus any other cited section or paragraph it incorporates.
+    passages?: { citation: string; role: string; text: string }[];
   };
   checks: {
     citation_exists: boolean;

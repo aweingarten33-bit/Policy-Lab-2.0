@@ -140,13 +140,13 @@ class TestLimitationsComeFirst:
         assert banner < _first_index(blocks, "I. PURPOSE")
         assert _first_index(blocks, "DECISIONS YOU NEED TO MAKE") < _first_index(blocks, "REGULATORY FRAMEWORK")
 
-    def test_gap_report_opens_with_limitations_before_findings(self):
+    def test_gap_report_has_no_top_warning_block(self):
+        """Verification verdicts are per-finding labels, as on screen; the gap
+        report no longer opens with a report-wide block."""
         blocks = _body_order(generate_docx(
             AnalysisResult(policy_type="P", audit_ready_summary="Summary."), "policy.txt",
         ))
-        banner = _first_index(blocks, "READ FIRST")
-        assert "No records, logs or practices were inspected" in blocks[banner][1]
-        assert banner < _first_index(blocks, "Summary of Findings")
+        assert not any("READ FIRST" in text for _, text in blocks)
 
     def test_proposed_revision_export_says_it_was_not_rechecked(self):
         blocks = _body_order(generate_updated_policy_docx(RewrittenPolicy(

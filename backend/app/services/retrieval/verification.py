@@ -491,7 +491,7 @@ class VerificationService:
             verification_status=VerificationStatus.unverified,
             source_citation=citation,
             confidence=0.0,
-            warning="Not verified from current authoritative sources. Requires independent review.",
+            warning="Not confirmed against current authoritative sources. Requires independent review.",
         )
 
     # ------------------------------------------------------------------
@@ -509,7 +509,9 @@ class VerificationService:
         and the suggested revision). Figures found there are the organization's
         choices and are checked for conflict with the cited text rather than
         required to appear in it."""
-        from app.models.schemas import ClaimSupport, EvidenceChecks, EvidenceSource, VerificationEvidence
+        from app.models.schemas import (
+            ClaimSupport, EvidenceChecks, EvidencePassage, EvidenceSource, VerificationEvidence,
+        )
 
         evidence = VerificationEvidence(
             claim_id=claim_id,
@@ -610,10 +612,12 @@ class VerificationService:
             self._check_figure(f, claim_text, cited_texts, policy_text)
             for f in self._extract_specifics(claim_text)
         ]
-        excerpt = self._claim_excerpt(
-            claim_text, scope_text, figures, title=ref.title if ref else "", other_cited=other_cited
+        passages = self._claim_passages(
+            claim_text, scope_text, figures, title=ref.title if ref else "", other_cited=other_cited,
+            citation=meta.citation or scope_citation,
         )
-        evidence.source = self._evidence_source(meta, excerpt, status)
+        evidence.source = self._evidence_source(meta, self._join_passages(passages), status)
+        evidence.source.passages = [EvidencePassage(**p) for p in passages]
 
         if figures:
             failed = [f for f in figures if not f.passes]
@@ -795,11 +799,30 @@ class VerificationService:
                 parts.append(f"{f.fact.display}: attributed to the regulation, not stated in the cited text")
         return "; ".join(parts)
 
-    def _claim_excerpt(
+    def _claim_excerpt(self, *args, **kwargs) -> str:
+        """The passages joined into the single excerpt the entailment check reads."""
+        return self._join_passages(self._claim_passages(*args, **kwargs))
+
+    @staticmethod
+    def _join_passages(passages: List[Dict[str, str]]) -> str:
+        parts = []
+        for p in passages:
+            if p["role"] == "also_cited":
+                parts.append(f"[Also cited — {p['citation']}:] {p['text']}")
+            elif p["role"] == "incorporated":
+                parts.append(f"[Incorporated by reference — {p['citation']}:] {p['text']}")
+            else:
+                parts.append(p["text"])
+        return " ".join(parts)
+
+    def _claim_passages(
         self, claim: str, scope_text: str, figures: List[FigureCheck], title: str = "",
-        other_cited: Optional[List[Tuple[str, str]]] = None,
-    ) -> str:
-        """The passage the entailment check reads.
+        other_cited: Optional[List[Tuple[str, str]]] = None, citation: str = "",
+    ) -> List[Dict[str, str]]:
+        """The passages the entailment check reads, one per cited section.
+
+        Returned separately (citation, role, text) so the report can show a
+        reader each passage under its own citation, next to the claim.
 
         The best-matching sentences, plus what is needed to judge them fairly:
         the Standard / Implementation specification heading they sit under (a
@@ -812,7 +835,7 @@ class VerificationService:
         """
         base = self._select_excerpt(claim, scope_text, max_chars=1200)
         if not base:
-            return base
+            return []
         pieces = [base]
 
         anchor = scope_text.find(base[:80])
@@ -838,14 +861,16 @@ class VerificationService:
             if f.limit_sentence and f.limit_sentence[:60] not in " ".join(pieces):
                 pieces.append("… " + f.limit_sentence[:400])
 
+        passages = [{"citation": citation, "role": "cited", "text": " ".join(pieces)}]
+
         # A finding citing two sections ("§ 482.13; § 164.524") is judged on
         # both: the passage of each that best matches the claim.
         for other_citation, other_text in (other_cited or [])[:2]:
             best = self._select_excerpt(claim, other_text, max_chars=600)
             if best and claim and self._content_terms(claim) & self._content_terms(best):
-                pieces.append(f"[Also cited — {other_citation}:] {best}")
+                passages.append({"citation": other_citation, "role": "also_cited", "text": best})
 
-        joined = " ".join(pieces)
+        joined = self._join_passages(passages)
         for m in _CROSS_REF_RE.finditer(joined if title else ""):
             cited = f"{title} CFR § {m.group('section')}{m.group('subs')}"
             full = self._authoritative_full_text(cited)
@@ -854,18 +879,24 @@ class VerificationService:
             if referenced:
                 pos = referenced.lower().find(f"({subs[-1].lower()})")
                 snippet = referenced[max(pos, 0):max(pos, 0) + 500].strip()
-                pieces.append(f"[Incorporated by reference — {cited}:] {snippet}")
+                passages.append({"citation": cited, "role": "incorporated", "text": snippet})
             break
-        return " ".join(pieces)
+        return passages
 
     @staticmethod
     def _evidence_source(meta, excerpt: str, status: SourceStatus):
         """Build an EvidenceSource carrying each date as the date it actually is."""
         from app.models.schemas import EvidenceSource
 
+        from app.models.schemas import EvidencePassage
+
         return EvidenceSource(
             name=meta.source_name,
             url=meta.url,
+            # Replaced with the per-section passages when the claim is checked;
+            # until then, the excerpt under the section it came from.
+            passages=[EvidencePassage(citation=meta.citation or meta.source_name or "", role="cited", text=excerpt)]
+            if excerpt else [],
             # What version was checked: the last time the text was confirmed
             # against its publisher, falling back through the other dates. The
             # publication date is last because it is the weakest answer to

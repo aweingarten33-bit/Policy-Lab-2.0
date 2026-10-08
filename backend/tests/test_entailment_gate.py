@@ -167,19 +167,20 @@ class TestTheReaderSeesIt:
         doc = Document(io.BytesIO(generate_docx(result, file_name="t.docx")))
         return "\n".join(p.text for p in doc.paragraphs)
 
+    # The verdict is the finding's verification label, the same text as the
+    # badge on screen. It precedes the finding so it is read first.
     def test_the_warning_appears_in_the_export(self):
         rows = _gate(_finding("OSHA requires 30-year retention.",
                               ClaimSupport.not_supported))
         text = self._render(rows)
-        assert "UNVERIFIED REQUIREMENT" in text
-        assert "not confirmed against the source" in text
+        assert "[Citation not confirmed, review before use]" in text
 
     def test_the_warning_precedes_the_finding(self):
         """A caveat printed after the claim is read second, if at all."""
         rows = _gate(_finding("OSHA requires 30-year retention.",
                               ClaimSupport.not_supported))
         text = self._render(rows)
-        assert text.index("UNVERIFIED REQUIREMENT") < text.index("Finding:")
+        assert text.index("Citation not confirmed") < text.index("Finding:")
 
     def test_a_confirmed_requirement_reads_as_required(self):
         rows = _gate(_finding("Noise measurements retained two years.",
