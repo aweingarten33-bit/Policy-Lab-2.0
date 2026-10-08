@@ -6,7 +6,7 @@ The Policy Lab is a source-grounded compliance policy analysis and drafting appl
 
 - **Frontend:** React + TypeScript + Vite
 - **Backend:** FastAPI / Python 3.11
-- **LLM abstraction:** LiteLLM provider cascade
+- **LLM abstraction:** provider cascade over direct HTTP calls (DeepSeek, Gemini)
 - **Regulatory retrieval:** Chroma-backed knowledge base populated from authoritative source material
 - **Verification:** citation checks, evidence records, semantic claim-support classification, unsupported-specific checks, and obligation classification
 - **Deployment:** multi-stage Docker image serving the built frontend from FastAPI

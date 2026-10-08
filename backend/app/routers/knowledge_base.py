@@ -31,7 +31,7 @@ router = APIRouter(prefix="/api/kb", tags=["Knowledge Base"])
 CORPUS_STALE_AFTER_DAYS = 180
 
 
-# Where to look when a provider rejects a request, keyed by litellm prefix.
+# Where to look when a provider rejects a request, keyed by the model's provider prefix.
 _PROVIDER_INFO = {
     "deepseek": ("DeepSeek", "DEEPSEEK_API_KEY", "platform.deepseek.com"),
     "gemini": ("Gemini", "GEMINI_API_KEY", "aistudio.google.com"),

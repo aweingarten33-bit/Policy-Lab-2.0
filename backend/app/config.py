@@ -1,7 +1,7 @@
 """
 Application configuration — reads from environment variables.
 API keys are NEVER hard-coded. All secrets come from .env or the runtime environment.
-Supports multiple LLM providers via LiteLLM cascade fallback.
+Supports multiple LLM providers via a cascade fallback (direct HTTP calls).
 """
 
 from pydantic import field_validator
