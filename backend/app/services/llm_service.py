@@ -333,6 +333,10 @@ failed analysis.
 
       "finding": "2 sentences, hard cap, about the DOCUMENT only (see STEP 3). Name which of the four axes pass and which fail (consistent with axes_passed) and the single sharpest deficiency in the text. If regulatory: state what an auditor would ask to see and whether this policy requires it — never whether it exists, which you cannot know. If organizational-only: say so explicitly and state the operational risk instead of inventing regulatory exposure. Do not restate current_state, do not hedge, do not pad.",
 
+      "regulatory_requirement": "1–2 sentences: ONLY what the cited text itself requires, paraphrased closely, with the actor, the duty and any figure exactly as that text states them (e.g. 'A covered entity must notify each affected individual within [the period the cited section states, in its exact words].'). The FIRST citation in `citation` must be the section that establishes it. No recommendation, no stricter internal figure, no inference about what is 'implied', nothing the cited text does not say — this field is checked word-for-word against the cited source, and anything extra makes it fail. If a duty comes from a different section than the one you are citing, cite that section instead. Omit (empty string) for organizational-only findings.",
+
+      "recommendations": ["0–3 short items: best-practice suggestions and stricter internal standards that go beyond the regulatory_requirement (e.g. 'Require workforce members to report suspected incidents to the Privacy Officer within [an internal deadline shorter than the regulatory one].'). Never attribute these to a regulation, never cite in them, never write 'required by'. They are shown to the reader as recommendations, not law."],
+
       "finding_kind": "document_gap | implementation_question — document_gap when the text omits or under-specifies the obligation; implementation_question when the text is adequate and the open point is only whether the organization actually does it. Never claim a compliance determination: you have not seen any records.",
 
       "implementation_question": "1 sentence: the question the organization must answer about its actual practice, e.g. 'Does the agency investigate complaints from family members and caregivers, and document each resolution?' Omit when there is no practice question.",
@@ -411,8 +415,11 @@ audit_ready_summary: at most 3 sentences of board-ready prose. Always present,
                    including when nothing else is.
 
 Every row you DO return must populate: clause, regulations (≥1), axes_passed,
-status, risk_level, current_state, finding, suggested_language, citation,
-remediation_priority. oig_element is required for Healthcare & Home Health
+status, risk_level, current_state, finding, regulatory_requirement (empty only
+for organizational-only rows), suggested_language, citation,
+remediation_priority. Keep what the regulation requires (regulatory_requirement)
+separate from what you recommend (recommendations): never put a recommendation,
+a stricter internal figure or "best practice" into regulatory_requirement. oig_element is required for Healthcare & Home Health
 industries and omitted otherwise. A row you cannot fill out completely is a row
 you do not have the evidence for — leave it out rather than filling the fields
 with plausible text.
@@ -509,6 +516,15 @@ def _build_user_prompt(
     )
 
     return base
+
+
+def _coerce_recommendations(value) -> list:
+    """The model's recommendations as a list of non-empty strings."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        value = [v for v in re.split(r"\n+|(?<=[.;])\s+(?=[A-Z])", value)]
+    return [str(v).strip(" -•\t") for v in value if str(v).strip(" -•\t")][:5]
 
 
 def _coerce_finding_kind(value) -> FindingKind:
@@ -622,6 +638,8 @@ def _parse_llm_response(raw_text: str) -> AnalysisResult:
             risk_level=risk_level,
             current_state=row_data.get("current_state"),
             finding=row_data.get("finding", ""),
+            regulatory_requirement=(str(row_data.get("regulatory_requirement") or "").strip() or None),
+            recommendations=_coerce_recommendations(row_data.get("recommendations")),
             suggested_language=row_data.get("suggested_language", ""),
             citation=row_data.get("citation", ""),
             remediation_priority=remediation_priority,
@@ -718,6 +736,8 @@ def _merge_results(results: list[AnalysisResult]) -> AnalysisResult:
                         risk_level=row.risk_level,
                         current_state=existing.current_state or row.current_state,
                         finding=row.finding,
+                        regulatory_requirement=row.regulatory_requirement or existing.regulatory_requirement,
+                        recommendations=row.recommendations or existing.recommendations,
                         suggested_language=(
                             row.suggested_language
                             if len(row.suggested_language or "") >= len(existing.suggested_language or "")
@@ -738,6 +758,8 @@ def _merge_results(results: list[AnalysisResult]) -> AnalysisResult:
                         risk_level=existing.risk_level,
                         current_state=existing.current_state or row.current_state,
                         finding=existing.finding,
+                        regulatory_requirement=existing.regulatory_requirement or row.regulatory_requirement,
+                        recommendations=existing.recommendations or row.recommendations,
                         suggested_language=existing.suggested_language,
                         citation=existing.citation,
                         remediation_priority=existing.remediation_priority,

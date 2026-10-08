@@ -149,6 +149,8 @@ def reconcile_package_verification(
     for row in rows:
         obligation = getattr(row, "obligation_type", None)
         if obligation is ObligationType.unverified_requirement:
+            if getattr(row, "regulatory_requirement", None):
+                row.regulatory_requirement = _stamp(row.regulatory_requirement, UNVERIFIED_FINDING_PREFIX)
             row.finding = _stamp(row.finding, UNVERIFIED_FINDING_PREFIX)
             row.suggested_language = _stamp(row.suggested_language, UNVERIFIED_LANGUAGE_PREFIX)
         elif obligation is ObligationType.guidance:

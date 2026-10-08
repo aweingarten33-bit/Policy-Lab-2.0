@@ -604,12 +604,15 @@ class VerificationService:
         # number appearing in an unrelated regulation must not rescue a bad
         # claim. A finding citing two sections ("§ 482.13; § 164.524") is
         # checked against both: the 30-day access deadline is in the second.
-        cited_texts = [scope_text] + self._other_cited_texts(citation, section_scope)
+        other_cited = self._other_cited_texts(citation, section_scope)
+        cited_texts = [scope_text] + [text for _, text in other_cited]
         figures = [
             self._check_figure(f, claim_text, cited_texts, policy_text)
             for f in self._extract_specifics(claim_text)
         ]
-        excerpt = self._claim_excerpt(claim_text, scope_text, figures, title=ref.title if ref else "")
+        excerpt = self._claim_excerpt(
+            claim_text, scope_text, figures, title=ref.title if ref else "", other_cited=other_cited
+        )
         evidence.source = self._evidence_source(meta, excerpt, status)
 
         if figures:
@@ -645,8 +648,8 @@ class VerificationService:
     # ------------------------------------------------------------------
     # Figures: stated, within the regulation's limit, or in conflict
     # ------------------------------------------------------------------
-    def _other_cited_texts(self, citation: str, primary: str) -> List[str]:
-        """Full text (at the cited subsection) of every other section the citation names."""
+    def _other_cited_texts(self, citation: str, primary: str) -> List[Tuple[str, str]]:
+        """(citation, full text at the cited subsection) for every other section the citation names."""
         primary_key = self._citation_key(primary or "")
         texts = []
         for ref in parse_cfr_citations(citation or ""):
@@ -658,7 +661,7 @@ class VerificationService:
             subs = re.findall(r"\(([A-Za-z0-9]+)\)", ref.subs)
             scoped = self._locate_subsection(full, subs) if subs else full
             if scoped:
-                texts.append(scoped)
+                texts.append((ref.canonical, scoped))
         return texts
 
     @staticmethod
@@ -792,7 +795,10 @@ class VerificationService:
                 parts.append(f"{f.fact.display}: attributed to the regulation, not stated in the cited text")
         return "; ".join(parts)
 
-    def _claim_excerpt(self, claim: str, scope_text: str, figures: List[FigureCheck], title: str = "") -> str:
+    def _claim_excerpt(
+        self, claim: str, scope_text: str, figures: List[FigureCheck], title: str = "",
+        other_cited: Optional[List[Tuple[str, str]]] = None,
+    ) -> str:
         """The passage the entailment check reads.
 
         The best-matching sentences, plus what is needed to judge them fairly:
@@ -831,6 +837,13 @@ class VerificationService:
         for f in figures:
             if f.limit_sentence and f.limit_sentence[:60] not in " ".join(pieces):
                 pieces.append("… " + f.limit_sentence[:400])
+
+        # A finding citing two sections ("§ 482.13; § 164.524") is judged on
+        # both: the passage of each that best matches the claim.
+        for other_citation, other_text in (other_cited or [])[:2]:
+            best = self._select_excerpt(claim, other_text, max_chars=600)
+            if best and claim and self._content_terms(claim) & self._content_terms(best):
+                pieces.append(f"[Also cited — {other_citation}:] {best}")
 
         joined = " ".join(pieces)
         for m in _CROSS_REF_RE.finditer(joined if title else ""):

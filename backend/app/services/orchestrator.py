@@ -219,16 +219,28 @@ class PackageOrchestrator:
         reused = 0
 
         for idx, row in enumerate(gap_result.gap_table):
-            claim = " ".join(filter(None, [row.finding, row.suggested_language])).strip()
+            # What is verified is the finding's regulatory requirement: the
+            # statement of what the cited text requires. Recommendations and
+            # stricter internal standards are kept apart from it and are never
+            # checked against the regulation, because they do not claim to come
+            # from it. Mixing the two in one claim meant every finding carrying
+            # a sensible recommendation failed verification for that reason.
+            if row.regulatory_requirement:
+                claim = row.regulatory_requirement.strip()
+                # Every figure in a statement of what the law requires must be
+                # in the law: no allowance for policy figures here.
+                figure_policy_text = ""
+            else:
+                # Older output without the split: the combined text, with the
+                # organization's own figures checked for conflict.
+                claim = " ".join(filter(None, [row.finding, row.suggested_language])).strip()
+                figure_policy_text = " ".join(filter(None, [policy_text, row.suggested_language]))
             evidence = self.verification.build_claim_evidence(
                 claim_id=f"finding-{idx + 1}",
                 claim_text=claim,
                 citation=row.citation or (row.regulations[0] if row.regulations else ""),
                 retrieval_context=retrieval_ctx,
-                # The analysed policy and the suggested language are the
-                # organization's own words: figures there may be stricter than
-                # the regulation and are checked for conflict, not presence.
-                policy_text=" ".join(filter(None, [policy_text, row.suggested_language])),
+                policy_text=figure_policy_text,
             )
             row.evidence = evidence
             claims_by_id[evidence.claim_id] = claim
@@ -450,7 +462,7 @@ class PackageOrchestrator:
         """
         flagged = 0
         for row in gap_result.gap_table:
-            combined = " ".join(filter(None, [row.finding, row.suggested_language]))
+            combined = " ".join(filter(None, [row.finding, row.regulatory_requirement, row.suggested_language]))
             warning = self.verification.check_unsupported_specifics(
                 combined, retrieval_ctx,
                 policy_text=" ".join(filter(None, [policy_text, row.suggested_language])),

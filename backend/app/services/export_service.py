@@ -809,6 +809,33 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
             run_v.font.name = FONT_FAMILY
             p.paragraph_format.space_after = Pt(3)
 
+            # What the regulation requires, then recommendations, kept apart:
+            # only the first is checked against the cited text.
+            if getattr(row, "regulatory_requirement", None):
+                p = doc.add_paragraph()
+                run_l = p.add_run("Regulatory requirement (checked against the cited text): ")
+                run_l.bold = True
+                run_l.font.size = Pt(10)
+                run_l.font.color.rgb = COLOR_BLACK
+                run_l.font.name = FONT_FAMILY
+                run_v = p.add_run(row.regulatory_requirement)
+                run_v.font.size = Pt(10)
+                run_v.font.color.rgb = COLOR_BLACK
+                run_v.font.name = FONT_FAMILY
+                p.paragraph_format.space_after = Pt(3)
+            for rec in getattr(row, "recommendations", None) or []:
+                p = doc.add_paragraph()
+                run_l = p.add_run("Recommendation (best practice, not required by the cited regulation): ")
+                run_l.bold = True
+                run_l.font.size = Pt(10)
+                run_l.font.color.rgb = COLOR_BLACK
+                run_l.font.name = FONT_FAMILY
+                run_v = p.add_run(rec)
+                run_v.font.size = Pt(10)
+                run_v.font.color.rgb = COLOR_BLACK
+                run_v.font.name = FONT_FAMILY
+                p.paragraph_format.space_after = Pt(3)
+
             # Suggested Language
             p = doc.add_paragraph()
             run_l = p.add_run("Suggested Language: ")

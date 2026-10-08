@@ -386,6 +386,21 @@ class GapRow(BaseModel):
         description="What the policy currently says about this topic (direct quote or close paraphrase)"
     )
     finding: str = Field(..., description="What is wrong or missing")
+    regulatory_requirement: Optional[str] = Field(
+        None,
+        description=(
+            "What the cited text itself requires, stated no more broadly than it does and with "
+            "only the figures it states. This, and only this, is checked against the cited "
+            "source. Empty for organizational findings that cite no regulation."
+        ),
+    )
+    recommendations: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Best-practice suggestions and stricter internal standards. Labelled as "
+            "recommendations, never attributed to a regulation, and not verified against one."
+        ),
+    )
     suggested_language: str = Field(..., description="Ready-to-paste policy text to remediate the gap")
     citation: str = Field(..., description="Full citation with source and year")
     obligation_type: ObligationType = Field(

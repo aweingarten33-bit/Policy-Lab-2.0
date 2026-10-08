@@ -114,6 +114,10 @@ export interface GapRow {
   risk_level: "critical" | "high" | "moderate" | "low" | "compliant";
   current_state?: string;
   finding: string;
+  // What the cited text itself requires -- the only part checked against the
+  // regulation. Recommendations are kept apart and never attributed to it.
+  regulatory_requirement?: string | null;
+  recommendations?: string[];
   suggested_language: string;
   citation: string;
   remediation_priority: string;

@@ -302,6 +302,26 @@ function GapRowItem({ row, urlMap, snippets }: { row: GapRow; urlMap?: Record<st
               })()}
             </div>
             <p className="text-[13px] sm:text-sm text-foreground leading-relaxed">{linkifyRegulations(stripCiteTags(row.finding), urlMap, snippets)}</p>
+            {row.regulatory_requirement && (
+              <div className="rounded-lg p-3 mt-2 border-l-2" style={{ borderColor: "hsl(var(--primary) / 0.5)", background: "hsl(var(--primary) / 0.05)" }}>
+                <p className="text-[10px] font-mono uppercase tracking-wider mb-1 font-medium" style={{ color: "hsl(var(--primary))" }}>
+                  What the regulation requires — checked against the cited text
+                </p>
+                <p className="text-[12px] sm:text-[13px] text-foreground leading-relaxed">{linkifyRegulations(stripCiteTags(row.regulatory_requirement), urlMap, snippets)}</p>
+              </div>
+            )}
+            {row.recommendations && row.recommendations.length > 0 && (
+              <div className="rounded-lg p-3 mt-2 border-l-2 border-foreground/15">
+                <p className="text-[10px] font-mono uppercase tracking-wider mb-1 font-medium text-muted-foreground">
+                  Recommendations — best practice, not required by the cited regulation
+                </p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  {row.recommendations.map((rec, i) => (
+                    <li key={i} className="text-[12px] text-foreground/80 leading-relaxed">{rec}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {row.implementation_question && (
               <p className="text-[12px] text-foreground/80 leading-relaxed mt-2">
                 <span className="font-semibold">Question for your team: </span>{row.implementation_question}
