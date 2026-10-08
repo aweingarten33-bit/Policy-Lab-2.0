@@ -13,7 +13,9 @@ import logging
 import re
 from typing import Dict, List, Optional, Tuple
 
-from app.services.retrieval.cfr_citation import canonical_citation, is_uncited, parse_cfr_citation
+from app.services.retrieval.cfr_citation import (
+    canonical_citation, is_uncited, parse_cfr_citation, parse_cfr_citations,
+)
 from app.services.retrieval.models import (
     ClaimVerification,
     RetrievalContext,
@@ -116,6 +118,54 @@ _THRESHOLD_REGEX = re.compile(
 )
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z(])")
+
+# ── Policy figures: compared with the regulation, not required to appear in it ──
+#
+# A policy is allowed, and expected, to be stricter than the regulatory floor.
+# "We notify within 24 hours" is compliant with a 60-day maximum; "we retain
+# records for 7 years" is compliant with a 6-year minimum. The figure check used
+# to demand that every number in a finding appear verbatim in the cited text,
+# so a policy's own stricter deadlines were reported as unverified facts.
+#
+# A figure the organization chose (it appears in the policy being analysed or in
+# the suggested policy language) is now checked for CONFLICT with the cited
+# text. A figure the finding attributes to the law ("as required by 45 CFR
+# 164.530", "164.404 requires ... within 30 days") must still appear there.
+_MAX_CUE_RE = re.compile(
+    r"\b(?:within|later\s+than|not\s+to\s+exceed|no\s+more\s+than|not\s+more\s+than|exceed(?:ing)?|"
+    r"up\s+to|at\s+most|maximum(?:\s+of)?|before)\b",
+    re.IGNORECASE,
+)
+_MIN_CUE_RE = re.compile(
+    r"\b(?:at\s+least|no\s+less\s+than|not\s+less\s+than|minimum(?:\s+of)?|retain(?:ed|s)?|retention|"
+    r"maintain(?:ed|s)?|keep|kept|preserve[ds]?|for\s+a\s+period\s+of)\b",
+    re.IGNORECASE,
+)
+_UNIT_HOURS = {"hour": 1, "day": 24, "week": 24 * 7, "month": 24 * 30, "year": 24 * 365}
+_ATTRIBUTION_AFTER = r"\W+(?:\w+\W+){0,4}?(?:as\s+required\s+by|required\s+by|as\s+mandated\s+by|mandated\s+by|pursuant\s+to|under\s+(?:\d+\s*C\.?F\.?R|§|HIPAA|the\s+(?:rule|regulation)))"
+# "164.404 requires notification within 30 days", "HIPAA mandates ...". The
+# subject has to be the law: "the policy requires reporting within 24 hours" is
+# the organization's own figure.
+_ATTRIBUTION_BEFORE = (
+    r"(?:C\.?\s*F\.?\s*R\.?|§\s*\d[\d.]*(?:\([A-Za-z0-9]+\))*|\d{2,4}\.\d+(?:\([A-Za-z0-9]+\))*|"
+    r"\b(?:regulation|rule|HIPAA|law|statute)(?:'s)?)\s+(?:\w+\s+){0,2}?"
+    r"(?:requires?|mandates?|sets?|specifies|establishes)\W+(?:\w+\W+){0,5}?"
+)
+_CROSS_REF_RE = re.compile(r"(?:required|described|specified)\s+(?:by|in|under)\s+§\s*(?P<section>\d+\.\d+)(?P<subs>(?:\([a-z0-9]{1,4}\))+)", re.IGNORECASE)
+_HEADING_SENTENCE_RE = re.compile(r"\b(?:Standard|Implementation\s+specifications?)\s*:", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class FigureCheck:
+    """How one concrete figure in a claim relates to the cited text."""
+    fact: "ConcreteFact"
+    state: str   # stated | within_limit | no_limit | conflict | unsupported
+    detail: str = ""
+    limit_sentence: str = ""
+
+    @property
+    def passes(self) -> bool:
+        return self.state in ("stated", "within_limit", "no_limit")
 
 # A claim about when something took, or takes, legal effect. Kept apart from
 # every other kind of date a document carries, because that separation is the
@@ -453,7 +503,12 @@ class VerificationService:
         claim_text: str,
         citation: str,
         retrieval_context: Optional[RetrievalContext] = None,
+        policy_text: str = "",
     ):
+        """``policy_text`` is the organization's own language (the analysed policy
+        and the suggested revision). Figures found there are the organization's
+        choices and are checked for conflict with the cited text rather than
+        required to appear in it."""
         from app.models.schemas import ClaimSupport, EvidenceChecks, EvidenceSource, VerificationEvidence
 
         evidence = VerificationEvidence(
@@ -519,8 +574,11 @@ class VerificationService:
             evidence.reason = _STATUS_REASONS[status]
             return evidence
 
+        # A part-level citation was resolved to one section; that section is
+        # the scope the claim is checked against.
+        section_scope = scope_citation if (ref is None or ref.is_section) else (meta.citation or scope_citation)
         scope_text = self._source_scope_text(
-            scope_citation, meta.citation or "", match.chunk.text, allow_full_text=True
+            section_scope, meta.citation or "", match.chunk.text, allow_full_text=True
         )
         if not scope_text:
             evidence.source = self._evidence_source(
@@ -540,31 +598,252 @@ class VerificationService:
         # changes, this changes, and a remembered verdict for the old text
         # becomes unreachable rather than merely stale.
         evidence.checks.source_fingerprint = fingerprint_text(scope_text)
-        excerpt = self._select_excerpt(claim_text, scope_text, citation=citation)
+
+        # IMPORTANT: concrete facts are checked only against the authorities
+        # this finding cites, never against the pooled retrieval context. A
+        # number appearing in an unrelated regulation must not rescue a bad
+        # claim. A finding citing two sections ("§ 482.13; § 164.524") is
+        # checked against both: the 30-day access deadline is in the second.
+        cited_texts = [scope_text] + self._other_cited_texts(citation, section_scope)
+        figures = [
+            self._check_figure(f, claim_text, cited_texts, policy_text)
+            for f in self._extract_specifics(claim_text)
+        ]
+        excerpt = self._claim_excerpt(claim_text, scope_text, figures, title=ref.title if ref else "")
         evidence.source = self._evidence_source(meta, excerpt, status)
 
-        # IMPORTANT: concrete facts are checked only against the matched cited
-        # authority/scope, never against the pooled retrieval context. A number
-        # appearing in an unrelated regulation must not rescue a bad claim.
-        specifics = self._extract_specifics(claim_text)
-        if specifics:
-            unsupported = [f for f in specifics if not self._specific_supported(f, scope_text)]
-            evidence.checks.specifics_supported = not unsupported
-            if unsupported:
+        if figures:
+            failed = [f for f in figures if not f.passes]
+            evidence.checks.specifics_supported = not failed
+            evidence.checks.figure_check = self._figure_summary(figures) or None
+            if failed:
                 evidence.status = VerificationStatus.partially_verified
-                evidence.reason = resolved_note + (
-                    "The cited authority was found, but these concrete fact(s) are not stated "
-                    f"at that citation scope: {', '.join(f.display for f in unsupported)}."
-                )
+                conflicts = [f for f in failed if f.state == "conflict"]
+                missing = [f for f in failed if f.state == "unsupported"]
+                parts = []
+                if conflicts:
+                    parts.append(
+                        "these figure(s) conflict with the cited text: "
+                        + "; ".join(f"{f.fact.display} ({f.detail})" for f in conflicts)
+                    )
+                if missing:
+                    parts.append(
+                        "these figure(s) are attributed to the regulation but are not stated "
+                        f"at that citation scope: {', '.join(f.fact.display for f in missing)}"
+                    )
+                evidence.reason = resolved_note + "The cited authority was found, but " + "; and ".join(parts) + "."
                 return evidence
 
         evidence.status = VerificationStatus.partially_verified
         evidence.checks.claim_support = ClaimSupport.not_checked
         evidence.reason = resolved_note + (
-            "The current cited authority and any concrete facts were located at the cited "
-            "scope. Substantive claim support still requires the entailment check."
+            "The current cited authority was located at the cited scope and no figure "
+            "conflicts with it. Substantive claim support still requires the entailment check."
         )
         return evidence
+
+    # ------------------------------------------------------------------
+    # Figures: stated, within the regulation's limit, or in conflict
+    # ------------------------------------------------------------------
+    def _other_cited_texts(self, citation: str, primary: str) -> List[str]:
+        """Full text (at the cited subsection) of every other section the citation names."""
+        primary_key = self._citation_key(primary or "")
+        texts = []
+        for ref in parse_cfr_citations(citation or ""):
+            if not ref.is_section or self._citation_key(ref.canonical) == primary_key:
+                continue
+            full = self._authoritative_full_text(ref.canonical)
+            if not full:
+                continue
+            subs = re.findall(r"\(([A-Za-z0-9]+)\)", ref.subs)
+            scoped = self._locate_subsection(full, subs) if subs else full
+            if scoped:
+                texts.append(scoped)
+        return texts
+
+    @staticmethod
+    def _cue_direction(text: str, pos: int) -> Optional[str]:
+        """'max' for a deadline ("within", "no later than"), 'min' for a floor
+        ("retain for", "at least"), from the words just before position ``pos``."""
+        window = text[max(0, pos - 80):pos]
+        last_max = max((m.end() for m in _MAX_CUE_RE.finditer(window)), default=-1)
+        last_min = max((m.end() for m in _MIN_CUE_RE.finditer(window)), default=-1)
+        if last_max < 0 and last_min < 0:
+            return None
+        return "max" if last_max > last_min else "min"
+
+    @staticmethod
+    def _hours(value: str, unit: str) -> Optional[float]:
+        try:
+            return float(value) * _UNIT_HOURS[unit]
+        except (KeyError, ValueError):
+            return None
+
+    def _duration_limits(self, text: str) -> List[Tuple[float, str, str, str]]:
+        """(hours, direction, display, sentence) for each directional duration in ``text``."""
+        limits = []
+        for m in _DURATION_REGEX.finditer(text or ""):
+            direction = self._cue_direction(text, m.start())
+            if direction is None:
+                continue
+            unit = re.sub(r"^(calendar|business|working)\s+", "", m.group("u").lower().strip()).rstrip("s")
+            value = self._number_value(m.group("n"))
+            hours = self._hours(value, unit)
+            if hours is None:
+                continue
+            prev = text.rfind(". ", 0, m.start())
+            start = prev + 2 if prev >= 0 else 0
+            end = text.find(". ", m.end())
+            sentence = text[start:(end + 1 if end >= 0 else len(text))].strip()
+            limits.append((hours, direction, f"{value} {unit}", sentence))
+        return limits
+
+    @staticmethod
+    def _attributed_to_law(claim: str, fact: "ConcreteFact") -> bool:
+        """The claim presents this figure as what the regulation requires."""
+        raw = re.escape(fact.raw) + r"\w*"   # the extracted raw can stop at "year" in "years"
+        return bool(
+            re.search(raw + _ATTRIBUTION_AFTER, claim, re.IGNORECASE)
+            or re.search(_ATTRIBUTION_BEFORE + raw, claim, re.IGNORECASE)
+        )
+
+    def _stated_with_same_sense(self, fact: "ConcreteFact", claim: str, text: str) -> bool:
+        """The figure appears in ``text`` -- and, for a duration, not in the opposite
+        sense: "post notice for a period of 90 days" does not state a 90-day
+        notification deadline."""
+        if not self._specific_supported(fact, text):
+            return False
+        if fact.kind != "duration":
+            return True
+        pos = claim.lower().find(fact.raw.lower())
+        claim_dir = self._cue_direction(claim, pos) if pos >= 0 else None
+        if claim_dir is None:
+            return True
+        hours = self._hours(fact.value, fact.unit)
+        occurrences = [
+            self._cue_direction(text, m.start())
+            for m in _DURATION_REGEX.finditer(text)
+            if self._hours(self._number_value(m.group("n")),
+                           re.sub(r"^(calendar|business|working)\s+", "", m.group("u").lower().strip()).rstrip("s")) == hours
+        ]
+        return any(d is None or d == claim_dir for d in occurrences) if occurrences else True
+
+    def _check_figure(
+        self, fact: "ConcreteFact", claim: str, cited_texts: List[str], policy_text: str
+    ) -> FigureCheck:
+        if any(self._stated_with_same_sense(fact, claim, t) for t in cited_texts if t):
+            return FigureCheck(fact, "stated")
+
+        chosen_by_policy = (
+            bool(policy_text)
+            and self._specific_supported(fact, policy_text)
+            and not self._attributed_to_law(claim, fact)
+        )
+        if not chosen_by_policy:
+            return FigureCheck(fact, "unsupported")
+
+        if fact.kind != "duration":
+            # A percentage, amount, ratio or distance the policy chose has no
+            # reliable "stricter" direction to compare against; only a duration
+            # can be shown to conflict. The entailment check still reads it.
+            return FigureCheck(fact, "no_limit", "an organizational choice; the cited text sets no comparable figure")
+
+        hours = self._hours(fact.value, fact.unit)
+        pos = claim.lower().find(fact.raw.lower())
+        direction = self._cue_direction(claim, pos) if pos >= 0 else None
+        if hours is None or direction is None:
+            return FigureCheck(fact, "no_limit", "an organizational choice; not compared with a regulatory limit")
+
+        limits = [l for t in cited_texts for l in self._duration_limits(t) if l[1] == direction]
+        if not limits:
+            return FigureCheck(fact, "no_limit", "an organizational choice; the cited text sets no comparable limit")
+
+        # The most permissive limit of that kind, so a figure is called a
+        # conflict only when it falls outside every limit the text states.
+        if direction == "max":
+            limit = max(limits, key=lambda l: l[0])
+            ok = hours <= limit[0]
+            relation = "within" if ok else "longer than"
+            kind = "maximum"
+        else:
+            limit = min(limits, key=lambda l: l[0])
+            ok = hours >= limit[0]
+            relation = "meets" if ok else "shorter than"
+            kind = "minimum"
+        detail = f"{relation} the {limit[2]} {kind} at the cited section"
+        if ok:
+            return FigureCheck(fact, "within_limit", detail, limit[3])
+        # A finding that names the looser figure AND the regulation's limit is
+        # describing the gap ("allows 90 days; the rule allows 60"), not
+        # endorsing the looser figure.
+        if any(self._specific_supported(ConcreteFact("duration", l[2].split()[0], l[2].split()[1]), claim) for l in limits):
+            return FigureCheck(fact, "within_limit", f"{detail}; the finding names that limit", limit[3])
+        return FigureCheck(fact, "conflict", detail, limit[3])
+
+    @staticmethod
+    def _figure_summary(figures: List[FigureCheck]) -> str:
+        parts = []
+        for f in figures:
+            if f.state == "stated":
+                parts.append(f"{f.fact.display}: stated in the cited text")
+            elif f.state in ("within_limit", "no_limit", "conflict"):
+                parts.append(f"{f.fact.display}: policy figure, {f.detail}")
+            else:
+                parts.append(f"{f.fact.display}: attributed to the regulation, not stated in the cited text")
+        return "; ".join(parts)
+
+    def _claim_excerpt(self, claim: str, scope_text: str, figures: List[FigureCheck], title: str = "") -> str:
+        """The passage the entailment check reads.
+
+        The best-matching sentences, plus what is needed to judge them fairly:
+        the Standard / Implementation specification heading they sit under (a
+        bare "(ii) Ensure that..." does not say who must do it), the sentence
+        stating any limit a policy figure was compared with, and the text of a
+        paragraph the passage incorporates ("the contract ... required by
+        § 164.502(e)(2)"). The § 164.504 BAA finding was judged on a 900-character
+        window of contract terms that showed neither the standard nor the
+        written-contract requirement it points to.
+        """
+        base = self._select_excerpt(claim, scope_text, max_chars=1200)
+        if not base:
+            return base
+        pieces = [base]
+
+        anchor = scope_text.find(base[:80])
+        if anchor > 0:
+            before = scope_text[:anchor]
+            headings = list(_HEADING_SENTENCE_RE.finditer(before))
+            if headings:
+                # Back up over the paragraph markers that label the heading: "(e)(1) Standard: ..."
+                start = headings[-1].start()
+                while True:
+                    marker = re.search(r"\([A-Za-z0-9]{1,4}\)\s*$", before[:start])
+                    if not marker:
+                        break
+                    start = marker.start()
+                # The heading sentence and the one that states the standard.
+                heading = before[start:start + 500]
+                ends = [m.end() for m in re.finditer(r"\.(?=\s)", heading)]
+                heading = heading[: ends[1] if len(ends) > 1 else (ends[0] if ends else len(heading))].strip()
+                if heading and heading not in base:
+                    pieces.insert(0, heading + " …")
+
+        for f in figures:
+            if f.limit_sentence and f.limit_sentence[:60] not in " ".join(pieces):
+                pieces.append("… " + f.limit_sentence[:400])
+
+        joined = " ".join(pieces)
+        for m in _CROSS_REF_RE.finditer(joined if title else ""):
+            cited = f"{title} CFR § {m.group('section')}{m.group('subs')}"
+            full = self._authoritative_full_text(cited)
+            subs = re.findall(r"\(([A-Za-z0-9]+)\)", m.group("subs"))
+            referenced = self._locate_subsection(full, subs) if full else ""
+            if referenced:
+                pos = referenced.lower().find(f"({subs[-1].lower()})")
+                snippet = referenced[max(pos, 0):max(pos, 0) + 500].strip()
+                pieces.append(f"[Incorporated by reference — {cited}:] {snippet}")
+            break
+        return " ".join(pieces)
 
     @staticmethod
     def _evidence_source(meta, excerpt: str, status: SourceStatus):
@@ -728,8 +1007,13 @@ class VerificationService:
         text: str,
         retrieval_context: Optional[RetrievalContext] = None,
         citation: str = "",
+        policy_text: str = "",
     ) -> Optional[str]:
-        """Return an inline warning for concrete facts unsupported by the cited authority."""
+        """Return an inline warning for concrete facts unsupported by the cited authority.
+
+        Figures the organization chose (found in ``policy_text``) are warned
+        about only when they conflict with the source, as in build_claim_evidence.
+        """
         if not text or not retrieval_context:
             return None
 
@@ -744,7 +1028,7 @@ class VerificationService:
             matched = parse_cfr_citation(match.query or "")
             source_text = self._source_scope_text(
                 matched.canonical if matched else canonical_citation(citation),
-                match.chunk.metadata.citation or "", match.chunk.text,
+                match.chunk.metadata.citation or "", match.chunk.text, allow_full_text=True,
             )
         else:
             source_text = " ".join(
@@ -756,15 +1040,25 @@ class VerificationService:
         if not source_text.strip():
             return None
 
-        unsupported = [f for f in specifics if not self._specific_supported(f, source_text)]
-        if not unsupported:
+        checks = [self._check_figure(f, text, [source_text], policy_text) for f in specifics]
+        conflicts = [c for c in checks if c.state == "conflict"]
+        unsupported = [c.fact for c in checks if c.state == "unsupported"]
+        if not conflicts and not unsupported:
             return None
 
-        return (
-            "Verify this concrete fact against the cited authority ("
-            + ", ".join(f.display for f in unsupported)
-            + "). It is not stated at the cited source scope, so it must not be presented as a confirmed legal requirement."
-        )
+        parts = []
+        if unsupported:
+            parts.append(
+                "Verify this concrete fact against the cited authority ("
+                + ", ".join(f.display for f in unsupported)
+                + "). It is not stated at the cited source scope, so it must not be presented as a confirmed legal requirement."
+            )
+        if conflicts:
+            parts.append(
+                "This figure conflicts with the source: "
+                + "; ".join(f"{c.fact.display} is {c.detail}" for c in conflicts) + "."
+            )
+        return " ".join(parts)
 
     # ------------------------------------------------------------------
     # Citation matching and excerpt selection
@@ -862,6 +1156,14 @@ class VerificationService:
 
         kind, authority, section, subs = claimed_key
         if not subs:
+            # A section cited without a subsection is the whole section, not
+            # the ~800-character chunk retrieval happened to return. Checking
+            # only the chunk reported "60 days" as absent from § 164.404 and
+            # "6 years" as absent from § 164.530, both of which say exactly that.
+            if allow_full_text:
+                full_text = self._authoritative_full_text(claimed)
+                if full_text and len(full_text) > len(source_text):
+                    return full_text
             return source_text
 
         if stored_key is not None:

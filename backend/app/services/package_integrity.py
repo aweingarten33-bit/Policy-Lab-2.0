@@ -164,10 +164,15 @@ def reconcile_package_verification(
             "confirm them before relying on the analysis."
         )
     elif not_fully_verified:
+        from app.services.limitations import verification_breakdown
+        from app.services.retrieval.cfr_citation import is_uncited
+
+        cited = [r for r in rows if not is_uncited(getattr(r, "citation", "") or "")]
+        uncited = len(rows) - len(cited)
         package.verification_overall = (
-            f"{not_fully_verified} finding(s) were not fully verified against the exact "
-            "cited source material and require independent review."
-        )
+            (f"Verification: {verification_breakdown(cited)}" if cited else "")
+            + (f" {uncited} finding(s) cite no regulation and are organizational recommendations." if uncited else "")
+        ).strip()
     else:
         package.verification_overall = (
             f"All {len(rows)} finding(s) completed the evidence verification pass. "

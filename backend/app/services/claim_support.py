@@ -24,6 +24,7 @@ You are given numbered items. Each has:
   CLAIM — an assertion about what an authority requires, permits, recommends, prohibits, or establishes
   CITATION — the specific authority/subsection the claim cites
   EXCERPT — the actual source text selected from that cited authority
+  FIGURES — (optional) how each number in the claim compares with the cited text
 
 Judge ONLY from the EXCERPT shown. Do not use memory, outside legal knowledge,
 common practice, or assumptions about what the regulation probably says. A real
@@ -49,12 +50,23 @@ Citation scope is critical:
 - If the excerpt does not establish the proposition at the cited scope, do not
   infer support from the regulation's general topic.
 
-Concrete facts are critical:
-- Numbers, deadlines, retention periods, percentages, dollar amounts, ages,
-  ratios, thresholds, frequencies, and distances must match the excerpt.
-- If a claim says 30 days and the excerpt says 60 days, use CONTRADICTED.
-- If the claim adds a number the excerpt does not contain, use PARTIALLY_SUPPORTED
-  or NOT_SUPPORTED depending on whether the remainder of the claim is established.
+Concrete facts are critical. Separate what the claim says the AUTHORITY
+requires from figures the organization's own policy adopts:
+- A figure the claim attributes to the authority ("45 CFR 164.404 requires
+  notice within 30 days") must match the excerpt. If the claim says the
+  authority requires 30 days and the excerpt says 60 days, use CONTRADICTED.
+- A policy is allowed to be stricter than the law. A policy figure that is
+  stricter than or equal to the authority's limit (notify within 24 hours where
+  the excerpt allows up to 60 days; retain 7 years where it requires 6) is
+  CONSISTENT and must not lower the label.
+- A policy figure looser than the authority's limit (notice after 90 days where
+  the excerpt allows 60) conflicts with the authority, unless the claim itself
+  identifies that figure as the deficiency.
+- A policy figure for something the authority does not quantify (review access
+  every 90 days) is an organizational choice: judge the rest of the claim.
+- When an item has a FIGURES line, it is a deterministic comparison of each
+  figure with the cited text. Rely on it for the figures and judge the rest of
+  the claim from the excerpt.
 
 Conditions and exceptions are critical:
 - If the authority applies only when a condition is met and the claim states the
@@ -78,6 +90,7 @@ def _build_user_prompt(items: List[Dict[str, str]]) -> str:
             f"CLAIM: {item['claim']}\n"
             f"CITATION: {item['citation']}\n"
             f"EXCERPT: {item['excerpt']}\n"
+            + (f"FIGURES: {item['figures']}\n" if item.get("figures") else "")
         )
     return (
         "Classify every item independently using only its excerpt.\n\n"

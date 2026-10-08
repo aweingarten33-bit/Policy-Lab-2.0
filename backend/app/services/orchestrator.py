@@ -196,6 +196,7 @@ class PackageOrchestrator:
         self,
         gap_result: AnalysisResult,
         retrieval_ctx: RetrievalContext,
+        policy_text: str = "",
     ) -> None:
         """Attach an auditable evidence record to every finding.
 
@@ -224,6 +225,10 @@ class PackageOrchestrator:
                 claim_text=claim,
                 citation=row.citation or (row.regulations[0] if row.regulations else ""),
                 retrieval_context=retrieval_ctx,
+                # The analysed policy and the suggested language are the
+                # organization's own words: figures there may be stricter than
+                # the regulation and are checked for conflict, not presence.
+                policy_text=" ".join(filter(None, [policy_text, row.suggested_language])),
             )
             row.evidence = evidence
             claims_by_id[evidence.claim_id] = claim
@@ -268,6 +273,7 @@ class PackageOrchestrator:
                 "claim": claim[:1200],
                 "citation": evidence.citation or "",
                 "excerpt": evidence.source.excerpt or "",
+                "figures": evidence.checks.figure_check or "",
             })
 
         if pending:
@@ -432,6 +438,7 @@ class PackageOrchestrator:
         self,
         gap_result: AnalysisResult,
         retrieval_ctx: RetrievalContext,
+        policy_text: str = "",
     ) -> None:
         """Flag findings that state a concrete deadline the sources don't back up.
 
@@ -444,7 +451,10 @@ class PackageOrchestrator:
         flagged = 0
         for row in gap_result.gap_table:
             combined = " ".join(filter(None, [row.finding, row.suggested_language]))
-            warning = self.verification.check_unsupported_specifics(combined, retrieval_ctx)
+            warning = self.verification.check_unsupported_specifics(
+                combined, retrieval_ctx,
+                policy_text=" ".join(filter(None, [policy_text, row.suggested_language])),
+            )
             if warning:
                 row.verification_warning = warning
                 flagged += 1
@@ -615,8 +625,8 @@ class PackageOrchestrator:
                 gap_result.retrieved_sources_used = sources
                 gap_result.live_research_used = live_used
                 gap_result.verification_summary = ver_summary
-                self._flag_unsupported_specifics(gap_result, retrieval_ctx)
-                await self._build_evidence(gap_result, retrieval_ctx)
+                self._flag_unsupported_specifics(gap_result, retrieval_ctx, policy_text=text)
+                await self._build_evidence(gap_result, retrieval_ctx, policy_text=text)
 
                 all_kb_sources.extend(s for s in sources if s not in all_kb_sources)
                 all_kb_source_urls.update(retrieval_ctx.get_source_url_map())
@@ -804,8 +814,8 @@ class PackageOrchestrator:
         # seeing anything is.
         try:
             package.status = PackageStatus.verifying
-            await self._build_evidence(package.gap_analysis, retrieval_ctx)
-            self._flag_unsupported_specifics(package.gap_analysis, retrieval_ctx)
+            await self._build_evidence(package.gap_analysis, retrieval_ctx, policy_text=text)
+            self._flag_unsupported_specifics(package.gap_analysis, retrieval_ctx, policy_text=text)
             package.unverified_claim_count = sum(
                 1 for row in package.gap_analysis.gap_table
                 if row.evidence is None

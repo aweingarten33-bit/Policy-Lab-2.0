@@ -259,7 +259,14 @@ class EvidenceChecks(BaseModel):
         False, description="The cited section was found in retrieved authoritative material"
     )
     specifics_supported: Optional[bool] = Field(
-        None, description="Concrete durations in the claim appear in the source (None = none stated)"
+        None, description="No concrete figure in the claim conflicts with, or is wrongly attributed to, the cited text (None = none stated)"
+    )
+    figure_check: Optional[str] = Field(
+        None,
+        description=(
+            "How each concrete figure relates to the cited text: stated there, a policy "
+            "figure within (or in conflict with) the regulation's limit, or not compared"
+        ),
     )
     claim_support: ClaimSupport = Field(
         ClaimSupport.not_checked, description="Whether the excerpt entails the claim"

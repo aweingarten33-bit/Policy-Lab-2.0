@@ -50,7 +50,8 @@ class TestPackageVerificationReconciliation:
         )
         reconcile_package_verification(package)
         assert package.unverified_claim_count == 2
-        assert "2 finding(s)" in package.verification_overall
+        # Each status is reported separately, not as one "not fully verified" total.
+        assert "1 verified, 1 not verified, 1 contradicted" in package.verification_overall
 
     def test_missing_evidence_is_never_reported_as_success(self):
         package = _package(VerificationStatus.verified, missing=2)
@@ -123,7 +124,7 @@ async def test_background_job_path_reconciles_the_final_package(monkeypatch):
     assert store.error is None
     assert store.package is package
     assert store.package.unverified_claim_count == 1
-    assert "1 finding(s)" in store.package.verification_overall
+    assert "1 verified, 1 not verified" in store.package.verification_overall
 
 
 class _FakeTask:
