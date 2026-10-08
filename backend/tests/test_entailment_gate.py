@@ -24,6 +24,7 @@ Run: python -m pytest tests/test_entailment_gate.py -v
 import pytest
 
 from app.models.schemas import (
+    VerificationStatus,
     AnalysisResult, ClaimSupport, EvidenceChecks, EvidenceSource, GapRow,
     GapStatus, ObligationType, RiskLevel, SourceStatus, VerificationEvidence,
 )
@@ -167,27 +168,29 @@ class TestTheReaderSeesIt:
         doc = Document(io.BytesIO(generate_docx(result, file_name="t.docx")))
         return "\n".join(p.text for p in doc.paragraphs)
 
-    # The verdict is the finding's verification label, the same text as the
-    # badge on screen. It precedes the finding so it is read first.
+    # The verdict is the finding's evidence label, the same text as the badge
+    # on screen. It precedes the finding so it is read first.
     def test_the_warning_appears_in_the_export(self):
         rows = _gate(_finding("OSHA requires 30-year retention.",
                               ClaimSupport.not_supported))
         text = self._render(rows)
-        assert "[Citation not confirmed, review before use]" in text
+        assert "Evidence: [Needs source review]" in text
+        assert "LEGALLY REQUIRED" not in text
 
     def test_the_warning_precedes_the_finding(self):
         """A caveat printed after the claim is read second, if at all."""
         rows = _gate(_finding("OSHA requires 30-year retention.",
                               ClaimSupport.not_supported))
         text = self._render(rows)
-        assert text.index("Citation not confirmed") < text.index("Finding:")
+        assert text.index("Needs source review") < text.index("Finding:")
 
     def test_a_confirmed_requirement_reads_as_required(self):
         rows = _gate(_finding("Noise measurements retained two years.",
                               ClaimSupport.supported))
+        rows[0].evidence.status = VerificationStatus.verified
         text = self._render(rows)
-        assert "LEGALLY REQUIRED" in text
-        assert "UNVERIFIED REQUIREMENT" not in text
+        assert "Evidence: [Verified requirement" in text
+        assert "Needs source review" not in text
 
     def test_guidance_is_not_dressed_up_as_law(self):
         rows = _gate(_finding("Age correction may be applied.",

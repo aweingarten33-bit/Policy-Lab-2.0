@@ -118,6 +118,10 @@ export interface GapRow {
   // regulation. Recommendations are kept apart and never attributed to it.
   regulatory_requirement?: string | null;
   recommendations?: string[];
+  // Two independent fields, set when the package is final: is it established
+  // law, and how urgent is it. See lib/findings.ts.
+  evidence_status?: "verified_requirement" | "needs_source_review" | "recommendation" | null;
+  priority?: "must_fix" | "should_fix" | null;
   suggested_language: string;
   citation: string;
   remediation_priority: string;
@@ -193,6 +197,7 @@ export interface AnalysisResult {
   verification_summary?: string;
   retrieved_sources_used?: string[];
   live_research_used: boolean;
+  findings_summary?: string | null;
 }
 
 // ── Chat Types ──

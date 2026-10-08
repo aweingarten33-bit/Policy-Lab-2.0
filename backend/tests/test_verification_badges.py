@@ -73,21 +73,29 @@ class TestTheRule:
 
 class TestTheExport:
     def _text(self, *rows):
-        result = AnalysisResult(policy_type="P", audit_ready_summary="Summary.", gap_table=list(rows))
+        result = AnalysisResult(policy_type="P", audit_ready_summary="Model prose: training is mandatory.",
+                                gap_table=list(rows))
         d = docx.Document(io.BytesIO(generate_docx(result, "policy.txt")))
         return "\n".join(p.text for p in d.paragraphs) + "\n".join(
             c.text for t in d.tables for r in t.rows for c in r.cells)
 
-    def test_each_finding_carries_its_label(self):
+    def test_each_finding_carries_evidence_and_priority(self):
         text = self._text(
             _row(VerificationStatus.verified,
                  passages=[EvidencePassage(citation="45 CFR § 164.404", role="cited", text="...")]),
             _row(VerificationStatus.partially_verified),
-            _row(VerificationStatus.unverified),
+            _row(VerificationStatus.unverified,
+                 citation="Organizational best practice — no regulatory citation applies."),
         )
-        assert "Verification: [Checked against 45 CFR § 164.404]" in text
-        assert "Verification: [Regulation found, confirm applicability]" in text
-        assert "Verification: [Citation not confirmed, review before use]" in text
+        assert "Evidence: [Verified requirement · 45 CFR § 164.404]" in text
+        assert "Evidence: [Needs source review]" in text
+        assert "Evidence: [Recommendation]" in text
+        assert text.count("Priority: Must fix") == 3
+
+    def test_the_summary_comes_from_the_findings_not_model_prose(self):
+        text = self._text(_row(VerificationStatus.verified))
+        assert "Model prose" not in text
+        assert "This review produced 1 finding: 1 verified requirement" in text
 
     def test_no_top_block_and_no_banned_words(self):
         text = self._text(_row(VerificationStatus.partially_verified), _row(VerificationStatus.unverified))
@@ -95,10 +103,13 @@ class TestTheExport:
         assert "partially verified" not in text.lower()
         assert "not verified" not in text.lower()
 
-    def test_recommendations_have_no_label(self):
-        row = _row(VerificationStatus.unverified,
-                   citation="Organizational best practice — no regulatory citation applies.")
-        assert "Verification:" not in self._text(row)
+    def test_a_recommendation_never_reads_as_legally_required(self):
+        from app.models.schemas import ObligationType
+        row = _row(VerificationStatus.verified)
+        row.obligation_type = ObligationType.best_practice
+        text = self._text(row)
+        assert "LEGALLY REQUIRED" not in text
+        assert "Evidence: [Recommendation]" in text
 
 
 class TestTheScreen:
@@ -110,24 +121,32 @@ class TestTheScreen:
             pytest.skip("frontend not present")
         return path.read_text()
 
-    def test_no_report_banner(self):
-        index = self._src("pages/Index.tsx")
-        assert "analysisLimitations" not in index
-        assert "analysisLimitations" not in self._src("components/ResultNotices.tsx")
+    def test_the_three_evidence_labels_and_two_priorities(self):
+        findings = self._src("lib/findings.ts")
+        for label in ("Verified requirement", "Needs source review", "Recommendation", "Must fix", "Should fix"):
+            assert label in findings
 
-    def test_the_three_labels(self):
-        badge = self._src("components/VerificationBadge.tsx")
-        for label in ("Checked against ${", "Regulation found, confirm applicability",
-                      "Citation not confirmed, review before use"):
-            assert label in badge
+    def test_the_overview_is_built_from_the_findings(self):
+        index = self._src("pages/Index.tsx")
+        assert "findingsSummary(rows)" in index
+        assert "{ga.audit_ready_summary}" not in index
+        assert "priority_findings?.slice" not in index
+
+    def test_the_summary_wording_matches_the_backend(self):
+        """lib/findings.ts and verification_badge.findings_summary must say the same thing."""
+        findings = self._src("lib/findings.ts")
+        for phrase in ("the cited regulation was checked and supports",
+                       "source review (a regulation is cited, but its text did not confirm the requirement as stated)",
+                       "(good practice, not ", "This review produced ", "By priority, "):
+            assert phrase in findings
 
     @pytest.mark.parametrize("rel", ["pages/Index.tsx", "components/VerificationBadge.tsx",
-                                     "components/ResultNotices.tsx"])
+                                     "components/ResultNotices.tsx", "lib/findings.ts"])
     def test_no_banned_words_in_rendered_strings(self, rel):
         import re
         src = self._src(rel)
-        # Rendered strings only: skip comments and the marker-stripping regex.
         code = re.sub(r"//[^\n]*|/\*[\s\S]*?\*/", "", src)
         code = code.replace(r"\bNOT VERIFIED\b", "")
         assert "partially verified" not in code.lower()
         assert "not verified" not in code.lower()
+        assert "verified against source" not in code.lower()

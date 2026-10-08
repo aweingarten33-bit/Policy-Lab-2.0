@@ -139,7 +139,9 @@ def reconcile_package_verification(
 
     # Guidance is not law: say so in the finding's own words. (An unconfirmed
     # requirement is shown by the finding's badge instead; see above.)
-    from app.services.verification_badge import RED, verification_badge
+    from app.services.verification_badge import (
+        RED, evidence_status, findings_summary, priority_of, verification_badge,
+    )
 
     for row in rows:
         obligation = getattr(row, "obligation_type", None)
@@ -150,6 +152,13 @@ def reconcile_package_verification(
         elif obligation is ObligationType.guidance:
             row.finding = _stamp(row.finding, GUIDANCE_FINDING_PREFIX)
             row.suggested_language = _stamp(row.suggested_language, GUIDANCE_LANGUAGE_PREFIX)
+
+    # Evidence status and priority, set last so they reflect every downgrade
+    # above, and the summary built from them.
+    for row in rows:
+        row.evidence_status = evidence_status(row)
+        row.priority = priority_of(row)
+    gap_analysis.findings_summary = findings_summary(rows)
 
     package.unverified_claim_count = not_fully_verified
 

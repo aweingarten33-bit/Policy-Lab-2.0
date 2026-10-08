@@ -1,0 +1,103 @@
+import type { ComplianceActionPackage, GapRow } from "@/lib/api";
+
+// ── Evidence status and priority: two independent fields per finding ──
+// "Is it established law?" and "how urgent is it?" used to be read off the
+// same signals, so every finding said MUST FIX whether or not its citation
+// held up, and the overview (model free text) could call a recommendation
+// mandatory while its own card said best practice. Now each finding has both
+// fields, and the summary and the limitations banner are built from them.
+// Mirrors backend app/services/verification_badge.py word for word.
+
+export type EvidenceStatus = "verified_requirement" | "needs_source_review" | "recommendation";
+export type Priority = "must_fix" | "should_fix";
+
+export const EVIDENCE_LABELS: Record<EvidenceStatus, string> = {
+  verified_requirement: "Verified requirement",
+  needs_source_review: "Needs source review",
+  recommendation: "Recommendation",
+};
+
+export const PRIORITY_LABELS: Record<Priority, string> = { must_fix: "Must fix", should_fix: "Should fix" };
+
+const UNCITED = /no (specific )?regulatory citation applies|organizational best practice/i;
+const HAS_CFR = /\bC\.?\s*F\.?\s*R\b/i;
+const NOT_LAW = new Set(["best_practice", "organizational_choice", "guidance"]);
+
+export function evidenceStatusOf(row: GapRow): EvidenceStatus {
+  if (row.evidence_status === "verified_requirement" || row.evidence_status === "needs_source_review"
+      || row.evidence_status === "recommendation") return row.evidence_status;
+  const citation = row.citation || "";
+  if (!citation.trim() || (UNCITED.test(citation) && !HAS_CFR.test(citation)) || NOT_LAW.has(row.obligation_type ?? "")) {
+    return "recommendation";
+  }
+  return row.evidence?.status === "verified" ? "verified_requirement" : "needs_source_review";
+}
+
+/** True while a cited finding is still waiting for its evidence check. */
+export function isChecking(row: GapRow, verifying: boolean): boolean {
+  return verifying && !row.evidence && evidenceStatusOf(row) !== "recommendation";
+}
+
+export function priorityOf(row: GapRow): Priority {
+  if (row.priority === "must_fix" || row.priority === "should_fix") return row.priority;
+  return row.risk_level === "critical" || row.risk_level === "high" ? "must_fix" : "should_fix";
+}
+
+export function checkedCitation(row: GapRow): string {
+  const first = row.evidence?.source?.passages?.[0]?.citation;
+  if (first) return first;
+  return (row.citation || "").split(/[;—\[(]/)[0].trim();
+}
+
+export function countByEvidence(rows: GapRow[]): Record<EvidenceStatus, number> {
+  const counts: Record<EvidenceStatus, number> = { verified_requirement: 0, needs_source_review: 0, recommendation: 0 };
+  for (const r of rows) counts[evidenceStatusOf(r)] += 1;
+  return counts;
+}
+
+const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+const join = (parts: string[]) => (parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`);
+
+/** The report summary, written from the finding objects only (no model prose). */
+export function findingsSummary(rows: GapRow[]): string {
+  if (rows.length === 0) return "This review produced no findings: the document addresses each obligation reviewed.";
+  const { verified_requirement: v, needs_source_review: nr, recommendation: r } = countByEvidence(rows);
+  const parts: string[] = [];
+  if (v) parts.push(`${n(v, "verified requirement", "verified requirements")} (the cited regulation was checked and supports ${v === 1 ? "it" : "them"})`);
+  if (nr) parts.push(`${n(nr, "finding needs", "findings need")} source review (a regulation is cited, but its text did not confirm the requirement as stated)`);
+  if (r) parts.push(`${n(r, "recommendation", "recommendations")} (good practice, not ${r === 1 ? "a legal requirement" : "legal requirements"})`);
+  const m = rows.filter((x) => priorityOf(x) === "must_fix").length;
+  const s = rows.length - m;
+  const urgency = join([m ? `${m} ${m === 1 ? "is" : "are"} Must fix` : "", s ? `${s} ${s === 1 ? "is" : "are"} Should fix` : ""].filter(Boolean));
+  return `This review produced ${n(rows.length, "finding", "findings")}: ${join(parts)}. By priority, ${urgency}.`;
+}
+
+// ── Limitations disclaimer, in the same words as the cards ──
+
+const DOCUMENT_ONLY =
+  "Only the policy document was read. No records, logs or practices were inspected, so findings describe what the document says or omits, not whether your organization complies.";
+
+export function analysisLimitations(pkg: ComplianceActionPackage, verifying: boolean): string[] {
+  const rows = pkg.gap_analysis?.gap_table ?? [];
+  const lines: string[] = [];
+  if (verifying && rows.some((r) => isChecking(r, true))) {
+    lines.push("Each finding's citation is still being checked against the regulation text. Until its badge settles, treat it as needing source review.");
+  } else if (rows.length > 0) {
+    const c = countByEvidence(rows);
+    const counted = (Object.keys(EVIDENCE_LABELS) as EvidenceStatus[])
+      .filter((k) => c[k] > 0)
+      .map((k) => `${c[k]} ${EVIDENCE_LABELS[k]}`);
+    lines.push(`Evidence, per finding badge: ${counted.join(" · ")}.`);
+    if (c.verified_requirement) lines.push("Verified requirement: the cited regulation's text was checked and supports the requirement as stated.");
+    if (c.needs_source_review) lines.push("Needs source review: a regulation is cited but its text did not confirm the requirement as stated. Click the badge to read the passage before relying on it.");
+    if (c.recommendation) lines.push("Recommendation: good practice, not a legal requirement, whatever its priority.");
+  }
+  lines.push(DOCUMENT_ONLY);
+  lines.push(
+    pkg.live_research_used
+      ? "A live search of government websites ran; those results are web pages, not codified text."
+      : "No live government search ran: the stored federal regulations covered the request. Nothing newer than the stored text was checked.",
+  );
+  if (pkg.state_coverage) lines.push(`State law: ${pkg.state_coverage.summary}`);
+  return lines;
+}

@@ -1,44 +1,31 @@
 import React, { useEffect } from "react";
 import { X } from "lucide-react";
 import type { GapRow, VerificationEvidence } from "@/lib/api";
+import { EVIDENCE_LABELS, checkedCitation, evidenceStatusOf, isChecking, type EvidenceStatus } from "@/lib/findings";
 
-// ── The verdict on one finding ──
-// Verification lives on each finding and nowhere else: no banner, no counts.
-// Only the regulatory requirement is checked against the cited text, so a
-// finding that cites no regulation (an organizational recommendation) gets no
-// badge. Mirrors backend app/services/verification_badge.py, which the Word
-// export uses for the same labels.
+// ── The evidence badge on one finding ──
+// Verified requirement / Needs source review / Recommendation, shown on the
+// collapsed card next to the priority badge and independent of it. Clicking
+// it opens the cited passage beside the finding's claim. Mirrors backend
+// app/services/verification_badge.py, which the Word export uses.
 
-export type BadgeState = "green" | "yellow" | "red" | "checking";
+export type BadgeState = EvidenceStatus | "checking";
 
 const BADGE_STYLE: Record<BadgeState, { color: string; bg: string; border: string }> = {
-  green:    { color: "hsl(152 60% 28%)", bg: "hsl(152 55% 40% / 0.12)", border: "hsl(152 55% 35% / 0.35)" },
-  yellow:   { color: "hsl(40 90% 30%)",  bg: "hsl(45 95% 50% / 0.16)",  border: "hsl(42 90% 42% / 0.4)" },
-  red:      { color: "hsl(8 75% 40%)",   bg: "hsl(8 80% 52% / 0.11)",   border: "hsl(8 75% 45% / 0.35)" },
-  checking: { color: "hsl(var(--muted-foreground))", bg: "hsl(var(--secondary))", border: "transparent" },
+  verified_requirement: { color: "hsl(152 60% 28%)", bg: "hsl(152 55% 40% / 0.12)", border: "hsl(152 55% 35% / 0.35)" },
+  needs_source_review:  { color: "hsl(32 90% 32%)",  bg: "hsl(40 95% 50% / 0.15)",  border: "hsl(36 90% 42% / 0.4)" },
+  recommendation:       { color: "hsl(215 25% 38%)", bg: "hsl(215 30% 50% / 0.10)", border: "hsl(215 25% 45% / 0.3)" },
+  checking:             { color: "hsl(var(--muted-foreground))", bg: "hsl(var(--secondary))", border: "transparent" },
 };
 
-const UNCITED = /no (specific )?regulatory citation applies|organizational best practice/i;
-const HAS_CFR = /\bC\.?\s*F\.?\s*R\b/i;
-
-function checkedCitation(row: GapRow): string {
-  const first = row.evidence?.source?.passages?.[0]?.citation;
-  if (first) return first;
-  return (row.citation || "").split(/[;—\[(]/)[0].trim();
-}
-
-export function badgeFor(row: GapRow, verifying: boolean): { state: BadgeState; label: string } | null {
-  const citation = row.citation || "";
-  if (!citation.trim() || (UNCITED.test(citation) && !HAS_CFR.test(citation))) return null;
-  const status = row.evidence?.status;
-  if (!status) {
-    return verifying
-      ? { state: "checking", label: "Checking the cited regulation…" }
-      : { state: "red", label: "Citation not confirmed, review before use" };
-  }
-  if (status === "verified") return { state: "green", label: `Checked against ${checkedCitation(row)}` };
-  if (status === "partially_verified") return { state: "yellow", label: "Regulation found, confirm applicability" };
-  return { state: "red", label: "Citation not confirmed, review before use" };
+/** The evidence badge for a finding: one of three statuses, or "checking" while it runs. */
+export function badgeFor(row: GapRow, verifying: boolean): { state: BadgeState; label: string } {
+  if (isChecking(row, verifying)) return { state: "checking", label: "Checking the cited regulation…" };
+  const status = evidenceStatusOf(row);
+  const label = status === "verified_requirement"
+    ? `${EVIDENCE_LABELS[status]} · ${checkedCitation(row)}`
+    : EVIDENCE_LABELS[status];
+  return { state: status, label };
 }
 
 function Dot({ state }: { state: BadgeState }) {
@@ -81,11 +68,16 @@ const ROLE_LABEL: Record<string, string> = {
   incorporated: "Incorporated by reference",
 };
 
-const WHAT_IT_MEANS: Record<Exclude<BadgeState, "checking">, string> = {
-  green: "The cited text was located and it supports the requirement as stated.",
-  yellow: "The cited regulation was located, but its text does not settle the requirement exactly as stated. Read the passage and confirm it applies to your situation.",
-  red: "The cited text could not be confirmed to support this requirement. Review the regulation yourself before relying on it.",
-};
+function whatItMeans(state: BadgeState, row: GapRow): string | null {
+  if (state === "verified_requirement") return "The cited regulation's text was checked and it supports the requirement as stated.";
+  if (state === "recommendation") return "This is a recommendation: good practice, not a legal requirement, whatever its priority.";
+  if (state === "needs_source_review") {
+    return row.evidence?.status === "partially_verified"
+      ? "The cited regulation was located, but its text does not settle the requirement exactly as stated. Read the passage and confirm it applies to your situation."
+      : "The cited text could not be confirmed to support this requirement. Review the regulation yourself before relying on it.";
+  }
+  return null;
+}
 
 function passagesOf(evidence?: VerificationEvidence | null) {
   const list = evidence?.source?.passages ?? [];
@@ -106,10 +98,11 @@ export function VerificationSidePanel({
   }, [onClose]);
 
   const evidence = row.evidence;
-  const claim = row.regulatory_requirement || evidence?.claim_text || row.finding;
+  const isRec = badge.state === "recommendation";
+  const claim = isRec ? (row.recommendations?.join(" ") || row.finding) : (row.regulatory_requirement || evidence?.claim_text || row.finding);
   const passages = passagesOf(evidence);
   const style = BADGE_STYLE[badge.state];
-  const meaning = badge.state === "checking" ? null : WHAT_IT_MEANS[badge.state];
+  const meaning = whatItMeans(badge.state, row);
   const url = evidence?.source?.url;
 
   return (
@@ -132,7 +125,7 @@ export function VerificationSidePanel({
           <div className="grid gap-4 md:grid-cols-2">
             <section>
               <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
-                What the finding says the regulation requires
+                {isRec ? "What the finding recommends" : "What the finding says the regulation requires"}
               </p>
               <div className="rounded-xl neu-inset p-3 sm:p-4">
                 <p className="text-[13px] leading-relaxed text-foreground">{claim}</p>

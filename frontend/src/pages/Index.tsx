@@ -22,6 +22,7 @@ import {
   LimitationsBanner, StateSourcesList, ChatMarkdown, draftLimitations,
 } from "@/components/ResultNotices";
 import { VerificationBadge, VerificationSidePanel, badgeFor } from "@/components/VerificationBadge";
+import { EVIDENCE_LABELS, PRIORITY_LABELS, analysisLimitations, evidenceStatusOf, findingsSummary, priorityOf, countByEvidence } from "@/lib/findings";
 
 // ── Style maps ──
 
@@ -219,32 +220,35 @@ type TabKey = typeof TABS[number]["key"];
 function GapRowItem({ row, urlMap, snippets, verifying = false }: { row: GapRow; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null; verifying?: boolean }) {
   const [open, setOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  // Two independent badges: how urgent (priority) and whether it is
+  // established law (evidence). Neither is derived from the other.
   const badge = badgeFor(row, verifying);
-  const s = STATUS_MAP[row.status] || STATUS_MAP.gap;
-  const r = RISK_MAP[row.risk_level] || RISK_MAP.moderate;
+  const priority = priorityOf(row);
+  const isRecommendation = evidenceStatusOf(row) === "recommendation";
+  const canOpen = badge.state !== "checking"
+    && (!isRecommendation || (row.evidence?.source?.passages?.length ?? 0) > 0);
+  const r = RISK_MAP[priority === "must_fix" ? "high" : "moderate"];
 
   return (
     <div className={`rounded-xl overflow-hidden mb-3 transition-shadow duration-200 ${open ? "neu-raised" : "neu-sm"}`}>
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-start gap-2.5 sm:gap-3 px-4 sm:px-5 py-3.5 sm:py-4 text-left active:opacity-80 transition-all touch-manipulation">
-        <span className="text-[9px] sm:text-[10px] font-mono font-bold tracking-wider px-2 sm:px-2.5 py-1 rounded-full shrink-0 mt-0.5" style={{ color: r.color, border: `1.5px solid ${r.color}40`, background: r.bg }}>{r.label}</span>
+      <div className="flex flex-wrap items-center gap-2 px-4 sm:px-5 pt-3.5 sm:pt-4">
+        <span className="text-[9px] sm:text-[10px] font-mono font-bold tracking-wider px-2 sm:px-2.5 py-1 rounded-full shrink-0" title="Priority: how urgent, independent of the evidence" style={{ color: r.color, border: `1.5px solid ${r.color}40`, background: r.bg }}>{PRIORITY_LABELS[priority].toUpperCase()}</span>
+        <VerificationBadge state={badge.state} label={badge.label} onOpen={canOpen ? () => setPanelOpen(true) : undefined} />
+      </div>
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-start gap-2.5 sm:gap-3 px-4 sm:px-5 pt-2 pb-3.5 sm:pb-4 text-left active:opacity-80 transition-all touch-manipulation">
         <div className="flex-1 min-w-0">
           <p className="text-[13px] sm:text-sm font-semibold text-foreground">{stripCiteTags(row.clause)}</p>
           <p className="text-[11px] sm:text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">{stripCiteTags(row.finding)}</p>
         </div>
         <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0 mt-1 transition-transform duration-200" style={{ transform: open ? "rotate(180deg)" : "none" }} />
       </button>
-      {badge && (
-        <div className="px-4 sm:px-5 -mt-1.5 pb-3.5 sm:pb-4">
-          <VerificationBadge state={badge.state} label={badge.label} onOpen={() => setPanelOpen(true)} />
-        </div>
-      )}
-      {panelOpen && badge && <VerificationSidePanel row={row} badge={badge} onClose={() => setPanelOpen(false)} />}
+      {panelOpen && <VerificationSidePanel row={row} badge={badge} onClose={() => setPanelOpen(false)} />}
       {open && (
         <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-0 space-y-3">
           <div className="h-px bg-border" />
           <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Risk:</span>
-            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full" style={{ color: r.color, background: r.bg }}>{r.label}</span>
+            <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Priority:</span>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full" style={{ color: r.color, background: r.bg }}>{PRIORITY_LABELS[priority]}</span>
             {row.remediation_priority && row.remediation_priority !== "N/A" && (
               <><span className="text-[10px] font-mono text-muted-foreground">Timeline:</span>
               <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{row.remediation_priority}</span></>
@@ -298,9 +302,12 @@ function GapRowItem({ row, urlMap, snippets, verifying = false }: { row: GapRow;
                 {row.finding_kind === "implementation_question" ? "PRACTICE QUESTION" : "DOCUMENT GAP"}
               </span>
               {(() => {
-                // An unconfirmed requirement is shown by the badge, not by a second verdict here.
-                if (row.obligation_type === "unverified_requirement") return null;
-                const o = OBLIGATION_MAP[row.obligation_type || "required"];
+                // Only a recommendation gets an obligation chip (best practice,
+                // guidance, your choice). Whether something is required by law
+                // is the evidence badge's job, so a recommendation can never
+                // read "Required by law" and a requirement never gets two verdicts.
+                if (!isRecommendation) return null;
+                const o = OBLIGATION_MAP[row.obligation_type === "required" || row.obligation_type === "unverified_requirement" ? "best_practice" : (row.obligation_type || "best_practice")];
                 if (!o) return null;
                 return (
                   <span
@@ -314,7 +321,7 @@ function GapRowItem({ row, urlMap, snippets, verifying = false }: { row: GapRow;
               })()}
             </div>
             <p className="text-[13px] sm:text-sm text-foreground leading-relaxed">{linkifyRegulations(stripCiteTags(row.finding), urlMap, snippets)}</p>
-            {row.regulatory_requirement && (
+            {row.regulatory_requirement && !isRecommendation && (
               <div className="rounded-lg p-3 mt-2 border-l-2" style={{ borderColor: "hsl(var(--primary) / 0.5)", background: "hsl(var(--primary) / 0.05)" }}>
                 <p className="text-[10px] font-mono uppercase tracking-wider mb-1 font-medium" style={{ color: "hsl(var(--primary))" }}>
                   What the regulation requires
@@ -661,8 +668,10 @@ export default function Index() {
         `Compliance Score: ${ga.compliance_score != null ? ga.compliance_score.toFixed(1) + "%" : "N/A"}`,
         `Findings: ${ga.critical_count} critical, ${ga.gap_count} gaps, ${ga.partial_count} partial, ${ga.compliant_count} compliant`,
         `Regulations Reviewed: ${ga.regulations_applied?.slice(0, 8).join(", ")}`,
-        `Priority Findings:\n${ga.priority_findings?.slice(0, 5).map((f, i) => `${i + 1}. ${f}`).join("\n")}`,
-        `Executive Summary: ${ga.audit_ready_summary}`,
+        // The same summary and labels the report shows, so the chat cannot
+        // call a recommendation mandatory either.
+        `Summary: ${findingsSummary(ga.gap_table ?? [])}`,
+        `Findings (evidence · priority):\n${(ga.gap_table ?? []).map((r, i) => `${i + 1}. ${r.clause} — ${EVIDENCE_LABELS[evidenceStatusOf(r)]} · ${PRIORITY_LABELS[priorityOf(r)]}`).join("\n")}`,
       ].filter(Boolean).join("\n");
     }
     return "";
@@ -1440,6 +1449,7 @@ export default function Index() {
               </div>
             </div>
 
+            <LimitationsBanner lines={analysisLimitations(pkg, pkgStreaming)} />
             <StateSourcesList coverage={pkg.state_coverage} />
 
             {/* Tab bar */}
@@ -1457,7 +1467,7 @@ export default function Index() {
             </div>
 
             {/* Tab content */}
-            {activeTab === "overview" && <OverviewTab pkg={pkg} />}
+            {activeTab === "overview" && <OverviewTab pkg={pkg} verifying={pkgStreaming} />}
             {activeTab === "gap_analysis" && pkg.gap_analysis && (
               <GapAnalysisTab
                 result={pkg.gap_analysis}
@@ -1666,9 +1676,14 @@ function RedlineView({ original, corrected }: { original: string; corrected: str
   );
 }
 
-function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
+function OverviewTab({ pkg, verifying = false }: { pkg: ComplianceActionPackage; verifying?: boolean }) {
   const ga = pkg.gap_analysis;
-  const totalIssues = ga.critical_count + ga.gap_count + ga.partial_count;
+  const rows = ga.gap_table ?? [];
+  const totalIssues = rows.length;
+  // Built from the finding objects, never from the model's free-text summary,
+  // so it can only say what the cards say.
+  const stillChecking = verifying && rows.some((r) => !r.evidence && evidenceStatusOf(r) !== "recommendation");
+  const counts = countByEvidence(rows);
 
   return (
     <div className="space-y-4">
@@ -1678,11 +1693,17 @@ function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
           {totalIssues > 0 ? <AlertTriangle className="w-4 h-4 text-destructive" /> : <CheckCircle2 className="w-4 h-4 text-green-600" />}
           <span className="text-[10px] font-mono uppercase tracking-wider font-medium text-muted-foreground">The Policy Lab — Compliance Report</span>
         </div>
-        <p className="text-[13px] sm:text-sm text-foreground/85 leading-relaxed">{ga.audit_ready_summary}</p>
+        <p className="text-[13px] sm:text-sm text-foreground/85 leading-relaxed">
+          {stillChecking
+            ? `This review produced ${totalIssues} finding${totalIssues !== 1 ? "s" : ""}. Each finding's citation is still being checked against the regulation text.`
+            : findingsSummary(rows)}
+        </p>
         <div className="flex flex-wrap gap-2 mt-3">
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{ga.policy_type}</span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{ga.regulations_applied?.length || 0} regulations</span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{totalIssues} issues</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{totalIssues} finding{totalIssues !== 1 ? "s" : ""}</span>
+          {!stillChecking && (Object.keys(EVIDENCE_LABELS) as (keyof typeof EVIDENCE_LABELS)[]).filter((k) => counts[k] > 0).map((k) => (
+            <span key={k} className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{counts[k]} {EVIDENCE_LABELS[k]}</span>
+          ))}
         </div>
       </div>
     </div>
@@ -1691,7 +1712,7 @@ function OverviewTab({ pkg }: { pkg: ComplianceActionPackage }) {
 
 
 function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilter, verifying = false }: { result: AnalysisResult; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null; severityFilter?: "must_fix" | "should_fix" | null; onChangeFilter?: (s: "must_fix" | "should_fix" | null) => void; verifying?: boolean }) {
-  const isMustFix = (r: typeof result.gap_table[number]) => r.risk_level === "critical" || r.risk_level === "high";
+  const isMustFix = (r: typeof result.gap_table[number]) => priorityOf(r) === "must_fix";
   const mustFixItems = result.gap_table.filter(isMustFix);
 
   // Inline filter chips — one row of buttons, each shows count, tap to narrow the list. "All" resets.
@@ -1744,8 +1765,12 @@ function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilt
               <p className="text-[11px] font-mono uppercase tracking-wider font-bold text-destructive mb-2">
                 Must Fix — {mustFixItems.length} Finding{mustFixItems.length !== 1 ? "s" : ""}
               </p>
-              {result.priority_findings?.slice(0, 3).map((f, i) => (
-                <p key={i} className="text-[11px] sm:text-xs text-foreground/80 leading-relaxed pl-3 border-l-2 border-l-destructive/30 mb-1">{linkifyRegulations(stripCiteTags(f), urlMap, snippets)}</p>
+              {/* Listed from the findings themselves, each with its evidence status,
+                  so urgency never reads as legal standing. */}
+              {mustFixItems.map((f, i) => (
+                <p key={i} className="text-[11px] sm:text-xs text-foreground/80 leading-relaxed pl-3 border-l-2 border-l-destructive/30 mb-1">
+                  {stripCiteTags(f.clause)} <span className="text-muted-foreground">· {verifying && !f.evidence && evidenceStatusOf(f) !== "recommendation" ? "checking source" : EVIDENCE_LABELS[evidenceStatusOf(f)]}</span>
+                </p>
               ))}
             </div>
           )}

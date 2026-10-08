@@ -28,7 +28,10 @@ from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
 
 from app.services.limitations import draft_limitations, revision_limitations
-from app.services.verification_badge import GREEN, YELLOW, verification_badge
+from app.services.verification_badge import (
+    PRIORITY_LABELS, RECOMMENDATION, VERIFIED_REQUIREMENT, evidence_label, evidence_status,
+    findings_summary, priority_of,
+)
 from app.models.schemas import (
     AnalysisResult, GapRow, RiskLevel, ExportFormat,
     ComplianceActionPackage, RewrittenPolicy, RedlineChange,
@@ -719,7 +722,9 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
     # Executive Summary
     _add_styled_paragraph(doc, "Executive Summary", bold=True, size=14,
                           color=COLOR_DARK_NAVY, space_after=80)
-    _add_styled_paragraph(doc, result.audit_ready_summary, size=11, space_after=160)
+    # Written from the findings (counts by evidence status and priority), not
+    # the model's prose, so it agrees with every finding below it.
+    _add_styled_paragraph(doc, findings_summary(result.gap_table), size=11, space_after=160)
 
     # Findings sections
     for label, _level in severity_groups:
@@ -757,25 +762,24 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
             run_v.font.name = FONT_FAMILY
             p.paragraph_format.space_after = Pt(3)
 
-            # The finding's verification badge, as text: the same three labels
-            # as the report on screen. Findings citing no regulation get none.
-            badge = verification_badge(row)
-            if badge:
-                state, badge_label = badge
+            # Two independent labels: is it established law, and how urgent.
+            status = evidence_status(row)
+            for label_text, value_text, colour in (
+                ("Evidence: ", f"[{evidence_label(row)}]",
+                 COLOR_STATUS_VERIFIED if status == VERIFIED_REQUIREMENT
+                 else COLOR_GRAY if status == RECOMMENDATION else COLOR_STATUS_PARTIAL),
+                ("Priority: ", PRIORITY_LABELS[priority_of(row)], COLOR_BLACK),
+            ):
                 p = doc.add_paragraph()
-                run_l = p.add_run("Verification: ")
+                run_l = p.add_run(label_text)
                 run_l.bold = True
                 run_l.font.size = Pt(10)
                 run_l.font.color.rgb = COLOR_BLACK
                 run_l.font.name = FONT_FAMILY
-                run_v = p.add_run(f"[{badge_label}]")
+                run_v = p.add_run(value_text)
                 run_v.bold = True
                 run_v.font.size = Pt(10)
-                run_v.font.color.rgb = (
-                    COLOR_STATUS_VERIFIED if state == GREEN
-                    else COLOR_STATUS_PARTIAL if state == YELLOW
-                    else COLOR_STATUS_CONTRADICTED
-                )
+                run_v.font.color.rgb = colour
                 run_v.font.name = FONT_FAMILY
                 p.paragraph_format.space_after = Pt(3)
 
@@ -790,7 +794,11 @@ def _build_gap_analysis_section(doc: Document, result: AnalysisResult,
                 )
                 # An unconfirmed requirement is shown by the verification
                 # label below, not by a second verdict here.
-                if label and obligation.value != "unverified_requirement":
+                # Only a recommendation gets an obligation label (best
+                # practice, guidance, your choice). Whether something is
+                # required by law is the Evidence label's job, so a
+                # recommendation can never read as "legally required".
+                if label and status == RECOMMENDATION:
                     p = doc.add_paragraph()
                     run_l = p.add_run("Obligation: ")
                     run_l.bold = True

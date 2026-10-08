@@ -462,6 +462,14 @@ class GapRow(BaseModel):
         None,
         description="Auditable record of how this finding's citation and claim were checked"
     )
+    # Two independent questions about every finding, kept apart so neither
+    # can be read as the other: is it established law, and how urgent is it.
+    # Set from the evidence and the risk level when the package is final.
+    evidence_status: Optional[str] = Field(
+        None,
+        description="verified_requirement | needs_source_review | recommendation",
+    )
+    priority: Optional[str] = Field(None, description="must_fix | should_fix")
     # ── Source Attribution (Phase 3) ──
     source_attribution: Optional[SourceAttribution] = Field(
         None,
@@ -485,6 +493,13 @@ class AnalysisResult(BaseModel):
     priority_findings: List[str] = Field(default_factory=list, description="Top critical findings with citations")
     gap_table: List[GapRow] = Field(default_factory=list, description="Detailed gap analysis rows")
     audit_ready_summary: str = Field(..., description="Executive summary for board/regulator consumption")
+    findings_summary: Optional[str] = Field(
+        None,
+        description=(
+            "Summary built from the findings themselves (counts by evidence status and "
+            "priority), so it cannot describe a recommendation as a legal requirement."
+        ),
+    )
     scope: Optional[str] = Field(None, description="Scope of the analysis")
     methodology: Optional[str] = Field(None, description="Methodology description for the report")
     # ── Source Attribution (Phase 3) ──
