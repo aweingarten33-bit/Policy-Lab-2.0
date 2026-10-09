@@ -315,12 +315,6 @@ function GapRowItem({ row, urlMap, snippets, verifying = false, sectionLabel }: 
               </div>
             </div>
           )}
-          {row.oig_element && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground">OIG Element:</span>
-              <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">{row.oig_element}</span>
-            </div>
-          )}
           <div>
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-medium">Finding type</p>

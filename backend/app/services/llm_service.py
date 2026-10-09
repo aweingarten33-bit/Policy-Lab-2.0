@@ -345,9 +345,7 @@ failed analysis.
 
       "citation": "Full statutory/regulatory authority for the obligation: title + part + section + subsection (plus the issuing body and document name where the authority is guidance rather than codified text). Include a year only when the retrieved source states one. Multiple citations joined with semicolons when needed. Generic refs are rejected. If organizational-only, write exactly: 'Organizational best practice — no regulatory citation applies.' Do not fabricate a citation to avoid writing this.",
 
-      "remediation_priority": "Immediate | 30-day | 90-day | Next-review — based on enforcement risk and operational feasibility.",
-
-      "oig_element": "Healthcare & Home Health ONLY — the OIG GCPG element this finding maps to, formatted exactly as: '3 — Training & Education'. Use the canonical 7-element list. Omit for non-healthcare industries."
+      "remediation_priority": "Immediate | 30-day | 90-day | Next-review — based on enforcement risk and operational feasibility."
     }
   ],
 
@@ -389,15 +387,6 @@ specific reasoning when enforcement context warrants):
   partial    → moderate → 90-day
   compliant  → compliant → N/A
 
-OIG GCPG 7 Elements (Healthcare & Home Health industries only — exact format for oig_element field):
-  1 — Written Policies & Procedures
-  2 — Compliance Leadership & Oversight
-  3 — Training & Education
-  4 — Effective Lines of Communication & Disclosure
-  5 — Enforcing Standards: Consequences & Incentives
-  6 — Risk Assessment, Auditing & Monitoring
-  7 — Responding to Detected Offenses & Corrective Action
-
 ═══════════════════════════════════════════════════════════════════════════════
 OUTPUT SIZE — CEILINGS ONLY, NO MINIMUMS
 ═══════════════════════════════════════════════════════════════════════════════
@@ -419,8 +408,8 @@ status, risk_level, current_state, finding, regulatory_requirement (empty only
 for organizational-only rows), suggested_language, citation,
 remediation_priority. Keep what the regulation requires (regulatory_requirement)
 separate from what you recommend (recommendations): never put a recommendation,
-a stricter internal figure or "best practice" into regulatory_requirement. oig_element is required for Healthcare & Home Health
-industries and omitted otherwise. A row you cannot fill out completely is a row
+a stricter internal figure or "best practice" into regulatory_requirement.
+A row you cannot fill out completely is a row
 you do not have the evidence for — leave it out rather than filling the fields
 with plausible text.
 
@@ -643,7 +632,6 @@ def _parse_llm_response(raw_text: str) -> AnalysisResult:
             suggested_language=row_data.get("suggested_language", ""),
             citation=row_data.get("citation", ""),
             remediation_priority=remediation_priority,
-            oig_element=row_data.get("oig_element"),
             finding_kind=_coerce_finding_kind(row_data.get("finding_kind")),
             implementation_question=(str(row_data.get("implementation_question") or "").strip() or None),
         ))
@@ -745,7 +733,6 @@ def _merge_results(results: list[AnalysisResult]) -> AnalysisResult:
                         ),
                         citation=row.citation or existing.citation,
                         remediation_priority=row.remediation_priority,
-                        oig_element=existing.oig_element or row.oig_element,
                     )
                     seen[key] = merged
                 else:
@@ -763,7 +750,6 @@ def _merge_results(results: list[AnalysisResult]) -> AnalysisResult:
                         suggested_language=existing.suggested_language,
                         citation=existing.citation,
                         remediation_priority=existing.remediation_priority,
-                        oig_element=existing.oig_element or row.oig_element,
                     )
 
     merged_table = list(seen.values())

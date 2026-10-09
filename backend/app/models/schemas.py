@@ -446,10 +446,6 @@ class GapRow(BaseModel):
         None,
         description="Immediate / 30-day / 90-day / Next-review remediation timeline"
     )
-    oig_element: Optional[str] = Field(
-        None,
-        description="OIG GCPG element this finding relates to (1–7), e.g. '3 — Training & Education'"
-    )
     verification_warning: Optional[str] = Field(
         None,
         description=(
