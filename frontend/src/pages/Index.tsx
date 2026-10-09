@@ -459,6 +459,7 @@ export default function Index() {
   });
   const [draftExporting, setDraftExporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const analyzeButtonRef = useRef<HTMLButtonElement>(null);
   // Whether this page opened with work restored from browser storage, so the
   // user can see that it was kept and clear it.
   const [restoredFromBrowser] = useState(() => {
@@ -1056,7 +1057,7 @@ export default function Index() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-8 py-8 sm:py-12 pb-8 sm:pb-14">
+      <main className="max-w-4xl mx-auto px-4 sm:px-8 py-5 sm:py-8 pb-8 sm:pb-14">
         {/* ─── Input View ─── */}
         {!pkg && !draftResult && !loading && (
           <>
@@ -1070,43 +1071,68 @@ export default function Index() {
                 </button>
               </div>
             )}
-            <div className="mb-12 sm:mb-16">
+            {/* Hero kept short so the two paths and the sample are visible on a
+                laptop screen (1280x720) and a phone without scrolling. */}
+            <div className="mb-5 sm:mb-6">
               {mode === "analyze" && (
                 <>
-                  <h1 className="font-serif-display text-4xl sm:text-6xl lg:text-7xl font-black text-foreground mb-6 sm:mb-8 leading-[1.02] tracking-tight">
-                    Upload a policy.<br />See the gaps.
+                  <h1 className="font-serif-display text-3xl sm:text-4xl lg:text-5xl font-black text-foreground mb-2 sm:mb-3 leading-[1.05] tracking-tight">
+                    Upload a policy. See the gaps.
                   </h1>
-                  <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
+                  <p className="text-[14px] sm:text-base text-muted-foreground max-w-2xl leading-relaxed">
                     We check your policy against the federal regulation text and list what it's missing. You get a gap report and a proposed revision, with blanks left for your organization's own choices.
                   </p>
                 </>
               )}
               {mode === "draft" && (
                 <>
-                  <h1 className="font-serif-display text-4xl sm:text-6xl lg:text-7xl font-black text-foreground mb-6 sm:mb-8 leading-[1.02] tracking-tight">
-                    Describe a policy.<br />Get a first draft.
+                  <h1 className="font-serif-display text-3xl sm:text-4xl lg:text-5xl font-black text-foreground mb-2 sm:mb-3 leading-[1.05] tracking-tight">
+                    Describe a policy. Get a first draft.
                   </h1>
-                  <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
+                  <p className="text-[14px] sm:text-base text-muted-foreground max-w-2xl leading-relaxed">
                     We draft it from the federal regulation text. Anything only your organization can decide — who does what, deadlines, start date — is left as a blank for you to fill in.
                   </p>
                 </>
               )}
             </div>
 
-            {/* Mode toggle — NYT-style underline tabs */}
-            <div className="mb-6 nyt-tabs">
-              {([
-                { key: "draft",   label: "Draft" },
-                { key: "analyze", label: "Analyze" },
-              ] as const).map((m) => (
-                <button
-                  key={m.key}
-                  onClick={() => setMode(m.key)}
-                  className={`nyt-tab ${mode === m.key ? "is-active" : ""}`}
-                >
-                  {m.label}
-                </button>
-              ))}
+            {/* Two paths, and the sample one click away from either. */}
+            <div className="mb-5 flex flex-col sm:flex-row sm:items-stretch gap-2.5" role="group" aria-label="What do you want to do?">
+              <div className="grid grid-cols-2 gap-2.5 flex-1">
+                {([
+                  { key: "analyze", label: "Analyze an existing policy", hint: "Upload or paste it; get a gap report" },
+                  { key: "draft",   label: "Draft a new policy",         hint: "Describe it; get a first draft" },
+                ] as const).map((m) => (
+                  <button
+                    key={m.key}
+                    type="button"
+                    aria-pressed={mode === m.key}
+                    onClick={() => setMode(m.key)}
+                    className={`text-left rounded-xl px-3.5 py-2.5 border-2 transition-all touch-manipulation ${mode === m.key ? "bg-card border-primary shadow-sm" : "border-transparent neu-sm opacity-80 hover:opacity-100"}`}
+                  >
+                    <span className="block text-[13px] sm:text-[14px] font-semibold text-foreground leading-snug">{m.label}</span>
+                    <span className="block text-[11px] sm:text-[12px] text-muted-foreground leading-snug mt-0.5">{m.hint}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  // Pre-fills only: running it is still a real analysis.
+                  setMode("analyze");
+                  setIndustry("healthcare");
+                  setText(SAMPLE_POLICY_TEXTS.healthcare);
+                  setFileName("sample-hospital-policy.txt");
+                  setError("");
+                  toast.success("Hospital sample loaded", { description: "Click Analyze Policy to run it." });
+                  // Bring the Analyze button into view so it is the next click.
+                  setTimeout(() => analyzeButtonRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+                }}
+                className="rounded-xl px-4 py-2.5 bg-primary text-primary-foreground neu-btn touch-manipulation inline-flex items-center justify-center gap-2 text-[13px] sm:text-[14px] font-semibold whitespace-nowrap"
+              >
+                <Wand2 className="w-4 h-4" strokeWidth={1.75} />
+                Try the hospital sample
+              </button>
             </div>
 
             {/* Unified card — Industry & Location → divider → Describe / Upload → Generate button */}
@@ -1262,6 +1288,7 @@ export default function Index() {
               )}
               {mode === "analyze" && (
                 <button
+                  ref={analyzeButtonRef}
                   onClick={() => run(false)}
                   disabled={!text.trim() || parsing}
                   className="pl-button-dark mt-5 w-full font-medium text-[15px] px-6 py-4 rounded-xl flex items-center justify-center gap-2"
