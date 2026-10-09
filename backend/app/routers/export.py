@@ -4,6 +4,10 @@ Supports both single gap analysis reports and full Compliance Action Packages.
 """
 
 import logging
+import re
+import unicodedata
+from urllib.parse import quote
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
@@ -12,6 +16,28 @@ from app.services.export_service import generate_export, generate_action_package
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["export"])
+
+
+def _attachment_headers(filename: str) -> dict:
+    """Content-Disposition for a download whose name may hold any character.
+
+    HTTP headers are Latin-1. Filenames come from policy titles the model
+    writes and from users' own file names, so an em dash, curly quotes or an
+    accented letter made the header unencodable and every download of that
+    document failed with a 500 (seen live on "Proposed revision"). The plain
+    `filename=` gets an ASCII stand-in; `filename*=` (RFC 5987/6266) carries
+    the real name, which browsers use when they understand it.
+    """
+    name = filename or "document.docx"
+    ascii_name = (
+        unicodedata.normalize("NFKD", name.replace("\u2014", "-").replace("\u2013", "-"))
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    ascii_name = re.sub(r'["\\\x00-\x1f\x7f]', "", ascii_name).strip() or "document.docx"
+    return {
+        "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}"
+    }
 
 
 @router.post("/export")
@@ -38,7 +64,7 @@ async def export_report(request: ExportRequest):
     return Response(
         content=file_bytes,
         media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_attachment_headers(filename),
     )
 
 
@@ -56,7 +82,7 @@ async def export_draft_policy(request: DraftPolicyExportRequest):
     return Response(
         content=file_bytes,
         media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_attachment_headers(filename),
     )
 
 
@@ -80,7 +106,7 @@ async def export_updated_policy(request: UpdatedPolicyExportRequest):
     return Response(
         content=file_bytes,
         media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_attachment_headers(filename),
     )
 
 
@@ -104,5 +130,5 @@ async def export_action_package(request: PackageExportRequest):
     return Response(
         content=file_bytes,
         media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_attachment_headers(filename),
     )

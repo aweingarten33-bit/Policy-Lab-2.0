@@ -432,6 +432,17 @@ export async function fixAllGaps(
  * No gap analysis, no redline — just the new policy text formatted
  * as a real policy document.
  */
+/** The download name from Content-Disposition: the UTF-8 `filename*` when
+ *  present (it keeps characters like "—"), else the plain `filename`. */
+function filenameFromDisposition(header: string, fallback: string): string {
+  const star = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (star) {
+    try { return decodeURIComponent(star[1].trim()); } catch { /* fall through */ }
+  }
+  const plain = header.match(/filename\s*=\s*"([^"]*)"/i) ?? header.match(/filename\s*=\s*([^;]+)/i);
+  return plain ? plain[1].trim() : fallback;
+}
+
 export async function exportUpdatedPolicy(
   pkg: ComplianceActionPackage,
 ): Promise<void> {
@@ -456,8 +467,7 @@ export async function exportUpdatedPolicy(
   const contentDisposition = response.headers.get("Content-Disposition");
   let downloadName = "Updated_Policy.docx";
   if (contentDisposition) {
-    const match = contentDisposition.match(/filename="?(.+?)"?$/);
-    if (match) downloadName = match[1];
+    downloadName = filenameFromDisposition(contentDisposition, downloadName);
   }
 
   const url = URL.createObjectURL(blob);
@@ -502,8 +512,7 @@ export async function exportGapAnalysis(
   const contentDisposition = response.headers.get("Content-Disposition");
   let downloadName = "Gap_Analysis.docx";
   if (contentDisposition) {
-    const match = contentDisposition.match(/filename="?(.+?)"?$/);
-    if (match) downloadName = match[1];
+    downloadName = filenameFromDisposition(contentDisposition, downloadName);
   }
 
   const url = URL.createObjectURL(blob);
@@ -609,8 +618,7 @@ export async function exportDraftPolicy(policy: DraftedPolicy): Promise<void> {
   const contentDisposition = response.headers.get("Content-Disposition");
   let downloadName = "Drafted_Policy.docx";
   if (contentDisposition) {
-    const match = contentDisposition.match(/filename="?(.+?)"?$/);
-    if (match) downloadName = match[1];
+    downloadName = filenameFromDisposition(contentDisposition, downloadName);
   }
 
   const url = URL.createObjectURL(blob);
