@@ -13,9 +13,11 @@ from app.models.schemas import ChatMessage, ClaimSupport, MAX_CHAT_CHARS, MAX_IN
 from app.services.claim_support import classify_claim_support
 from app.services.provider import get_provider
 from app.services.retrieval.live_research import get_live_research_service
+from app.services.retrieval.authority_source import ChromaAuthorityProvider
 from app.services.retrieval.retriever import get_retriever
-from app.services.retrieval.verification import get_verification_service
-from app.services.retrieval.models import VerificationStatus
+from app.services.retrieval.section_store import citation_key, get_section_store
+from app.services.retrieval.verification import _CFR_SECTION_RE, get_verification_service
+from app.services.retrieval.models import RetrievalResult, VerificationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +157,70 @@ async def _verify_chat_response(response_text: str, retrieval_ctx) -> str:
     return f"{cleaned}\n\n{notice}" if cleaned else notice
 
 
+def _sections_cited_in(context_summary: Optional[str]) -> list[RetrievalResult]:
+    """The full text of every CFR section the analysis context already cites.
+
+    Only citations that literally appear in ``context_summary`` are looked up,
+    and only sections the authoritative store actually holds are returned:
+    nothing is guessed, and a citation with no stored text is simply skipped.
+    """
+    if not context_summary:
+        return []
+    store = get_section_store()
+    results: list[RetrievalResult] = []
+    seen: set[str] = set()
+    for match in _CFR_SECTION_RE.finditer(context_summary):
+        citation = f"{match.group('title')} CFR § {match.group('section')}"
+        key = citation_key(citation)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result = ChromaAuthorityProvider._row_to_result(store.get(citation), match.group(0).strip())
+        if result is not None:
+            results.append(result)
+    return results
+
+
+def _retrieve_for_chat(
+    message: str,
+    context_summary: Optional[str],
+    industry: Optional[str],
+    jurisdiction: Optional[str],
+):
+    """Source material for one chat turn.
+
+    Retrieval used to run on the chat message alone, so "explain finding 2"
+    found generic chunks and none of the HIPAA sections the analysis was about,
+    although the knowledge base holds them. With an analysis in context:
+      * the context (policy type, regulations reviewed, findings) plus the
+        message drives retrieval, so the policy's topics reach the per-section
+        queries;
+      * the message alone still runs too, for questions on something new;
+      * every CFR section the context cites is fetched whole from the section
+        store and placed first.
+    Same ordering and caps as any retrieval. Without context, unchanged.
+    """
+    retriever = get_retriever()
+    if not context_summary:
+        return retriever.retrieve_for_step(
+            step_name="chat", policy_text=message, jurisdiction=jurisdiction, industry=industry,
+        )
+    contexts = [
+        retriever.retrieve_for_step(
+            step_name="chat", policy_text=f"{context_summary}\n\n{message}",
+            jurisdiction=jurisdiction, industry=industry,
+        ),
+        retriever.retrieve_for_step(
+            step_name="chat", policy_text=message, jurisdiction=jurisdiction, industry=industry,
+        ),
+    ]
+    pinned = _sections_cited_in(context_summary)
+    if pinned:
+        logger.info("Chat: pinned %d cited section(s): %s", len(pinned),
+                    ", ".join(r.chunk.metadata.citation for r in pinned))
+    return retriever.combine_contexts("chat", contexts, pinned)
+
+
 async def chat(
     message: str,
     mode: str = "analysis",
@@ -181,12 +247,7 @@ async def chat(
             "content": "Understood — I have the policy context. What would you like to know?",
         })
 
-    retrieval_ctx = get_retriever().retrieve_for_step(
-        step_name="chat",
-        policy_text=message,
-        jurisdiction=jurisdiction,
-        industry=industry,
-    )
+    retrieval_ctx = _retrieve_for_chat(message, context_summary, industry, jurisdiction)
     retrieval_ctx = await get_live_research_service().augment_retrieval_context(
         context=retrieval_ctx,
         industry=industry,

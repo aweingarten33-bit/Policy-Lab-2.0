@@ -356,6 +356,44 @@ class ComplianceRetriever:
 
         return context
 
+    def combine_contexts(
+        self,
+        step_name: str,
+        contexts: List[RetrievalContext],
+        pinned: Optional[List[RetrievalResult]] = None,
+        max_total: int = 20,
+    ) -> RetrievalContext:
+        """Several retrievals as one context, under the same rules as one.
+
+        Chunks are unioned and deduplicated by id, then ordered and capped the
+        way retrieve_for_step does it: codified law first, guidance only within
+        its allowance, at most ``max_total`` in all. ``pinned`` results -- whole
+        sections looked up by a citation the caller already holds -- go first
+        and count toward the total.
+        """
+        pinned = list(pinned or [])
+        seen = {r.chunk.id for r in pinned}
+        merged: List[RetrievalResult] = []
+        for ctx in contexts:
+            for result in ctx.retrieved_chunks:
+                if result.chunk.id not in seen:
+                    seen.add(result.chunk.id)
+                    merged.append(result)
+        merged.sort(key=lambda r: (_authority_tier(r.chunk.metadata.category), -r.score))
+        merged = self._cap_supporting_material(merged)
+        chunks = (pinned + merged)[:max_total]
+        logger.info(
+            "Retrieval for %r returned: %s", step_name,
+            ", ".join(r.chunk.metadata.citation or r.chunk.metadata.source_name for r in chunks),
+        )
+        return RetrievalContext(
+            query=contexts[0].query if contexts else "",
+            retrieved_chunks=chunks,
+            live_research_used=any(c.live_research_used for c in contexts),
+            total_sources_found=len(chunks),
+            formatted_context=self._format_context_for_prompt(chunks),
+        )
+
     def _to_results(self, hits: Dict[str, Any], col_name: str, query: str) -> List[RetrievalResult]:
         """A raw Chroma query result as RetrievalResults."""
         out: List[RetrievalResult] = []
