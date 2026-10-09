@@ -864,6 +864,13 @@ class DraftedPolicy(BaseModel):
     live_research_used: bool = Field(
         False, description="Whether live research was used to ground this draft"
     )
+    grounded: bool = Field(
+        True,
+        description=(
+            "True when at least one reference source was retrieved for this draft; "
+            "false when it was drafted with none (the UI and DOCX then say so)"
+        ),
+    )
     verification_overall: Optional[str] = Field(
         None, description="Human-readable summary of how well-grounded this draft is"
     )

@@ -572,6 +572,8 @@ export interface DraftedPolicy {
   kb_source_urls?: Record<string, string> | null;
   source_snippets?: SourceSnippet[] | null;
   live_research_used?: boolean;
+  // False when no reference source was retrieved for this draft (shown as a banner).
+  grounded?: boolean;
   verification_overall?: string | null;
   unverified_claim_count?: number | null;
   // Placeholders the draft uses instead of invented facts, and what each needs decided.

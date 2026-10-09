@@ -230,6 +230,11 @@ def finalize_draft(
         f"{o.citation}: {o.requirement}" for o in missing_obligations(data.get("full_text", ""), checklist)
     ]
 
+    # Whether any reference source reached the model -- the same check the
+    # require_grounding guard uses. Generation is never blocked on it; a draft
+    # with none is labelled instead (UI banner, first line of the DOCX).
+    data["grounded"] = bool(ctx is not None and ctx.get_all_sources())
+
     if ctx is not None:
         data = attach_attribution(data, ctx)
     coverage = state_coverage(ctx, jurisdiction)

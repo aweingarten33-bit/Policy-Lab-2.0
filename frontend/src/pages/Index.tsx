@@ -19,10 +19,10 @@ import {
 } from "@/lib/api";
 import { toast } from "sonner";
 import {
-  LimitationsBanner, StateSourcesList, ChatMarkdown, draftLimitations,
+  LimitationsBanner, StateSourcesList, ChatMarkdown, draftLimitations, UngroundedDraftBanner,
 } from "@/components/ResultNotices";
 import { VerificationBadge, VerificationSidePanel, badgeFor } from "@/components/VerificationBadge";
-import { EVIDENCE_LABELS, PRIORITY_LABELS, analysisLimitations, evidenceStatusOf, findingsSummary, priorityOf, countByEvidence, mustFixCount, revisionSectionFor } from "@/lib/findings";
+import { EVIDENCE_LABELS, PRIORITY_LABELS, analysisLimitations, evidenceStatusOf, findingsSummary, priorityOf, countByEvidence, mustFixCount, revisionSectionFor, policySectionRef, isSilentQuote } from "@/lib/findings";
 
 // ── Style maps ──
 
@@ -236,6 +236,7 @@ function GapRowItem({ row, urlMap, snippets, verifying = false, sectionLabel }: 
   const badge = badgeFor(row, verifying);
   const priority = priorityOf(row);
   const isRecommendation = evidenceStatusOf(row) === "recommendation";
+  const policySection = policySectionRef(row);
   const canOpen = badge.state !== "checking"
     && (!isRecommendation || (row.evidence?.source?.passages?.length ?? 0) > 0);
   const r = RISK_MAP[priority === "must_fix" ? "high" : "moderate"];
@@ -254,7 +255,8 @@ function GapRowItem({ row, urlMap, snippets, verifying = false, sectionLabel }: 
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-start gap-2.5 sm:gap-3 px-4 sm:px-5 pt-2 pb-3.5 sm:pb-4 text-left active:opacity-80 transition-all touch-manipulation">
         <div className="flex-1 min-w-0">
           <p className="text-[13px] sm:text-sm font-semibold text-foreground">{stripCiteTags(row.clause)}</p>
-          <p className="text-[11px] sm:text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">{stripCiteTags(row.finding)}</p>
+          {/* The finding is written once: clipped while collapsed, in full when open. */}
+          <p className={`text-[11px] sm:text-xs text-muted-foreground mt-1 leading-relaxed ${open ? "" : "line-clamp-2"}`}>{stripCiteTags(row.finding)}</p>
         </div>
         <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0 mt-1 transition-transform duration-200" style={{ transform: open ? "rotate(180deg)" : "none" }} />
       </button>
@@ -262,6 +264,25 @@ function GapRowItem({ row, urlMap, snippets, verifying = false, sectionLabel }: 
       {open && (
         <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-0 space-y-3">
           <div className="h-px bg-border" />
+          {/* What the user's own policy says about this, first, so the finding
+              reads against the document it is about. */}
+          {(row.current_state || policySection) && (
+            <div className="rounded-xl p-3 sm:p-3.5 border-l-4" style={{ borderLeftColor: "hsl(var(--primary))", background: "hsl(var(--primary) / 0.06)" }}>
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <p className="text-[10px] font-mono uppercase tracking-wider font-bold" style={{ color: "hsl(var(--primary))" }}>
+                  {isSilentQuote(row.current_state) ? "Your policy" : "Your policy says"}
+                </p>
+                {policySection && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-background text-foreground/80">{policySection}</span>
+                )}
+              </div>
+              {row.current_state && (
+                isSilentQuote(row.current_state)
+                  ? <p className="text-[13px] text-foreground/85 leading-relaxed">{stripCiteTags(row.current_state).replace(/^["“]|["”]$/g, "")}</p>
+                  : <p className="text-[13px] sm:text-[14px] text-foreground leading-relaxed font-serif-display italic">“{linkifyRegulations(stripCiteTags(row.current_state).replace(/^["“]|["”]$/g, ""), urlMap, snippets)}”</p>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Priority:</span>
             <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full" style={{ color: r.color, background: r.bg }}>{PRIORITY_LABELS[priority]}</span>
@@ -300,15 +321,9 @@ function GapRowItem({ row, urlMap, snippets, verifying = false, sectionLabel }: 
               <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">{row.oig_element}</span>
             </div>
           )}
-          {row.current_state && (
-            <div>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1 font-medium">Current Policy Language</p>
-              <p className="text-[12px] sm:text-[13px] text-foreground/70 italic leading-relaxed border-l-2 border-muted-foreground/30 pl-3">"{linkifyRegulations(stripCiteTags(row.current_state), urlMap, snippets)}"</p>
-            </div>
-          )}
           <div>
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-medium">Finding</p>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-medium">Finding type</p>
               <span
                 title={row.finding_kind === "implementation_question"
                   ? "The document covers this; whether your organization actually does it is a question only you can answer."
@@ -336,7 +351,6 @@ function GapRowItem({ row, urlMap, snippets, verifying = false, sectionLabel }: 
                 );
               })()}
             </div>
-            <p className="text-[13px] sm:text-sm text-foreground leading-relaxed">{linkifyRegulations(stripCiteTags(row.finding), urlMap, snippets)}</p>
             {row.regulatory_requirement && !isRecommendation && (
               <div className="rounded-lg p-3 mt-2 border-l-2" style={{ borderColor: "hsl(var(--primary) / 0.5)", background: "hsl(var(--primary) / 0.05)" }}>
                 <p className="text-[10px] font-mono uppercase tracking-wider mb-1 font-medium" style={{ color: "hsl(var(--primary))" }}>
@@ -1090,7 +1104,7 @@ export default function Index() {
                     Describe a policy. Get a first draft.
                   </h1>
                   <p className="text-[14px] sm:text-base text-muted-foreground max-w-2xl leading-relaxed">
-                    We draft it from the federal regulation text. Anything only your organization can decide — who does what, deadlines, start date — is left as a blank for you to fill in.
+                    We draft it from federal regulation text and real policy templates. Who does what, deadlines, and start dates are left blank for you to fill in.
                   </p>
                 </>
               )}
@@ -1400,6 +1414,7 @@ export default function Index() {
                 </button>
               </div>
             </div>
+            <UngroundedDraftBanner grounded={draftResult.grounded} />
             <LimitationsBanner lines={draftLimitations(draftResult)} />
 
             {(draftResult.decisions_required?.length ?? 0) > 0 && (

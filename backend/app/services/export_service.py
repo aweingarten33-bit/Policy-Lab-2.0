@@ -1511,6 +1511,11 @@ def generate_action_package_export(package: ComplianceActionPackage, file_name: 
     return file_bytes, filename
 
 
+UNGROUNDED_DRAFT_NOTICE = (
+    "Drafted without federal regulation sources - treat every requirement as unverified and confirm what applies to your organization."
+)
+
+
 def generate_draft_policy_docx(policy: dict) -> bytes:
     """
     Generate a professional .docx for a drafted policy document.
@@ -1525,6 +1530,10 @@ def generate_draft_policy_docx(policy: dict) -> bytes:
         section.bottom_margin = Cm(2.5)
         section.left_margin = Cm(3.2)
         section.right_margin = Cm(2.5)
+
+    # A draft written with no regulation sources says so before anything else.
+    if policy.get("grounded") is False:
+        _add_styled_paragraph(doc, UNGROUNDED_DRAFT_NOTICE, bold=True, size=11, color=COLOR_CRITICAL, space_after=120)
 
     # ── Cover / Header ──
     title_p = doc.add_paragraph()

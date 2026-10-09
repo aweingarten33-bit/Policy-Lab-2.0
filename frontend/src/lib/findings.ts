@@ -137,3 +137,27 @@ export function revisionSectionFor(
 export function mustFixCount(rows: GapRow[] | undefined): number {
   return (rows ?? []).filter((r) => priorityOf(r) === "must_fix").length;
 }
+
+// ── Where in the user's policy a finding is ──
+// The analysis has no dedicated section field, but its quote of the policy and
+// its finding often name one ("Section 4.2 references…"). Only policy-style
+// references count: "Section 4.2", "Section IV", "Page 3" -- not statutes
+// ("Section 1557 of the ACA", "Section 5 of HIPAA") or CFR citations, which use "§".
+const SECTION_RE = /\bSection\s+((?:\d{1,2}(?:\.\d{1,3})*[A-Za-z]?)|(?:[IVX]{1,6}))\b(?!\s+of\s+(?:the\s+)?(?![Pp]olicy\b)[A-Z])/;
+const PAGE_RE = /\bpage\s+(\d{1,3})\b/i;
+
+export function policySectionRef(row: GapRow): string | null {
+  for (const text of [row.current_state, row.finding, row.clause]) {
+    if (!text) continue;
+    const s = text.match(SECTION_RE);
+    if (s) return `Policy section: ${s[1]}`;
+    const p = text.match(PAGE_RE);
+    if (p) return `Policy page: ${p[1]}`;
+  }
+  return null;
+}
+
+/** "Policy is silent — …" is a statement about the policy, not a quote from it. */
+export function isSilentQuote(text?: string | null): boolean {
+  return /^\s*["“]?policy is silent/i.test(text ?? "");
+}

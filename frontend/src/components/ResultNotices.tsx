@@ -30,6 +30,22 @@ export function draftLimitations(draft: DraftedPolicy): string[] {
   return lines;
 }
 
+export const UNGROUNDED_DRAFT_NOTICE =
+  "Drafted without federal regulation sources - treat every requirement as unverified and confirm what applies to your organization.";
+
+/** Shown at the top of a draft only when no regulation source was retrieved for it. */
+export function UngroundedDraftBanner({ grounded }: { grounded?: boolean }) {
+  if (grounded !== false) return null;
+  return (
+    <div className="rounded-2xl p-4 sm:p-5 border-l-4" style={{ borderLeftColor: "hsl(8 75% 45%)", background: "hsl(8 80% 52% / 0.08)" }} role="alert">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "hsl(8 75% 40%)" }} />
+        <p className="text-[13px] sm:text-[14px] font-semibold leading-relaxed" style={{ color: "hsl(8 70% 32%)" }}>{UNGROUNDED_DRAFT_NOTICE}</p>
+      </div>
+    </div>
+  );
+}
+
 export function LimitationsBanner({ lines, title = "Read first — what this does and doesn't establish" }: { lines: string[]; title?: string }) {
   if (lines.length === 0) return null;
   return (

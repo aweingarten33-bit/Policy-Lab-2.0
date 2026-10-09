@@ -22,11 +22,11 @@ export default function Guide() {
         </h1>
         <p className="text-base leading-relaxed text-foreground/85 mb-10">
           The Policy Lab reviews and drafts compliance policies for three industries: Hospitals,
-          Home Health, and Pharmacy. Analyses and drafts are grounded in a stored database of federal
-          regulation text. A live search of government websites runs only when that database doesn't
+          Home Health, and Pharmacy. Analyses and drafts draw on a stored database of federal
+          regulation text, and every result shows what sources were used. A live search of government websites runs only when that database doesn't
           cover a request — for example when a state is selected, or the stored sources are thin or
-          out of date — and every result says whether a search ran. It isn't answering from memory and
-          hoping the citation is right, but it also can't check what it doesn't have: the limits of each
+          out of date — and every result says whether a search ran. It shows its sources on every result - and when it couldn't find one,
+          the result says so. It also can't check what it doesn't have: the limits of each
           result are listed at the top of it.
         </p>
 
@@ -38,9 +38,9 @@ export default function Guide() {
             <p className="text-sm font-bold text-foreground mb-1">Analyze — upload a policy, find the gaps</p>
             <p className="text-sm leading-relaxed text-foreground/80">
               Upload or paste an existing policy. You get back a gap analysis: what's missing, what's
-              vague, what's a real regulatory exposure versus an organizational best practice, each
-              finding cited to a specific regulation — click a citation to see the actual retrieved
-              regulatory text it's grounded in, not just a source name. Findings are about the document:
+              vague, what's a real regulatory exposure versus an organizational best practice. Findings tied to a
+              regulation cite it, and you can click through to the actual source text. Organizational
+              best-practice recommendations are labeled as recommendations, not legal requirements. Findings are about the document:
               what it says or leaves out, plus questions about practice that only your team can answer. No
               records are inspected. From there, <span className="font-bold">Draft revisions</span> writes a
               proposed revision aimed at the findings, and <span className="font-bold">Re-check</span> runs a fresh
@@ -69,7 +69,7 @@ export default function Guide() {
           <p className="text-sm leading-relaxed text-foreground/85">
             <span className="font-bold">Industry</span> determines which regulatory framework gets
             applied — Hospitals maps to HIPAA and CMS hospital rules, Home Health maps to the Home
-            Health Conditions of Participation, and Pharmacy maps to DEA, FDA and Medicare Part D rules.
+            Health Conditions of Participation, and Pharmacy maps to DEA and Medicare Part D rules.
             There is no separate HR or general industry. Employment-type policies (whistleblower,
             remote work, code of conduct) can be run under whichever industry fits your organization,
             but check that the employment regulations they depend on appear in the result's sources.
@@ -90,8 +90,7 @@ export default function Guide() {
           </h2>
           <p className="text-sm leading-relaxed text-foreground/85">
             Once you have results, use the chat to ask follow-up questions — which gap to prioritize,
-            what a specific regulation actually requires, what an auditor would check. It's scoped to
-            this policy and this tool; it won't answer questions unrelated to your results. It doesn't
+            what a specific regulation actually requires, what an auditor would check. It's built to stay on your policy and compliance topics. It doesn't
             edit the policy for you — for that, use Draft revisions (on an analysis) or regenerate the
             draft.
           </p>
