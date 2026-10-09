@@ -1100,7 +1100,7 @@ export default function Index() {
             <div className="mb-5 flex flex-col sm:flex-row sm:items-stretch gap-2.5" role="group" aria-label="What do you want to do?">
               <div className="grid grid-cols-2 gap-2.5 flex-1">
                 {([
-                  { key: "analyze", label: "Analyze an existing policy", hint: "Upload or paste it; get a gap report" },
+                  { key: "analyze", label: "Analyze an existing policy", hint: "Upload or paste it; get a policy gap analysis report" },
                   { key: "draft",   label: "Draft a new policy",         hint: "Describe it; get a first draft" },
                 ] as const).map((m) => (
                   <button
