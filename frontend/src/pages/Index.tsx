@@ -22,14 +22,25 @@ import {
   LimitationsBanner, StateSourcesList, ChatMarkdown, draftLimitations,
 } from "@/components/ResultNotices";
 import { VerificationBadge, VerificationSidePanel, badgeFor } from "@/components/VerificationBadge";
-import { EVIDENCE_LABELS, PRIORITY_LABELS, analysisLimitations, evidenceStatusOf, findingsSummary, priorityOf, countByEvidence } from "@/lib/findings";
+import { EVIDENCE_LABELS, PRIORITY_LABELS, analysisLimitations, evidenceStatusOf, findingsSummary, priorityOf, countByEvidence, mustFixCount, revisionSectionFor } from "@/lib/findings";
 
 // ── Style maps ──
 
 const JOB_KEY = "tpl_active_job";
 const DRAFT_JOB_KEY = "tpl_active_draft_job";
 // Everything this page keeps in the browser. Start fresh clears all of it.
-const STORED_KEYS = ["tpl_text", "tpl_fileName", "tpl_pkg", "tpl_mode", "tpl_draftDesc", "tpl_draftResult", JOB_KEY, DRAFT_JOB_KEY];
+const STORED_KEYS = ["tpl_text", "tpl_fileName", "tpl_pkg", "tpl_mode", "tpl_draftDesc", "tpl_draftResult", "tpl_revisions", JOB_KEY, DRAFT_JOB_KEY];
+
+// One analysis per document version. The original report lives in `pkg` and is
+// never overwritten by a re-check; each re-check of a proposed revision is kept
+// here under that revision's number. `originalId` ties them to the report they
+// revise, so a new analysis can never show an old report's re-check.
+type RevisionAnalysis = {
+  pkg: ComplianceActionPackage;
+  sections: RewrittenPolicySection[];
+  checkedAt: string;
+};
+type VersionStore = { originalId: string; version: number; results: Record<number, RevisionAnalysis> };
 
 function formatElapsed(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -217,7 +228,7 @@ type TabKey = typeof TABS[number]["key"];
 
 // ── Gap Row Component ──
 
-function GapRowItem({ row, urlMap, snippets, verifying = false }: { row: GapRow; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null; verifying?: boolean }) {
+function GapRowItem({ row, urlMap, snippets, verifying = false, sectionLabel }: { row: GapRow; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null; verifying?: boolean; sectionLabel?: string | null }) {
   const [open, setOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   // Two independent badges: how urgent (priority) and whether it is
@@ -234,6 +245,11 @@ function GapRowItem({ row, urlMap, snippets, verifying = false }: { row: GapRow;
       <div className="flex flex-wrap items-center gap-2 px-4 sm:px-5 pt-3.5 sm:pt-4">
         <span className="text-[9px] sm:text-[10px] font-mono font-bold tracking-wider px-2 sm:px-2.5 py-1 rounded-full shrink-0" title="Priority: how urgent, independent of the evidence" style={{ color: r.color, border: `1.5px solid ${r.color}40`, background: r.bg }}>{PRIORITY_LABELS[priority].toUpperCase()}</span>
         <VerificationBadge state={badge.state} label={badge.label} onOpen={canOpen ? () => setPanelOpen(true) : undefined} />
+        {sectionLabel && (
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground" title="The section of the proposed revision this finding concerns">
+            Revision section: {sectionLabel}
+          </span>
+        )}
       </div>
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-start gap-2.5 sm:gap-3 px-4 sm:px-5 pt-2 pb-3.5 sm:pb-4 text-left active:opacity-80 transition-all touch-manipulation">
         <div className="flex-1 min-w-0">
@@ -395,7 +411,11 @@ export default function Index() {
   // A fresh analysis of the proposed revision. The only thing allowed to say
   // the revision resolves the findings.
   const [rechecking, setRechecking] = useState(false);
-  const [recheck, setRecheck] = useState<{ remaining: number; mustFix: number } | null>(null);
+  const [versions, setVersions] = useState<VersionStore | null>(() => {
+    try { const s = localStorage.getItem("tpl_revisions"); return s ? JSON.parse(s) : null; } catch { return null; }
+  });
+  // Which analysis the banner, Overview and Gap Analysis show.
+  const [analysisView, setAnalysisView] = useState<"original" | "revision">("original");
   const [industry, setIndustry] = useState("healthcare");
   const [industries, setIndustries] = useState<IndustryOption[]>(FALLBACK_INDUSTRIES);
   const [stateCode, setStateCode] = useState("");
@@ -639,6 +659,20 @@ export default function Index() {
       else localStorage.removeItem("tpl_pkg");
     } catch {}
   }, [pkg]);
+  useEffect(() => {
+    try {
+      if (versions) localStorage.setItem("tpl_revisions", JSON.stringify(versions));
+      else localStorage.removeItem("tpl_revisions");
+    } catch {}
+  }, [versions]);
+
+  // The re-check of the current proposed revision, if it has been run -- and
+  // only for this report.
+  const versionsForPkg = versions && pkg && versions.originalId === pkg.package_id ? versions : null;
+  const revisionVersion = versionsForPkg?.version ?? 0;
+  const revisionAnalysis = versionsForPkg?.results[revisionVersion] ?? null;
+  const showingRevision = analysisView === "revision" && !!revisionAnalysis;
+  const viewedPkg = showingRevision ? revisionAnalysis!.pkg : pkg;
 
   useEffect(() => {
     getIndustries().then((list) => { if (list.length > 0) setIndustries(list); });
@@ -911,7 +945,8 @@ export default function Index() {
     setChatOpen(false);
     setChatHistory([]);
     setChatInput("");
-    setRecheck(null);
+    setVersions(null);
+    setAnalysisView("original");
     setStateCode("");
     if (fileRef.current) fileRef.current.value = "";
     // Clear the browser copy too, not just the screen -- otherwise the
@@ -923,7 +958,8 @@ export default function Index() {
     if (!pkg || exporting) return;
     setExporting(true);
     try {
-      await exportGapAnalysis(pkg);
+      // The report on screen: the original analysis or the revision's re-check.
+      await exportGapAnalysis(viewedPkg ?? pkg);
       toast.success("Gap analysis downloaded", { description: "Report .docx saved" });
     } catch (e: any) {
       toast.error("Download failed", { description: e.message });
@@ -938,7 +974,14 @@ export default function Index() {
     try {
       const rewritten = await fixAllGaps(text, pkg.gap_analysis, industry, jurisdiction);
       setPkg((prev) => prev ? { ...prev, rewritten_policy: rewritten } : prev);
-      setRecheck(null);
+      // A new revision is a new version: it has not been re-checked, and the
+      // previous revision's re-check (kept under its own number) no longer
+      // describes the text on screen.
+      const originalId = pkg.package_id;
+      setVersions((prev) => prev && prev.originalId === originalId
+        ? { ...prev, version: prev.version + 1 }
+        : { originalId, version: 1, results: {} });
+      setAnalysisView("original");
       setActiveTab("corrected");
       toast.info("Proposed revision ready", { description: "Not re-checked yet. Use Re-check to analyze it before relying on it." });
     } catch (e: any) {
@@ -953,15 +996,22 @@ export default function Index() {
   // revision was generated.
   const handleRecheck = async () => {
     const revised = pkg?.rewritten_policy?.full_text;
-    if (!revised || rechecking) return;
+    if (!pkg || !revised || rechecking) return;
+    const originalId = pkg.package_id;
+    const version = versionsForPkg?.version || 1;
+    const sections = pkg.rewritten_policy?.sections ?? [];
     setRechecking(true);
     try {
       const jobId = await startActionPackageJob(revised, fileName ? `${fileName} (proposed revision)` : "Proposed revision", industry, jurisdiction, true);
       const result = await streamActionPackageJob(jobId, () => {});
+      // Stored beside the original, never in place of it.
+      setVersions((prev) => {
+        const base = prev && prev.originalId === originalId ? prev : { originalId, version, results: {} };
+        return { ...base, version, results: { ...base.results, [version]: { pkg: result, sections, checkedAt: new Date().toISOString() } } };
+      });
       const rows = result.gap_analysis?.gap_table ?? [];
-      const remaining = rows.filter((r) => r.status !== "compliant").length;
-      const mustFix = rows.filter((r) => r.risk_level === "critical" || r.risk_level === "high").length;
-      setRecheck({ remaining, mustFix });
+      const remaining = rows.length;
+      const mustFix = mustFixCount(rows);
       if (remaining === 0) {
         toast.success("Re-check found no remaining gaps", { description: "A fresh analysis of the revision found nothing left. It still needs review by counsel." });
       } else {
@@ -1449,7 +1499,7 @@ export default function Index() {
               </div>
             </div>
 
-            <LimitationsBanner lines={analysisLimitations(pkg, pkgStreaming)} />
+            <LimitationsBanner lines={analysisLimitations(viewedPkg!, showingRevision ? false : pkgStreaming)} />
             <StateSourcesList coverage={pkg.state_coverage} />
 
             {/* Tab bar */}
@@ -1467,15 +1517,26 @@ export default function Index() {
             </div>
 
             {/* Tab content */}
-            {activeTab === "overview" && <OverviewTab pkg={pkg} verifying={pkgStreaming} />}
-            {activeTab === "gap_analysis" && pkg.gap_analysis && (
+            {(activeTab === "overview" || activeTab === "gap_analysis") && revisionAnalysis && (
+              <AnalysisVersionSwitch
+                view={showingRevision ? "revision" : "original"}
+                onChange={(v) => { setAnalysisView(v); setSeverityFilter(null); }}
+                originalName={fileName || "the uploaded policy"}
+                revisionVersion={revisionVersion}
+                checkedAt={revisionAnalysis.checkedAt}
+              />
+            )}
+            {activeTab === "overview" && <OverviewTab pkg={viewedPkg!} verifying={showingRevision ? false : pkgStreaming} />}
+            {activeTab === "gap_analysis" && viewedPkg!.gap_analysis && (
               <GapAnalysisTab
-                result={pkg.gap_analysis}
-                verifying={pkgStreaming}
-                urlMap={pkg.kb_source_urls}
-                snippets={pkg.source_snippets}
+                key={showingRevision ? `revision-${revisionVersion}` : "original"}
+                result={viewedPkg!.gap_analysis}
+                verifying={showingRevision ? false : pkgStreaming}
+                urlMap={viewedPkg!.kb_source_urls}
+                snippets={viewedPkg!.source_snippets}
                 severityFilter={severityFilter}
                 onChangeFilter={setSeverityFilter}
+                revisionSections={showingRevision ? revisionAnalysis!.sections : undefined}
               />
             )}
             {activeTab === "corrected" && pkg.rewritten_policy && (
@@ -1517,21 +1578,44 @@ export default function Index() {
                   </div>
                 </div>
                 <div className="rounded-xl neu-sm p-4 flex items-center justify-between gap-3 flex-wrap">
-                  <p className="text-[12px] text-foreground/80 leading-relaxed max-w-md">
-                    {recheck === null
-                      ? "Not re-checked. This revision was written to address the findings, but nothing has confirmed it does. Re-check runs a fresh analysis on it."
-                      : recheck.remaining === 0
-                        ? "Re-check: a fresh analysis of this revision found no remaining gaps. It still needs review by counsel."
-                        : `Re-check: a fresh analysis found ${recheck.remaining} remaining issue${recheck.remaining !== 1 ? "s" : ""}${recheck.mustFix ? `, ${recheck.mustFix} marked must-fix` : ""}.`}
-                  </p>
+                  <div className="max-w-md space-y-1">
+                    {revisionAnalysis === null ? (
+                      <p className="text-[12px] text-foreground/80 leading-relaxed">
+                        Not re-checked. This revision was written to address the findings, but nothing has confirmed it does. Re-check runs a fresh analysis on it.
+                      </p>
+                    ) : (
+                      <>
+                        {/* Counted from the same rows the cards show. */}
+                        <p className="text-[13px] font-semibold text-foreground">
+                          Original: {mustFixCount(pkg.gap_analysis?.gap_table)} must-fix → Revision: {mustFixCount(revisionAnalysis.pkg.gap_analysis?.gap_table)} must-fix
+                        </p>
+                        <p className="text-[12px] text-foreground/75 leading-relaxed">
+                          {(() => {
+                            const n = revisionAnalysis.pkg.gap_analysis?.gap_table?.length ?? 0;
+                            return n === 0
+                              ? "A fresh analysis of this revision found no remaining findings. It still needs review by counsel."
+                              : `A fresh analysis of this revision found ${n} remaining finding${n !== 1 ? "s" : ""}. The original analysis is kept unchanged.`;
+                          })()}
+                        </p>
+                      </>
+                    )}
+                  </div>
                   <button
                     onClick={handleRecheck}
                     disabled={rechecking}
                     className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl neu-btn touch-manipulation disabled:opacity-60 inline-flex items-center gap-1.5"
                   >
                     {rechecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                    {rechecking ? "RE-CHECKING..." : recheck ? "RE-CHECK AGAIN" : "RE-CHECK REVISION"}
+                    {rechecking ? "RE-CHECKING..." : revisionAnalysis ? "RE-CHECK AGAIN" : "RE-CHECK REVISION"}
                   </button>
+                  {revisionAnalysis && (
+                    <button
+                      onClick={() => { setAnalysisView("revision"); setSeverityFilter(null); setActiveTab("gap_analysis"); }}
+                      className="font-mono text-[10px] font-bold tracking-wider px-4 py-2 rounded-xl bg-primary text-primary-foreground neu-btn touch-manipulation inline-flex items-center gap-1.5"
+                    >
+                      VIEW REMAINING FINDINGS
+                    </button>
+                  )}
                 </div>
                 {pkg.rewritten_policy.change_summary && (
                   <div className="rounded-xl neu-sm p-4">
@@ -1676,6 +1760,37 @@ function RedlineView({ original, corrected }: { original: string; corrected: str
   );
 }
 
+// "Original analysis | Revision analysis", and a plain statement of which
+// document the report below describes.
+function AnalysisVersionSwitch({ view, onChange, originalName, revisionVersion, checkedAt }: {
+  view: "original" | "revision"; onChange: (v: "original" | "revision") => void;
+  originalName: string; revisionVersion: number; checkedAt: string;
+}) {
+  const time = (() => { try { return new Date(checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); } catch { return ""; } })();
+  return (
+    <div className="rounded-xl neu-sm p-3 sm:p-4 space-y-2">
+      <div className="inline-flex rounded-xl p-1 bg-secondary" role="tablist" aria-label="Which analysis to show">
+        {(["original", "revision"] as const).map((v) => (
+          <button
+            key={v}
+            role="tab"
+            aria-selected={view === v}
+            onClick={() => onChange(v)}
+            className={`px-3 py-1.5 rounded-lg font-mono text-[10px] font-bold tracking-wider transition-all ${view === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {v === "original" ? "Original analysis" : "Revision analysis"}
+          </button>
+        ))}
+      </div>
+      <p className="text-[12px] text-foreground/75 leading-relaxed">
+        {view === "original"
+          ? `Showing the original analysis of ${originalName}.`
+          : `Showing the revision analysis: a fresh analysis of proposed revision ${revisionVersion}${time ? `, re-checked at ${time}` : ""}. The original analysis is unchanged.`}
+      </p>
+    </div>
+  );
+}
+
 function OverviewTab({ pkg, verifying = false }: { pkg: ComplianceActionPackage; verifying?: boolean }) {
   const ga = pkg.gap_analysis;
   const rows = ga.gap_table ?? [];
@@ -1711,7 +1826,7 @@ function OverviewTab({ pkg, verifying = false }: { pkg: ComplianceActionPackage;
 }
 
 
-function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilter, verifying = false }: { result: AnalysisResult; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null; severityFilter?: "must_fix" | "should_fix" | null; onChangeFilter?: (s: "must_fix" | "should_fix" | null) => void; verifying?: boolean }) {
+function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilter, verifying = false, revisionSections }: { result: AnalysisResult; urlMap?: Record<string, string>; snippets?: SourceSnippet[] | null; severityFilter?: "must_fix" | "should_fix" | null; onChangeFilter?: (s: "must_fix" | "should_fix" | null) => void; verifying?: boolean; revisionSections?: RewrittenPolicySection[] }) {
   const isMustFix = (r: typeof result.gap_table[number]) => priorityOf(r) === "must_fix";
   const mustFixItems = result.gap_table.filter(isMustFix);
 
@@ -1756,7 +1871,7 @@ function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilt
             <p className="text-sm text-muted-foreground">No items in this category.</p>
           </div>
         ) : (
-          filteredRows.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} snippets={snippets} verifying={verifying} />)
+          filteredRows.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} snippets={snippets} verifying={verifying} sectionLabel={revisionSectionFor(row, revisionSections)} />)
         )
       ) : (
         <>
@@ -1781,7 +1896,7 @@ function GapAnalysisTab({ result, urlMap, snippets, severityFilter, onChangeFilt
             </p>
           )}
 
-          {result.gap_table.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} snippets={snippets} verifying={verifying} />)}
+          {result.gap_table.map((row, i) => <GapRowItem key={i} row={row} urlMap={urlMap} snippets={snippets} verifying={verifying} sectionLabel={revisionSectionFor(row, revisionSections)} />)}
         </>
       )}
     </div>

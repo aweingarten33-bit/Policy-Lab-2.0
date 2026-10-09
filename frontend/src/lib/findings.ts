@@ -101,3 +101,39 @@ export function analysisLimitations(pkg: ComplianceActionPackage, verifying: boo
   if (pkg.state_coverage) lines.push(`State law: ${pkg.state_coverage.summary}`);
   return lines;
 }
+
+// ── Re-check: which revision section a remaining finding belongs to ──
+// A re-check analyses the proposed revision, so a finding's current_state
+// quotes (or closely paraphrases) the revision. A quote found in a section's
+// text places it exactly; otherwise the finding's topic must share a word with
+// a section title. Anything less certain gets no label rather than a guess.
+
+const STOP = new Set(["policy", "section", "procedure", "procedures", "requirements", "requirement", "with", "from", "that", "this", "their", "shall", "must", "will", "each", "other", "within"]);
+const norm = (t: string) => t.toLowerCase().replace(/[“”"']/g, "").replace(/\s+/g, " ").trim();
+const words = (t: string) => new Set((norm(t).match(/[a-z]{4,}/g) ?? []).filter((w) => !STOP.has(w)));
+
+export function revisionSectionFor(
+  row: GapRow,
+  sections: { section_title: string; rewritten_text: string }[] | undefined,
+): string | null {
+  if (!sections?.length) return null;
+  const quote = norm(row.current_state || "");
+  if (quote.length >= 20 && !quote.startsWith("policy is silent")) {
+    const probe = quote.slice(0, 60);
+    const hit = sections.find((s) => norm(s.rewritten_text || "").includes(probe));
+    if (hit) return hit.section_title;
+  }
+  const topic = words(row.clause || "");
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const s of sections) {
+    const title = words(s.section_title || "");
+    const score = [...topic].filter((w) => title.has(w)).length;
+    if (score > bestScore) { best = s.section_title; bestScore = score; }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+export function mustFixCount(rows: GapRow[] | undefined): number {
+  return (rows ?? []).filter((r) => priorityOf(r) === "must_fix").length;
+}
